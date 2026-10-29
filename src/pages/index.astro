@@ -1,0 +1,273 @@
+---
+import Base from '../layouts/Base.astro';
+import {
+  BRAND,
+  LEARNING_SITE,
+  OTHER_WORKS,
+  PROFILE,
+  PROJECTS,
+  SKILLS,
+  STATUS_LABEL,
+  type WorkStatus,
+} from '../lib/site';
+
+const wrap = 'mx-auto max-w-6xl px-5';
+const eyebrow = 'text-sm font-semibold tracking-widest text-amber-600';
+const h2 = 'mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl';
+const external = (href: string) => href.startsWith('http');
+const badge = (s: WorkStatus) =>
+  s === 'production'
+    ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+    : 'bg-sky-50 text-sky-700 ring-sky-200';
+---
+
+<Base
+  title={`${PROFILE.role}作品集 · ${BRAND.name}`}
+  description="AI 应用开发作品集：运维 Agent（自动排查与自愈）、ChatBI（Text-to-SQL）、K8s + GitOps 平台。所有演示都调用真实的大模型，跑在自建的 K8s 集群上。"
+>
+  <!-- 首屏 -->
+  <section class="relative overflow-hidden bg-slate-950 text-white">
+    <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(251,191,36,0.18),transparent_55%),radial-gradient(ellipse_at_bottom_left,rgba(56,189,248,0.12),transparent_50%)]"></div>
+    <div class={`${wrap} relative py-24 sm:py-32`}>
+      <p class="text-sm font-semibold tracking-widest text-amber-300">{PROFILE.role} · 作品集</p>
+      <h1 class="mt-5 max-w-4xl text-4xl leading-tight font-bold tracking-tight sm:text-5xl">
+        {PROFILE.headline}
+      </h1>
+      <p class="mt-6 max-w-2xl text-lg leading-relaxed text-slate-300">{PROFILE.intro}</p>
+      <div class="mt-10 flex flex-wrap gap-4">
+        <a
+          href="#projects"
+          class="rounded-full bg-amber-400 px-7 py-3 font-semibold text-slate-950 shadow-lg shadow-amber-400/20 transition hover:bg-amber-300"
+        >
+          看代表作
+        </a>
+        <a
+          href="/live/"
+          class="rounded-full px-7 py-3 font-semibold text-white ring-1 ring-white/25 transition hover:bg-white/10"
+        >
+          平台实况
+        </a>
+        {PROFILE.github && (
+          <a
+            href={PROFILE.github}
+            target="_blank"
+            rel="noopener"
+            class="rounded-full px-7 py-3 font-semibold text-white ring-1 ring-white/25 transition hover:bg-white/10"
+          >
+            GitHub ↗
+          </a>
+        )}
+        {PROFILE.resume && (
+          <a
+            href={PROFILE.resume}
+            class="rounded-full px-7 py-3 font-semibold text-white ring-1 ring-white/25 transition hover:bg-white/10"
+          >
+            简历
+          </a>
+        )}
+      </div>
+      <!-- 集群真实数据的一行摘要，拿不到（本地预览、定时任务还没跑）时不显示 -->
+      <p data-live hidden class="mt-12 max-w-3xl text-sm text-slate-400">
+        <span class="mr-2 inline-block size-2 rounded-full bg-emerald-400 align-middle"></span>
+        <span data-live-text></span>
+      </p>
+    </div>
+  </section>
+
+  <!-- 代表作 -->
+  <section id="projects" class="bg-slate-50 py-24">
+    <div class={wrap}>
+      <p class={eyebrow}>代表作</p>
+      <h2 class={h2}>能在真实环境里跑的 AI 应用</h2>
+      <p class="mt-4 max-w-2xl text-slate-600">
+        每个作品都可以在线体验。状态如实标注：「真实环境运行中」查的是本站真实的服务器，「演示数据」用的是虚构的公司数据。
+      </p>
+      <div class="mt-12 space-y-6">
+        {PROJECTS.map((w) => (
+          <article
+            id={w.id}
+            class="grid gap-8 rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200 lg:grid-cols-5"
+          >
+            <div class="lg:col-span-3">
+              <span
+                class:list={[
+                  'rounded-full px-3 py-1 text-xs font-semibold ring-1',
+                  badge(w.status),
+                ]}
+              >
+                {STATUS_LABEL[w.status]}
+              </span>
+              <h3 class="mt-4 text-2xl font-bold text-slate-900">{w.name}</h3>
+              <p class="mt-3 leading-relaxed text-slate-600">{w.summary}</p>
+              <div class="mt-5 flex flex-wrap gap-2">
+                {w.stack.map((t) => (
+                  <span class="rounded-md bg-slate-100 px-2 py-1 font-mono text-xs text-slate-600">
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div class="flex flex-col lg:col-span-2">
+              <p class="text-sm font-semibold text-slate-900">工程要点</p>
+              <ul class="mt-3 space-y-2.5 text-sm leading-relaxed text-slate-600">
+                {w.highlights.map((h) => (
+                  <li class="flex gap-2">
+                    <span class="font-bold text-amber-500">✓</span>
+                    {h}
+                  </li>
+                ))}
+              </ul>
+              {w.demo && w.demo !== 'chat' && (
+                <a
+                  href={w.demo.href}
+                  target={external(w.demo.href) ? '_blank' : undefined}
+                  rel={external(w.demo.href) ? 'noopener' : undefined}
+                  class="group mt-6 flex items-center gap-4 rounded-xl bg-amber-50 p-4 ring-1 ring-amber-200 transition hover:bg-amber-100 hover:ring-amber-300 lg:mt-auto"
+                >
+                  <span class="grid size-10 shrink-0 place-items-center rounded-full bg-amber-400 text-slate-950 shadow-md shadow-amber-400/30">
+                    ▶
+                  </span>
+                  <span class="leading-snug">
+                    <span class="block font-semibold text-slate-900">{w.demo.label}</span>
+                    {w.demo.hint && (
+                      <span class="mt-0.5 block text-sm text-slate-600">{w.demo.hint}</span>
+                    )}
+                  </span>
+                  <span class="ml-auto text-lg text-amber-700 transition group-hover:translate-x-0.5">
+                    {external(w.demo.href) ? '↗' : '→'}
+                  </span>
+                </a>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <h3 class="mt-16 text-xl font-bold text-slate-900">其他作品</h3>
+      <div class="mt-6 grid gap-6 md:grid-cols-3">
+        {OTHER_WORKS.map((w) => (
+          <article class="flex flex-col rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+            <span
+              class:list={[
+                'self-start rounded-full px-3 py-1 text-xs font-semibold ring-1',
+                badge(w.status),
+              ]}
+            >
+              {STATUS_LABEL[w.status]}
+            </span>
+            <h4 class="mt-4 text-lg font-bold text-slate-900">{w.name}</h4>
+            <p class="mt-2 text-sm leading-relaxed text-slate-600">{w.summary}</p>
+            <div class="mt-4 flex flex-wrap gap-2">
+              {w.stack.map((t) => (
+                <span class="rounded-md bg-slate-100 px-2 py-1 font-mono text-xs text-slate-600">
+                  {t}
+                </span>
+              ))}
+            </div>
+            {w.demo === 'chat' && (
+              <button
+                type="button"
+                data-open-chat
+                class="mt-auto self-start pt-5 text-sm font-semibold text-amber-700 hover:text-amber-800"
+              >
+                打开 AI 助手 →
+              </button>
+            )}
+            {w.demo && w.demo !== 'chat' && (
+              <a
+                href={w.demo.href}
+                target={external(w.demo.href) ? '_blank' : undefined}
+                rel={external(w.demo.href) ? 'noopener' : undefined}
+                class="mt-auto pt-5 text-sm font-semibold text-amber-700 hover:text-amber-800"
+              >
+                {w.demo.label} {external(w.demo.href) ? '↗' : '→'}
+                {w.demo.hint && (
+                  <span class="mt-0.5 block font-normal text-slate-500">{w.demo.hint}</span>
+                )}
+              </a>
+            )}
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- 技术栈 -->
+  <section id="skills" class="py-24">
+    <div class={wrap}>
+      <p class={eyebrow}>技术栈</p>
+      <h2 class={h2}>从模型调用到上线运维</h2>
+      <div class="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+        {SKILLS.map((g) => (
+          <div>
+            <h3 class="font-semibold text-slate-900">{g.group}</h3>
+            <ul class="mt-3 space-y-1.5 text-sm text-slate-600">
+              {g.items.map((i) => (
+                <li>{i}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <a
+        href={LEARNING_SITE}
+        target="_blank"
+        rel="noopener"
+        class="mt-12 inline-flex items-center gap-2 rounded-xl bg-slate-50 px-5 py-4 text-sm ring-1 ring-slate-200 transition hover:ring-slate-400"
+      >
+        <span>
+          <span class="block font-semibold text-slate-900">AI 应用开发学习路线</span>
+          <span class="mt-0.5 block text-slate-600">我整理的学习路线，单独的网站</span>
+        </span>
+        <span class="ml-4 text-slate-500">↗</span>
+      </a>
+    </div>
+  </section>
+
+  <!-- 关于我 -->
+  <section class="bg-slate-950 py-24 text-white">
+    <div class="mx-auto max-w-3xl px-5">
+      <p class="text-sm font-semibold tracking-widest text-amber-300">关于我</p>
+      <h2 class="mt-3 text-3xl font-bold tracking-tight">10 年制造业 IT，自学转做 AI 应用</h2>
+      <p class="mt-6 leading-relaxed text-slate-300">
+        在一家制造企业的信息部工作了 10 年：前 7 年以桌面运维为主，后 3 年自学
+        Python、数据分析和开发。现在专注 AI
+        应用开发：把大模型接进真实的业务和系统里，做到能稳定运行、出了问题能发现、能恢复。
+      </p>
+      <div class="mt-8 flex flex-wrap gap-4">
+        <a
+          href="/about/"
+          class="rounded-full bg-white px-6 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-slate-200"
+        >
+          更多关于我
+        </a>
+        <button
+          type="button"
+          data-open-chat
+          class="rounded-full px-6 py-2.5 text-sm font-semibold text-white ring-1 ring-white/25 transition hover:bg-white/10"
+        >
+          问 AI 助手 / 留言
+        </button>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<script>
+  import { summarize, type Status } from '../lib/status';
+
+  fetch('/status.json', { cache: 'no-store' })
+    .then((r) =>
+      r.ok ? (r.json() as Promise<Status>) : Promise.reject(new Error(String(r.status))),
+    )
+    .then((s) => {
+      const box = document.querySelector<HTMLElement>('[data-live]');
+      const text = box?.querySelector('[data-live-text]');
+      if (!box || !text) return;
+      text.textContent = `本站集群实况：${summarize(s, new Date())}`;
+      box.hidden = false;
+    })
+    .catch(() => {
+      // 拿不到实况时首屏照常显示，不提示错误
+    });
+</script>

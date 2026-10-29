@@ -1,0 +1,16 @@
+# 采集 AI 服务的指标：调用次数、token、估算费用、耗时、被拦下的请求（ai/app/gateway.py）
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ai-api
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [ops-desk]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 60s

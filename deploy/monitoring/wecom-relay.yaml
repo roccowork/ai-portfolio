@@ -1,0 +1,78 @@
+# 告警转发器：Alertmanager → 企业微信群机器人。
+# 直接用官方 Node 镜像运行仓库里的脚本（由 kustomization 生成 ConfigMap 挂载），不用另外构建镜像。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wecom-relay
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: wecom-relay
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wecom-relay
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wecom-relay
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000 # 镜像自带的 node 用户
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: relay
+          image: node:24.21.0-alpine
+          command: [node, /app/relay.mjs]
+          env:
+            # 企业微信群机器人 webhook 地址里 key= 后面的部分，Secret 由人在服务器上创建
+            - name: WECOM_KEY
+              valueFrom:
+                secretKeyRef: { name: wecom-bot, key: key, optional: true }
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef: { name: telegram-bot, key: token, optional: true }
+            - name: TELEGRAM_CHAT_ID
+              valueFrom:
+                secretKeyRef: { name: telegram-bot, key: chat_id, optional: true }
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 96Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: app
+              mountPath: /app
+      volumes:
+        - name: app
+          configMap:
+            name: wecom-relay
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wecom-relay
+  namespace: monitoring
+spec:
+  selector:
+    app.kubernetes.io/name: wecom-relay
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

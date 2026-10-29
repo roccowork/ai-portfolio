@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ops-desk
+  labels:
+    app.kubernetes.io/name: ops-desk
+  annotations:
+    # 正式证书；调试证书流程时可在 overlay 里临时改成 letsencrypt-staging
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # 格式：<命名空间>-<中间件名>@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: ops-desk-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [ops.liuxd.dev]
+      secretName: ops-desk-tls
+  rules:
+    - host: ops.liuxd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ops-desk
+                port:
+                  name: http

@@ -1,0 +1,82 @@
+---
+import Base from '../layouts/Base.astro';
+import { BRAND, PROFILE } from '../lib/site';
+
+const h2 = 'text-xl font-bold text-slate-900';
+const p = 'mt-3 leading-relaxed text-slate-600';
+---
+
+<Base
+  title={`关于我 · ${BRAND.name}`}
+  description="10 年制造业 IT，自学 Python、数据分析和开发，现在做 AI 应用开发：Agent、RAG、Text-to-SQL，以及部署上线。"
+>
+  <section class="bg-slate-950 py-20 text-white">
+    <div class="mx-auto max-w-3xl px-5">
+      <p class="text-sm font-semibold tracking-widest text-amber-300">关于我</p>
+      <h1 class="mt-4 text-3xl leading-snug font-bold tracking-tight sm:text-4xl">
+        {PROFILE.headline}
+      </h1>
+    </div>
+  </section>
+
+  <article class="mx-auto max-w-3xl space-y-12 px-5 py-20">
+    <section>
+      <h2 class={h2}>经历</h2>
+      <p class={p}>
+        在一家制造企业的信息部工作了 10 年。前 7 年以桌面运维为主，熟悉企业里的电脑、网络和日常 IT
+        支持；后 3 年自学 Python、数据分析和开发。
+      </p>
+    </section>
+
+    <section>
+      <h2 class={h2}>为什么做 AI 应用开发</h2>
+      <p class={p}>
+        AI 应用开发要的能力正好是我已经有的几样：用 Python 写 Agent、RAG
+        和后端接口；用数据分析的经验做 Text-to-SQL
+        和数据处理；用运维的经验把应用部署上线、配好监控和备份。10 年制造业 IT
+        让我知道企业系统和业务流程是什么样的，AI 应用最后要落在这些地方。
+      </p>
+    </section>
+
+    <section>
+      <h2 class={h2}>我怎么做项目</h2>
+      <ul class="mt-3 space-y-2 leading-relaxed text-slate-600">
+        <li>
+          <b class="text-slate-900">安全边界写在程序里</b>：Agent 能调用哪些工具、SQL
+          能执行什么，由代码限制和校验，不靠提示词约束模型
+        </li>
+        <li>
+          <b class="text-slate-900">先写测试</b>：AI
+          后端的单元测试用假的模型服务，不需要密钥、不花钱，每次提交都跑
+        </li>
+        <li>
+          <b class="text-slate-900">上线后看得见</b>：每次模型调用的
+          token、费用和耗时都记账并出监控指标，每天有费用上限
+        </li>
+        <li>
+          <b class="text-slate-900">写清楚为什么</b>
+          ：架构文档记录每个技术选型的理由和放弃的方案，运维手册写清楚部署、回滚和排障步骤
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class={h2}>在找什么样的工作</h2>
+      <p class={p}>
+        AI 应用开发工程师，偏 Agent、RAG 和工程落地；AI 平台运维、MLOps
+        方向也可以聊。代表作和在线演示见
+        <a href="/#projects" class="text-amber-700 underline hover:text-amber-800">
+          首页
+        </a>
+        。
+      </p>
+      <button
+        type="button"
+        data-open-chat
+        class="mt-6 rounded-full bg-slate-900 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
+      >
+        问 AI 助手 / 留言
+      </button>
+    </section>
+  </article>
+</Base>

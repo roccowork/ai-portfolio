@@ -1,0 +1,84 @@
+# Argo CD：从 Git 拉取清单并同步到集群（拉取式 GitOps），由 k3s 的 helm-controller 安装。
+# 这个 HelmChart 本身也由 Argo CD 从 Git 同步（Argo CD 管理自己）；首次安装由 install-argocd.sh 用 kubectl apply 创建。
+# 界面：https://argocd.liuxd.dev（admin 账号，初始密码见 docs/runbook.md）
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: argocd
+  namespace: kube-system
+  annotations:
+    # 删除 HelmChart 等于卸载整个组件，Argo CD 永远不自动删除它（从 Git 里删掉也不删集群里的）
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  repo: https://argoproj.github.io/argo-helm
+  chart: argo-cd
+  version: 10.10.2 # Argo CD v3.5.4
+  targetNamespace: argocd
+  createNamespace: true
+  valuesContent: |-
+    global:
+      domain: argocd.liuxd.dev
+
+    configs:
+      params:
+        # TLS 在 Traefik 终止，Argo CD 本身只提供 HTTP
+        server.insecure: true
+      cm:
+        # 默认 3 分钟检查一次 Git，改成 1 分钟，推送后更快上线
+        timeout.reconciliation: 60s
+        # 界面上不允许进入容器执行命令
+        exec.enabled: false
+
+    # 用不到的组件：单点登录、通知、ApplicationSet（没有开关，副本数设为 0）
+    dex:
+      enabled: false
+    notifications:
+      enabled: false
+    applicationSet:
+      replicas: 0
+
+    server:
+      ingress:
+        enabled: true
+        ingressClassName: traefik
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+          traefik.ingress.kubernetes.io/router.middlewares: argocd-redirect-https@kubernetescrd
+        # 证书存在 argocd-server-tls，由 cert-manager 签发
+        tls: true
+      resources:
+        requests: { cpu: 20m, memory: 64Mi }
+        limits: { cpu: 500m, memory: 256Mi }
+
+    controller:
+      # 512Mi 时一周 OOMKilled 3 次（2026-10-26 周报），放宽到 768Mi
+      resources:
+        requests: { cpu: 100m, memory: 320Mi }
+        limits: { cpu: '1', memory: 768Mi }
+
+    repoServer:
+      resources:
+        requests: { cpu: 20m, memory: 64Mi }
+        limits: { cpu: 500m, memory: 256Mi }
+
+    redis:
+      resources:
+        requests: { cpu: 10m, memory: 32Mi }
+        limits: { cpu: 200m, memory: 96Mi }
+
+    redisSecretInit:
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits: { cpu: 100m, memory: 64Mi }
+
+    extraObjects:
+      # HTTP 跳转 HTTPS（Traefik 默认不允许跨命名空间引用中间件）
+      - apiVersion: traefik.io/v1alpha1
+        kind: Middleware
+        metadata:
+          name: redirect-https
+          namespace: argocd
+        spec:
+          redirectScheme:
+            scheme: https
+            permanent: true

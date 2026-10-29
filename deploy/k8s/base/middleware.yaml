@@ -1,0 +1,10 @@
+# HTTP 自动跳转 HTTPS。对已经是 HTTPS 的请求不起作用，所以挂在同一个 Ingress 上即可。
+# cert-manager 做 HTTP-01 验证时会另建一个路径更精确的 Ingress，不经过这个跳转。
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true

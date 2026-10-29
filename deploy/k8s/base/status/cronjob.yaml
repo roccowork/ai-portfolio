@@ -1,0 +1,89 @@
+# 平台实况（/live）：每 10 分钟汇总发布、备份、证书、可用率、告警，写进 ConfigMap ops-desk-status。
+# 站点 Pod 把它挂载到 /usr/share/nginx/status，nginx 以 /status.json 提供。脚本在 status.mjs。
+# 生成失败时不覆盖上一份，页面按 generatedAt 显示「数据更新于 X 分钟前」，超过 1 小时标黄。
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ops-desk-status
+automountServiceAccountToken: false
+---
+# 只能读站点的 ReplicaSet、读写自己那个 ConfigMap；create 不能按名字限制，所以单独一条
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ops-desk-status
+rules:
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [list]
+  - apiGroups: ['']
+    resources: [configmaps]
+    resourceNames: [ops-desk-status]
+    verbs: [get, patch]
+  - apiGroups: ['']
+    resources: [configmaps]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ops-desk-status
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ops-desk-status
+subjects:
+  - kind: ServiceAccount
+    name: ops-desk-status
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ops-desk-status
+spec:
+  schedule: '*/10 * * * *'
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      # 偶尔连不上 Prometheus / K8s API 时马上重试一次，免得一次网络抖动就触发 KubeJobFailed 告警
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: ops-desk-status
+          automountServiceAccountToken: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000 # 镜像自带的 node 用户
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: status
+              image: node:24.21.0-alpine
+              command: [node, /app/status.mjs]
+              env:
+                - name: PROMETHEUS_URL
+                  value: http://kps-prometheus.monitoring.svc:9090
+                # 信任集群 CA，访问 K8s API 时校验证书
+                - name: NODE_EXTRA_CA_CERTS
+                  value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 200m, memory: 96Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: app
+                  mountPath: /app
+          volumes:
+            - name: app
+              configMap:
+                name: ops-desk-status-script

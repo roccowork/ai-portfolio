@@ -1,0 +1,60 @@
+# 运维周报：每周一 09:00 从 Prometheus 汇总过去 7 天的数据，发到企业微信群（和告警同一个群机器人、同一个 Secret wecom-bot）。
+# 脚本在 wecom-relay/weekly-report.mjs，由 kustomization 生成 ConfigMap 挂载；手动试跑见 docs/runbook.md「运维周报」。
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: weekly-report
+  namespace: monitoring
+spec:
+  schedule: '0 9 * * 1'
+  timeZone: Asia/Singapore
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      # 失败重试一次；企业微信限流或 Prometheus 正在重启时，过一会再发通常就好了
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000 # 镜像自带的 node 用户
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: report
+              image: node:24.21.0-alpine
+              command: [node, /app/weekly-report.mjs]
+              env:
+                - name: PROMETHEUS_URL
+                  value: http://kps-prometheus.monitoring.svc:9090
+                - name: WECOM_KEY
+                  valueFrom:
+                    secretKeyRef: { name: wecom-bot, key: key, optional: true }
+                - name: TELEGRAM_BOT_TOKEN
+                  valueFrom:
+                    secretKeyRef: { name: telegram-bot, key: token, optional: true }
+                - name: TELEGRAM_CHAT_ID
+                  valueFrom:
+                    secretKeyRef: { name: telegram-bot, key: chat_id, optional: true }
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 200m, memory: 96Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: app
+                  mountPath: /app
+          volumes:
+            - name: app
+              configMap:
+                name: weekly-report

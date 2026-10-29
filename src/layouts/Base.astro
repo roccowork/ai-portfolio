@@ -1,0 +1,94 @@
+---
+import '../styles/global.css';
+import ReceptionChat from '../components/ReceptionChat.vue';
+import { BRAND, NAV, PROFILE } from '../lib/site';
+
+interface Props {
+  title: string;
+  description: string;
+  /** 私人页面：不让搜索引擎收录，也不显示 AI 助手 */
+  noindex?: boolean;
+}
+const { title, description, noindex = false } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const year = new Date().getFullYear();
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <link rel="canonical" href={canonical} />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body class="min-h-screen bg-white font-sans text-slate-800 antialiased">
+    <header class="sticky top-0 z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur">
+      <nav class="mx-auto flex max-w-6xl items-center gap-6 px-5 py-3.5">
+        <a href="/" class="flex items-center gap-2.5">
+          <span class="grid size-8 place-items-center rounded-lg bg-slate-900 text-sm font-bold text-amber-300">
+            AI
+          </span>
+          <span class="leading-tight">
+            <span class="block font-semibold text-slate-900">{BRAND.name}</span>
+            <span class="block text-xs text-slate-500">{BRAND.tagline}</span>
+          </span>
+        </a>
+        <div class="ml-auto hidden items-center gap-7 md:flex">
+          {NAV.map((n) => (
+            <a href={n.href} class="text-sm text-slate-600 transition hover:text-slate-900">
+              {n.name}
+            </a>
+          ))}
+        </div>
+        <button
+          type="button"
+          data-open-chat
+          class="ml-auto rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 md:ml-0"
+        >
+          问 AI 助手
+        </button>
+      </nav>
+    </header>
+
+    <main>
+      <slot />
+    </main>
+
+    <footer class="border-t border-slate-200 bg-slate-50">
+      <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-5 py-8 text-sm text-slate-500">
+        <div>
+          <p class="font-medium text-slate-700">
+            {BRAND.name} · {BRAND.tagline}
+          </p>
+          <p class="mt-1">{PROFILE.headline}</p>
+        </div>
+        <div class="flex gap-6">
+          {NAV.map((n) => (
+            <a href={n.href} class="hover:text-slate-800">
+              {n.name}
+            </a>
+          ))}
+        </div>
+        <p class="w-full text-xs text-slate-400">
+          © {year} {BRAND.name}
+        </p>
+      </div>
+    </footer>
+
+    {!noindex && <ReceptionChat client:idle />}
+    <script>
+      // 页面上所有带 data-open-chat 的按钮都打开 AI 助手；组件还没加载完时先记下来，加载完立即打开
+      document.querySelectorAll('[data-open-chat]').forEach((btn) =>
+        btn.addEventListener('click', () => {
+          (window as { __chatPending?: boolean }).__chatPending = true;
+          window.dispatchEvent(new Event('reception:open'));
+        }),
+      );
+    </script>
+  </body>
+</html>

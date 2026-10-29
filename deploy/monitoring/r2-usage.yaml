@@ -1,0 +1,187 @@
+# R2 用量：每月 1 号 09:30（新加坡时间）发月报；每周一 09:30 检查一次，超过免费额度（10 GB）的 80% 才提醒。
+# 列文件用 Uptime Kuma 备份的同一个 R2 密钥（只能访问备份桶），不需要额外的 Cloudflare API 令牌。
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: r2-usage-monthly
+  namespace: monitoring
+spec:
+  schedule: '30 9 1 * *'
+  timeZone: Asia/Singapore
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            # 用 Uptime Kuma 备份的 R2 密钥（Secret backup-r2）列出整个桶；从仓库地址里取出 endpoint 和桶名
+            - name: list
+              image: rclone/rclone:1.75.2
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  R=${RESTIC_REPOSITORY#s3:}
+                  ENDPOINT=$(echo "$R" | cut -d/ -f1-3)
+                  BUCKET=$(echo "$R" | cut -d/ -f4)
+                  export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+                  export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+                  export RCLONE_CONFIG_R2_ENDPOINT="$ENDPOINT"
+                  rclone lsjson -R --files-only --no-mimetype --no-modtime --fast-list "r2:$BUCKET" > /out/files.json
+                  echo "列出 $(grep -c '"Path"' /out/files.json || true) 个文件"
+              env:
+                - { name: HOME, value: /tmp }
+              envFrom:
+                - secretRef:
+                    name: backup-r2
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 500m, memory: 256Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - { name: out, mountPath: /out }
+                - { name: tmp, mountPath: /tmp }
+          containers:
+            - name: report
+              image: node:24.21.0-alpine
+              command: [node, /app/r2-usage.mjs, monthly]
+              env:
+                - name: WECOM_KEY
+                  valueFrom:
+                    secretKeyRef: { name: wecom-bot, key: key, optional: true }
+                - name: TELEGRAM_BOT_TOKEN
+                  valueFrom:
+                    secretKeyRef: { name: telegram-bot, key: token, optional: true }
+                - name: TELEGRAM_CHAT_ID
+                  valueFrom:
+                    secretKeyRef: { name: telegram-bot, key: chat_id, optional: true }
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 200m, memory: 128Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - { name: app, mountPath: /app }
+                - { name: out, mountPath: /out }
+          volumes:
+            - name: app
+              configMap:
+                name: r2-usage
+            - name: out
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: r2-usage-check
+  namespace: monitoring
+spec:
+  schedule: '30 9 * * 1'
+  timeZone: Asia/Singapore
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            # 用 Uptime Kuma 备份的 R2 密钥（Secret backup-r2）列出整个桶；从仓库地址里取出 endpoint 和桶名
+            - name: list
+              image: rclone/rclone:1.75.2
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  R=${RESTIC_REPOSITORY#s3:}
+                  ENDPOINT=$(echo "$R" | cut -d/ -f1-3)
+                  BUCKET=$(echo "$R" | cut -d/ -f4)
+                  export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+                  export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+                  export RCLONE_CONFIG_R2_ENDPOINT="$ENDPOINT"
+                  rclone lsjson -R --files-only --no-mimetype --no-modtime --fast-list "r2:$BUCKET" > /out/files.json
+                  echo "列出 $(grep -c '"Path"' /out/files.json || true) 个文件"
+              env:
+                - { name: HOME, value: /tmp }
+              envFrom:
+                - secretRef:
+                    name: backup-r2
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 500m, memory: 256Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - { name: out, mountPath: /out }
+                - { name: tmp, mountPath: /tmp }
+          containers:
+            - name: report
+              image: node:24.21.0-alpine
+              command: [node, /app/r2-usage.mjs, check]
+              env:
+                - name: WECOM_KEY
+                  valueFrom:
+                    secretKeyRef: { name: wecom-bot, key: key, optional: true }
+                - name: TELEGRAM_BOT_TOKEN
+                  valueFrom:
+                    secretKeyRef: { name: telegram-bot, key: token, optional: true }
+                - name: TELEGRAM_CHAT_ID
+                  valueFrom:
+                    secretKeyRef: { name: telegram-bot, key: chat_id, optional: true }
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 200m, memory: 128Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - { name: app, mountPath: /app }
+                - { name: out, mountPath: /out }
+          volumes:
+            - name: app
+              configMap:
+                name: r2-usage
+            - name: out
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}

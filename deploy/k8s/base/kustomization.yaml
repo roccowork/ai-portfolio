@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# 命名空间本身由 Argo CD 创建（deploy/argocd/applications.yaml 里的 CreateNamespace=true）
+namespace: ops-desk
+resources:
+  - deployment.yaml
+  - service.yaml
+  - middleware.yaml
+  - ingress.yaml
+  - ai.yaml
+  - ai-backup.yaml
+  - status/cronjob.yaml
+# 备份脚本（ConfigMap backup-scripts），由 ai-backup.yaml 使用
+components:
+  - ../../backup
+configMapGenerator:
+  # 平台实况的生成脚本；内容变化时名字的哈希后缀会变，CronJob 随之引用新版本
+  - name: ops-desk-status-script
+    files:
+      - status/status.mjs

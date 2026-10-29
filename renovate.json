@@ -1,0 +1,80 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard"],
+  "timezone": "Asia/Singapore",
+  "schedule": ["before 9am on the first day of the month"],
+  "minimumReleaseAge": "14 days",
+  "prConcurrentLimit": 2,
+  "labels": ["dependencies"],
+  "kubernetes": {
+    "managerFilePatterns": ["/^deploy/.+\\.yaml$/"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "k3s HelmChart 资源里的 chart 版本（deploy/platform）",
+      "managerFilePatterns": ["/^deploy/platform/.+\\.yaml$/"],
+      "matchStrings": [
+        "repo:\\s*(?<registryUrl>\\S+)\\s+chart:\\s*(?<depName>\\S+)\\s+version:\\s*(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "helm"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "站点自己的镜像标签由 CI 写入，不归 Renovate 管",
+      "matchPackageNames": ["ghcr.io/roccowork/**"],
+      "enabled": false
+    },
+    {
+      "description": "npm 的小版本和补丁合成一个 PR",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "npm minor/patch"
+    },
+    {
+      "description": "GitHub Actions 合成一个 PR",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "node 镜像在 Dockerfile 和多个 CronJob 里，一起升级；只跟 LTS 偶数大版本",
+      "matchPackageNames": ["node"],
+      "matchDatasources": ["docker"],
+      "groupName": "node image",
+      "allowedVersions": "/^\\d*[02468]\\./"
+    },
+    {
+      "description": "集群组件（Helm chart）大版本升级先读 release notes，不自动合并，单独 PR",
+      "matchDatasources": ["helm"],
+      "matchUpdateTypes": ["major"],
+      "addLabels": ["platform-major"]
+    },
+    {
+      "description": "补丁版本（如 1.2.3 → 1.2.4）：CI 全部通过后自动合并；小版本、大版本仍然等人看",
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    },
+    {
+      "description": "集群组件的 Helm chart 不自动合并：CI 只能检查语法，验证不了升级后集群是否正常",
+      "matchDatasources": ["helm"],
+      "automerge": false
+    },
+    {
+      "description": "小版本、补丁等 CI 全部通过后自动合并；大版本单独提 PR，等人确认后再合并",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "集群组件的 Helm chart 不自动合并：CI 只能检查写法，验证不了升级后集群是否正常",
+      "matchDatasources": ["helm"],
+      "automerge": false
+    },
+    {
+      "description": "非大版本的升级全部合成一个 PR：每个 PR 都要跑一次 CI，合在一起最省 Actions 分钟",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-minor-patch"
+    }
+  ]
+}

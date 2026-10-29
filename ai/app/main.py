@@ -1,0 +1,475 @@
+"""AI 服务入口。对外只开放 /api/ai/*（由 Ingress 转发），/metrics 只给集群内的 Prometheus 采集。"""
+
+import asyncio
+import contextlib
+import html
+import logging
+import re
+import secrets
+from typing import Literal
+
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse, PlainTextResponse
+from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
+from pydantic import BaseModel, Field
+
+from . import agent as ag
+from . import autoheal
+from . import chatbi
+from . import content as ct
+from . import demo_shop
+from . import digest as dg
+from . import extract as ex
+from . import minutes as mn
+from .telegram import OpsBot, Telegram
+from . import opsagent as ops
+from . import triage as tr
+from .config import Settings
+from .gateway import AIUnavailable, ChatResult, Gateway
+from .ledger import Ledger
+from .odoo import Odoo, OdooError
+from .rag import CaseQA, load_chunks
+
+log = logging.getLogger("ai")
+
+# 对话里的联系方式：手机号、邮箱、带「微信 / wx / vx」前缀的微信号
+CONTACT_RE = re.compile(
+    r"(?<!\d)(1[3-9]\d{9})(?!\d)|([\w.+-]+@[\w-]+\.[\w.-]+)|(?:微信号?|wechat|wx|vx|v信)\s*[:：是为]?\s*([A-Za-z][-_A-Za-z0-9]{5,19})",
+    re.I,
+)
+
+
+def find_contact(text: str) -> str | None:
+    m = CONTACT_RE.search(text)
+    return next((g for g in m.groups() if g), None) if m else None
+# uvicorn 只配置了自己的日志；不加这行，索引就绪、模型调用失败这些记录在 kubectl logs 里看不到
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# httpx 的 INFO 日志会打出完整 URL，Telegram 的 URL 里带机器人 token
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+# 每完成一次，估算替人省下的分钟数（查资料、手工录入的大致耗时，页面上会注明是估算）
+SAVED_MIN = {"ask": 5, "extract": 3, "triage": 3, "minutes": 20, "chatbi": 15, "agent": 10, "content": 30, "opsagent": 20, "digest": 15}
+MAX_UPLOAD = 2 * 1024 * 1024
+MAX_AUDIO = int(2.5 * 1024 * 1024)  # Ingress 限制请求体 3MB
+SAMPLE_RE = re.compile(r"^[a-z0-9-]{1,40}$")
+
+SPENT = Gauge("ai_spent_today_yuan", "今天已用的估算费用（元）")
+BUDGET = Gauge("ai_daily_budget_yuan", "每日费用上限（元）")
+INDEX_READY = Gauge("ai_index_ready", "案例库向量索引是否就绪")
+
+
+def create_app(
+    settings: Settings | None = None,
+    gateway: Gateway | None = None,
+    odoo: Odoo | None = None,
+    cluster: ops.Cluster | None = None,
+    telegram: Telegram | None = None,
+) -> FastAPI:
+    s = settings or Settings()
+    ledger = gateway.ledger if gateway else Ledger(s.data_dir / "ai.db")
+    gw = gateway or Gateway(s, ledger)
+    qa = CaseQA(gw, load_chunks(s.cases_dir))
+    bi_db = chatbi.ensure(s.data_dir)
+    erp = odoo or (Odoo(s.odoo_url, s.odoo_db, s.odoo_user, s.odoo_password) if s.odoo_password else None)
+    plans = ag.PlanStore()
+    k8s = cluster or ops.Cluster(s.prom_url)
+
+    async def ops_status() -> dict:
+        """服务器状态：集群概况 + 正在触发的告警（只读）。私人助理通过 /internal/ops/status 调用。"""
+        overview = await ops.run_tool(k8s, "cluster_overview", {})
+        alerts = await ops.run_tool(k8s, "list_alerts", {})
+        # 只算需要处理的：提示级（info / none）不算告警
+        firing = [a for a in alerts if a.get("state") == "firing" and a.get("severity") not in ("info", "none")]  # type: ignore[union-attr]
+        return {**overview, "alerts": firing}
+
+    healer = autoheal.Healer(gw, k8s, autoheal.IncidentStore(ledger._db, ledger._lock), s.heal_daily)
+
+    # 网站的 Telegram 机器人（Secret telegram-ops）：自愈审批按钮、访客留言、演示预约。私人助理用另一个机器人
+    tg = telegram or (Telegram(s.tg_token, s.tg_chat_id) if s.tg_token and s.tg_chat_id else None)
+    bot = OpsBot(tg, healer.on_button) if tg else None
+    if tg:
+        healer.notify = tg.send  # type: ignore[assignment]
+
+    async def build_index() -> None:
+        # 启动后在后台建索引，失败（比如还没配置密钥）每 10 分钟重试一次，不影响服务启动
+        while not qa.ready:
+            try:
+                await qa.build()
+                INDEX_READY.set(1)
+                log.info("知识库索引就绪：%d 段", len(qa.chunks))
+            except Exception as e:  # noqa: BLE001
+                log.warning("建索引失败，10 分钟后重试：%s", e)
+                await asyncio.sleep(600)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_: FastAPI):
+        task = asyncio.create_task(build_index())
+        poll = asyncio.create_task(bot.run()) if bot else None
+        yield
+        task.cancel()
+        if poll:
+            poll.cancel()
+        if tg:
+            await tg.close()
+        await gw.close()
+        if erp:
+            await erp.close()
+        await k8s.close()
+
+    app = FastAPI(title="ops-desk AI", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.qa = qa
+
+    def client_ip(req: Request) -> str:
+        # Traefik 用 externalTrafficPolicy: Local，X-Real-Ip 就是访客的真实地址
+        return req.headers.get("x-real-ip") or (req.headers.get("x-forwarded-for") or "").split(",")[0].strip() or (req.client.host if req.client else "-")
+
+    def guard(req: Request, feature: str) -> None:
+        if not ledger.take_quota(client_ip(req), feature, s.quota[feature]):
+            raise HTTPException(429, f"今天的体验次数已用完（每天 {s.quota[feature]} 次），明天再来")
+
+    def meta(r: ChatResult) -> dict:
+        return {"model": r.model, "tokens_in": r.tokens_in, "tokens_out": r.tokens_out, "cost": round(r.cost, 5), "seconds": round(r.seconds, 2)}
+
+    def meta_sum(rs: list[ChatResult]) -> dict:
+        """一个功能调用了多次模型时（转写 + 整理、生成 SQL + 解读），合计展示。"""
+        models = list(dict.fromkeys(r.model for r in rs))
+        return {
+            "model": " + ".join(models),
+            "tokens_in": sum(r.tokens_in for r in rs),
+            "tokens_out": sum(r.tokens_out for r in rs),
+            "cost": round(sum(r.cost for r in rs), 5),
+            "seconds": round(sum(r.seconds for r in rs), 2),
+        }
+
+    @app.exception_handler(AIUnavailable)
+    async def unavailable(_: Request, e: AIUnavailable):
+        return JSONResponse({"detail": str(e)}, status_code=503)
+
+    @app.get("/api/ai/health")
+    def health():
+        return {"status": "ok", "enabled": s.enabled, "index_ready": qa.ready}
+
+    @app.get("/api/ai/stats")
+    def stats():
+        out = ledger.summary()
+        out["budget"] = {"daily": s.daily_budget, "left": round(max(0.0, s.daily_budget - ledger.spent_today()), 3)}
+        out["enabled"] = s.enabled
+        return out
+
+    class HistMsg(BaseModel):
+        role: Literal["user", "assistant"]
+        content: str = Field(max_length=1500)
+
+    async def save_lead(ip: str, name: str, contact: str, company: str, need: str, chat: str) -> None:
+        """线索存进 ai.db，再推到我的 Telegram；推送失败不影响访客，记录已经在数据库里"""
+        lid = ledger.add_lead(ip, name, contact, company, need, chat)
+        if not tg:
+            return
+        e = html.escape
+        text = (
+            f"<b>💬 作品集新留言 #{lid}</b>\n"
+            f"称呼：{e(name) or '-'}\n联系方式：<code>{e(contact)}</code>\n公司：{e(company) or '-'}\n留言：{e(need)}"
+            + (f"\n\n<b>和 AI 助手的对话</b>\n{e(chat[-1500:])}" if chat else "")
+        )
+        try:
+            await tg.send(text)
+        except Exception as ex_:  # noqa: BLE001
+            log.warning("新线索推送 Telegram 失败：%s", ex_)
+
+    class AskIn(BaseModel):
+        question: str = Field(min_length=2, max_length=300)
+        history: list[HistMsg] = Field(default_factory=list, max_length=8)
+
+    @app.post("/api/ai/ask")
+    async def ask(body: AskIn, req: Request):
+        if not qa.ready:
+            gw.check_budget("ask")  # 没配置密钥时给出明确原因
+            raise HTTPException(503, "知识库还在准备中，请过几分钟再试")
+        guard(req, "ask")
+        question, history = body.question.strip(), [h.model_dump() for h in body.history]
+        note = ""
+        # 访客常常直接在对话框里报手机号或微信，而不去点「给我留言」：这里也当作线索推送
+        if contact := find_contact(question):
+            chat = "\n".join(f"{'访客' if h['role'] == 'user' else 'AI'}：{h['content']}" for h in history)
+            need = next((h["content"] for h in reversed(history) if h["role"] == "user"), "") or question
+            await save_lead(client_ip(req), "", contact, "", need, f"{chat}\n访客：{question}".strip())
+            note = f"访客刚刚在对话里留下了联系方式（{contact}），系统已经转给作者。请确认已收到，告诉访客作者本人会尽快回复，并可以继续回答问题。"
+        result, refs, cited = await qa.ask(question, history, note)
+        ledger.add_saved("ask", SAVED_MIN["ask"])
+        sources = [
+            {"n": i + 1, "id": c.case_id, "title": c.title, "section": c.section, "cited": (i + 1) in cited} for i, c in enumerate(refs)
+        ]
+        return {"answer": result.text, "sources": sources, "meta": meta(result)}
+
+    class LeadIn(BaseModel):
+        name: str = Field(default="", max_length=40)
+        contact: str = Field(min_length=3, max_length=80)
+        company: str = Field(default="", max_length=80)
+        need: str = Field(min_length=2, max_length=1000)
+        chat: str = Field(default="", max_length=4000)
+
+    @app.post("/api/ai/lead")
+    async def lead(body: LeadIn, req: Request):
+        """作品集 AI 助手里的留言：存进 ai.db，再推到我的 Telegram"""
+        guard(req, "lead")
+        await save_lead(client_ip(req), body.name.strip(), body.contact.strip(), body.company.strip(), body.need.strip(), body.chat.strip())
+        return {"ok": True}
+
+    # ── 客服 Agent 演示：Dify 里的 Agent 把这两个接口当工具（清源净水，虚构公司） ──
+    def demo_auth(req: Request) -> None:
+        if not s.demo_tool_token:
+            raise HTTPException(503, "演示工具未启用")
+        if not secrets.compare_digest(req.headers.get("x-demo-token", ""), s.demo_tool_token):
+            raise HTTPException(401, "令牌不对")
+
+    @app.get("/api/ai/demo/order")
+    def demo_order(order_id: str, req: Request):
+        """查订单：返回商品、状态、物流和安装安排"""
+        demo_auth(req)
+        return demo_shop.find_order(order_id[:20])
+
+    class BookingIn(BaseModel):
+        name: str = Field(min_length=1, max_length=20)
+        phone: str = Field(min_length=5, max_length=20)
+        address: str = Field(min_length=2, max_length=100)
+        time: str = Field(min_length=2, max_length=40)
+        service: str = Field(default="上门安装", max_length=40)
+
+    @app.post("/api/ai/demo/booking")
+    async def demo_booking(body: BookingIn, req: Request):
+        """预约上门：记一条并推送到我的 Telegram（演示时当场能看到）"""
+        demo_auth(req)
+        if not ledger.take_quota("demo-agent", "booking", s.demo_booking_daily):
+            raise HTTPException(429, "今天的演示预约次数已用完，明天再试")
+        bid = f"YY{secrets.randbelow(900000) + 100000}"
+        if tg:
+            e = html.escape
+            try:
+                await tg.send(
+                    f"<b>📅 客服 Agent 演示：新预约 {bid}</b>（清源净水，虚构公司）\n"
+                    f"{e(body.service)}｜{e(body.time)}\n{e(body.name)}，{e(body.phone)}\n{e(body.address)}"
+                )
+            except Exception as ex_:  # noqa: BLE001
+                log.warning("演示预约推送失败：%s", ex_)
+        return {"ok": True, "booking_id": bid, "message": f"已预约{body.service}，时间 {body.time}，师傅出发前会电话联系"}
+
+    @app.post("/api/ai/extract")
+    async def extract(req: Request, file: UploadFile | None = File(None), sample: str | None = Form(None)):
+        if sample:
+            if not SAMPLE_RE.match(sample):
+                raise HTTPException(400, "示例不存在")
+            path = s.samples_dir / f"{sample}.png"
+            if not path.is_file():
+                raise HTTPException(400, "示例不存在")
+            data = path.read_bytes()
+        elif file:
+            if file.content_type not in ("image/jpeg", "image/png", "image/webp"):
+                raise HTTPException(400, "只支持 JPG、PNG、WebP 图片")
+            data = await file.read(MAX_UPLOAD + 1)
+            if len(data) > MAX_UPLOAD:
+                raise HTTPException(400, "图片不能超过 2MB")
+        else:
+            raise HTTPException(400, "请上传图片或选择一个示例")
+        gw.check_budget("extract")
+        guard(req, "extract")
+        try:
+            result, doc, issues = await ex.extract(gw, data)
+        except (ValueError, OSError) as e:
+            raise HTTPException(422, f"无法识别：{e}") from e
+        ledger.add_saved("extract", SAVED_MIN["extract"])
+        return {"doc": doc, "issues": issues, "meta": meta(result)}
+
+    class TriageIn(BaseModel):
+        text: str = Field(min_length=5, max_length=2000)
+
+    @app.post("/api/ai/triage")
+    async def triage(body: TriageIn, req: Request):
+        gw.check_budget("triage")
+        guard(req, "triage")
+        try:
+            result, doc, reasons = await tr.triage(gw, body.text.strip())
+        except ValueError as e:
+            raise HTTPException(422, f"无法分析：{e}") from e
+        ledger.add_saved("triage", SAVED_MIN["triage"])
+        return {"ticket": doc, "reasons": reasons, "meta": meta(result)}
+
+    @app.post("/api/ai/minutes")
+    async def minutes(
+        req: Request, file: UploadFile | None = File(None), sample: str | None = Form(None), text: str | None = Form(None)
+    ):
+        if text is not None:
+            transcript = text.strip()
+            if not 10 <= len(transcript) <= 6000:
+                raise HTTPException(400, "文字要在 10～6000 字之间")
+            audio, ctype = None, ""
+        elif sample:
+            path = s.samples_dir / f"{sample}.mp3"
+            if not SAMPLE_RE.match(sample) or not path.is_file():
+                raise HTTPException(400, "示例不存在")
+            audio, ctype = path.read_bytes(), "audio/mpeg"
+        elif file:
+            ctype = (file.content_type or "").split(";")[0]
+            if ctype not in mn.AUDIO_TYPES:
+                raise HTTPException(400, "只支持 MP3、WAV、M4A、OGG、WebM 录音")
+            audio = await file.read(MAX_AUDIO + 1)
+            if len(audio) > MAX_AUDIO:
+                raise HTTPException(400, "录音不能超过 2.5MB（约 2 分钟）")
+        else:
+            raise HTTPException(400, "请上传录音、录一段或粘贴文字")
+        gw.check_budget("minutes")
+        guard(req, "minutes")
+        calls: list[ChatResult] = []
+        if audio is not None:
+            transcript, asr = await mn.transcribe(gw, audio, ctype)
+            if asr:
+                calls.append(asr)
+            if len(transcript.strip()) < 10:
+                raise HTTPException(422, "没有识别出足够的语音内容")
+        try:
+            result, doc, issues = await mn.summarize(gw, transcript)
+        except ValueError as e:
+            raise HTTPException(422, f"无法整理：{e}") from e
+        calls.append(result)
+        ledger.add_saved("minutes", SAVED_MIN["minutes"])
+        return {"transcript": transcript, "minutes": doc, "issues": issues, "cached": audio is not None and len(calls) == 1, "meta": meta_sum(calls)}
+
+    class BiIn(BaseModel):
+        question: str = Field(min_length=2, max_length=200)
+        role: str = Field(default="hq", pattern="^(hq|east)$")
+
+    @app.post("/api/ai/chatbi")
+    async def chatbi_ask(body: BiIn, req: Request):
+        gw.check_budget("chatbi")
+        guard(req, "chatbi")
+        try:
+            out = await chatbi.ask(gw, bi_db[body.role], body.role, body.question.strip())
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from e
+        ledger.add_saved("chatbi", SAVED_MIN["chatbi"])
+        calls = out.pop("calls")
+        return {**out, "meta": meta_sum(calls)}
+
+    class ContentIn(BaseModel):
+        source: str = Field(min_length=20, max_length=3000)
+        platforms: list[str] = Field(min_length=1, max_length=4)
+
+    @app.post("/api/ai/content")
+    async def content(body: ContentIn, req: Request):
+        platforms = list(dict.fromkeys(p for p in body.platforms if p in ct.PLATFORMS))
+        if not platforms:
+            raise HTTPException(400, "请至少选一个平台")
+        gw.check_budget("content")
+        guard(req, "content")
+        try:
+            versions, issues, fixed, calls = await ct.generate(gw, body.source.strip(), platforms)
+        except ValueError as e:
+            raise HTTPException(422, f"生成失败：{e}") from e
+        ledger.add_saved("content", SAVED_MIN["content"])
+        return {
+            "versions": [{"code": c, "name": ct.PLATFORMS[c]["name"], **versions.get(c, {}), "issues": issues.get(c, [])} for c in platforms],
+            "fixed": fixed,
+            "meta": meta_sum(calls),
+        }
+
+    class DigestIn(BaseModel):
+        items: list[str] = Field(min_length=2, max_length=30)
+
+    @app.post("/api/ai/digest")
+    async def digest(body: DigestIn, req: Request):
+        items = [t.strip() for t in body.items if t.strip()][:30]
+        if len(items) < 2 or sum(len(t) for t in items) > 8000:
+            raise HTTPException(400, "请提供 2～30 条消息，总共不超过 8000 字")
+        gw.check_budget("digest")
+        guard(req, "digest")
+        try:
+            result, doc, issues = await dg.brief(gw, items)
+        except ValueError as e:
+            raise HTTPException(422, f"整理失败：{e}") from e
+        ledger.add_saved("digest", SAVED_MIN["digest"])
+        return {"brief": doc, "issues": issues, "meta": meta(result)}
+
+    class OpsIn(BaseModel):
+        question: str = Field(min_length=2, max_length=500)
+
+    # Alertmanager 的 webhook（deploy/platform/kube-prometheus-stack.yaml 的 autoheal 接收器）。
+    # 不在 /api/ai 下面：Ingress 只把 /api/ai 转给 ai-api，这个地址只有集群内部能访问
+    @app.post("/internal/alertmanager")
+    async def alert_hook(req: Request):
+        if not k8s.enabled:
+            return {"started": 0}
+        return {"started": healer.on_webhook(await req.json())}
+
+    @app.get("/api/ai/heal/recent")
+    def heal_recent():
+        return {"items": autoheal.public_records(healer.store)}
+
+    @app.post("/api/ai/opsagent")
+    async def ops_agent(body: OpsIn, req: Request):
+        if not k8s.enabled:
+            raise HTTPException(503, "运维 Agent 只能在集群里运行（没有 ServiceAccount）")
+        gw.check_budget("opsagent")
+        guard(req, "opsagent")
+        answer, steps, calls = await ops.investigate(gw, k8s, body.question.strip(), public=True)
+        ledger.add_saved("opsagent", SAVED_MIN["opsagent"])
+        return {"answer": answer, "steps": steps, "meta": meta_sum(calls)}
+
+    class AgentIn(BaseModel):
+        instruction: str = Field(min_length=2, max_length=500)
+
+    def need_odoo() -> Odoo:
+        if not erp:
+            raise HTTPException(503, "办公 Agent 还没有连接 Odoo（未配置 ODOO_PASSWORD）")
+        return erp
+
+    @app.post("/api/ai/agent")
+    async def agent_ask(body: AgentIn, req: Request):
+        odoo_client = need_odoo()
+        gw.check_budget("agent")
+        guard(req, "agent")
+        try:
+            answer, sess, calls = await ag.ask(gw, odoo_client, body.instruction.strip())
+        except OdooError as e:
+            raise HTTPException(502, f"Odoo 暂时不可用：{e}") from e
+        ledger.add_saved("agent", SAVED_MIN["agent"])
+        plan_id = plans.put(ledger.visitor_id(client_ip(req)), sess.actions) if sess.actions else None
+        actions = [{"title": a["title"], "details": a["details"]} for a in sess.actions]
+        return {"answer": answer, "steps": sess.steps, "plan_id": plan_id, "actions": actions, "meta": meta_sum(calls)}
+
+    class ConfirmIn(BaseModel):
+        plan_id: str = Field(min_length=8, max_length=40)
+
+    @app.post("/api/ai/agent/confirm")
+    async def agent_confirm(body: ConfirmIn, req: Request):
+        odoo_client = need_odoo()
+        actions = plans.take(body.plan_id, ledger.visitor_id(client_ip(req)))
+        if actions is None:
+            raise HTTPException(404, "这组操作已过期或已执行，请重新提问")
+        return {"results": await ag.execute(odoo_client, actions, s.odoo_public_url)}
+
+    # 只给集群内的私人助理用：Ingress 只转发 /api/ai，这两个路径从外面访问不到
+    @app.get("/internal/ops/status")
+    async def internal_status():
+        if not k8s.enabled:
+            raise HTTPException(503, "没有集群访问权限")
+        return await ops_status()
+
+    @app.get("/internal/ops/cronjobs")
+    async def internal_cronjobs():
+        """所有命名空间的 CronJob，只留名字、时间表和运行状态"""
+        if not k8s.enabled:
+            raise HTTPException(503, "没有集群访问权限")
+        items = (await k8s.k8s("/apis/batch/v1/cronjobs"))["items"]  # type: ignore[index]
+        keep = ("schedule", "timeZone", "suspend")
+        return [
+            {"metadata": {"name": i["metadata"]["name"]}, "spec": {k: v for k, v in i["spec"].items() if k in keep}, "status": i.get("status") or {}}
+            for i in items
+        ]
+
+    @app.get("/metrics")
+    def metrics():
+        SPENT.set(ledger.spent_today())
+        BUDGET.set(s.daily_budget)
+        return PlainTextResponse(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+    return app
+

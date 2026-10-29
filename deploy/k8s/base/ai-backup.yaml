@@ -1,0 +1,92 @@
+# 每天把 AI 服务的数据（ai.db：费用账本、自愈记录、向量缓存）加密备份到 Cloudflare R2，写法和其他应用的备份相同。
+# 查数据的演示库（/data/chatbi/）启动时会自动重建，不备份。需要先在 ops-desk 命名空间创建 Secret backup-r2（docs/runbook.md 第 12 节「备份」）。
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-ai-api
+spec:
+  schedule: '10 5 * * *'
+  timeZone: Asia/Singapore
+  # 上一次还没跑完就跳过这一次，避免两个任务同时操作同一个 restic 仓库
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      # 结束一天后删除 Job：失败告警看的是失败的 Job，删掉后告警自动恢复
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          # 和 ai-api 用同一个用户，才能读到它创建的文件
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: snapshot
+              image: node:24.21.0-alpine
+              command: [node, /scripts/snapshot.mjs, /data/ai.db, /snapshot/ai.db]
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 500m, memory: 256Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                # 读 WAL 模式的数据库需要写共享内存文件（.db-shm），所以这里不能只读挂载
+                - { name: data, mountPath: /data }
+                - { name: snapshot, mountPath: /snapshot }
+                - { name: scripts, mountPath: /scripts }
+          containers:
+            - name: restic
+              image: restic/restic:0.19.1
+              command: [sh, /scripts/backup.sh]
+              env:
+                - name: BACKUP_HOST
+                  value: ai-api
+                # ai.db 由脚本的默认规则排除（用 /snapshot 里的副本）；演示库会自动重建
+                - name: BACKUP_EXCLUDES
+                  value: /data/chatbi
+                # R2 的区域固定为 auto
+                - name: AWS_DEFAULT_REGION
+                  value: auto
+                - name: RESTIC_CACHE_DIR
+                  value: /cache
+                - name: TMPDIR
+                  value: /cache
+              envFrom:
+                - secretRef:
+                    name: backup-r2
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 1000m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - { name: data, mountPath: /data, readOnly: true }
+                - { name: snapshot, mountPath: /snapshot, readOnly: true }
+                - { name: scripts, mountPath: /scripts }
+                - { name: cache, mountPath: /cache }
+          volumes:
+            # 和正在运行的 ai-api 挂同一个卷：同一节点上的多个 Pod 可以同时挂载 ReadWriteOnce 卷
+            - name: data
+              persistentVolumeClaim:
+                claimName: ai-data
+            - name: snapshot
+              emptyDir: {}
+            - name: cache
+              emptyDir: {}
+            - name: scripts
+              configMap:
+                name: backup-scripts

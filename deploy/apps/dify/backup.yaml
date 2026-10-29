@@ -1,0 +1,99 @@
+# 每天把 Dify 加密备份到 Cloudflare R2：数据库导出文件 + 上传的文件（知识库原文档等）。
+# Dify 跑在宿主机的 Docker Compose 里（deploy/server/install-dify.sh），所以分两步：
+#   1. 宿主机的 /etc/cron.d/dify-dump 每天用 pg_dumpall 导出数据库到 /opt/dify/backup/dify.sql.gz
+#   2. 这个 CronJob 用 hostPath 只读挂载导出文件和上传目录，用 restic 备份（和其他应用共用 backup.sh 和告警）
+# 向量库（Weaviate）不备份：恢复后在知识库里重新处理文档即可重建。
+# Secret backup-r2 由安装脚本从 ops-desk 命名空间复制过来（仓库路径换成 /dify），密钥不进仓库。
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-dify
+spec:
+  schedule: '10 4 * * *'
+  timeZone: Asia/Singapore
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          # Dify 上传目录的属主是 1001；导出文件是 644，任何用户都能读
+          securityContext:
+            runAsUser: 1001
+            runAsGroup: 1001
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: restic
+              image: restic/restic:0.19.1
+              # 导出文件超过 25 小时没更新，说明宿主机的导出任务坏了：直接失败，触发 BackupJobFailed 告警
+              command:
+                - sh
+                - -c
+                - |
+                  if [ -z "$(find /snapshot/dify.sql.gz -mmin -1500 2>/dev/null)" ]; then
+                    echo "数据库导出文件不存在或超过 25 小时没更新，检查宿主机的 /etc/cron.d/dify-dump" >&2
+                    exit 1
+                  fi
+                  exec sh /scripts/backup.sh
+              env:
+                - name: BACKUP_HOST
+                  value: dify
+                - name: AWS_DEFAULT_REGION
+                  value: auto
+                - name: RESTIC_CACHE_DIR
+                  value: /cache
+                - name: TMPDIR
+                  value: /cache
+              envFrom:
+                - secretRef:
+                    name: backup-r2
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 1000m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - { name: storage, mountPath: /data, readOnly: true }
+                - { name: dump, mountPath: /snapshot, readOnly: true }
+                - { name: scripts, mountPath: /scripts }
+                - { name: cache, mountPath: /cache }
+          volumes:
+            - name: storage
+              hostPath:
+                path: /opt/dify/docker/volumes/app/storage
+                type: Directory
+            - name: dump
+              hostPath:
+                path: /opt/dify/backup
+                type: Directory
+            - name: cache
+              emptyDir: {}
+            - name: scripts
+              configMap:
+                name: backup-scripts
+---
+# 允许运维 Agent 在这个命名空间自愈（权限定义见 deploy/k8s/base/ai.yaml 的 ai-api-heal）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-api-heal
+  namespace: dify
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ai-api-heal
+subjects:
+  - kind: ServiceAccount
+    name: ai-api
+    namespace: ops-desk

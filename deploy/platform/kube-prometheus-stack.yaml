@@ -1,0 +1,179 @@
+# kube-prometheus-stack：Prometheus、Alertmanager、Grafana、node-exporter、kube-state-metrics。
+# 由 k3s 内置的 helm-controller 安装，版本固定。这个 HelmChart 由 Argo CD 从 Git 同步（platform 应用），
+# 改完提交到 main 即可，helm-controller 发现变化后自动 helm upgrade。
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: kube-prometheus-stack
+  namespace: kube-system
+  annotations:
+    # 删除 HelmChart 等于卸载整个组件，Argo CD 永远不自动删除它（从 Git 里删掉也不删集群里的）
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  repo: https://prometheus-community.github.io/helm-charts
+  chart: kube-prometheus-stack
+  version: 92.3.0
+  targetNamespace: monitoring
+  createNamespace: true
+  valuesContent: |-
+    # 资源名短一些（默认是 kube-prometheus-stack-xxx）
+    fullnameOverride: kps
+
+    # k3s 把 etcd（实际是 sqlite）、scheduler、controller-manager、kube-proxy 打包在一个进程里，
+    # 没有单独的指标端口；不关掉的话这些采集目标和对应告警会一直报错
+    kubeEtcd: { enabled: false }
+    kubeControllerManager: { enabled: false }
+    kubeScheduler: { enabled: false }
+    kubeProxy: { enabled: false }
+    windowsMonitoring: { enabled: false }
+    defaultRules:
+      rules:
+        etcd: false
+        kubeControllerManager: false
+        kubeSchedulerAlerting: false
+        kubeSchedulerRecording: false
+        kubeProxy: false
+        windows: false
+      # 和自定义规则（deploy/monitoring/rules/ops-desk.yaml）重复的默认告警，关掉后同一个问题只收到一条：
+      # KubePodCrashLooping → PodRestartingOften，NodeFilesystemAlmostOutOfSpace → NodeDiskHigh / NodeDiskCritical，
+      # NodeMemoryHighUtilization → NodeMemoryHigh，KubeDeploymentReplicasMismatch → DeploymentReplicasLow。
+      # NodeFilesystemSpaceFillingUp 是按趋势预测「多久后写满」，和按阈值的 NodeDisk* 互补，保留
+      # CPUThrottlingHigh：单机小集群上 CPU 上限一紧就触发（提示级），持续告警没有可处理的事，关掉（2026-10-25）
+      disabled:
+        CPUThrottlingHigh: true
+        KubePodCrashLooping: true
+        NodeFilesystemAlmostOutOfSpace: true
+        NodeMemoryHighUtilization: true
+        KubeDeploymentReplicasMismatch: true
+
+    prometheus:
+      prometheusSpec:
+        # SPEC：保留 7 天，同时不超过 5G（系统盘只有 40G）
+        retention: 7d
+        retentionSize: 4GB
+        # 采集所有命名空间里的 ServiceMonitor / PrometheusRule，而不只是本 chart 创建的
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+        ruleSelectorNilUsesHelmValues: false
+        resources:
+          requests: { cpu: 100m, memory: 512Mi }
+          limits: { cpu: '1', memory: 1280Mi }
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: local-path
+              accessModes: [ReadWriteOnce]
+              resources:
+                requests: { storage: 5Gi }
+
+    alertmanager:
+      alertmanagerSpec:
+        # CPU 上限只封顶、不占用；200m 时常触发 CPUThrottlingHigh，放宽到 400m（2026-10-25）
+        resources:
+          requests: { cpu: 10m, memory: 32Mi }
+          limits: { cpu: 400m, memory: 96Mi }
+      config:
+        route:
+          receiver: wecom
+          group_by: [alertname, namespace]
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 4h
+          routes:
+            # 同一条告警同时交给运维 Agent 自愈（ai/app/autoheal.py），continue 让它继续往下走，照常发通知
+            - receiver: autoheal
+              matchers: ['severity =~ "warning|critical"', 'alertname !~ "Watchdog|InfoInhibitor|AIDailyBudgetReached|AIModelErrors"']
+              continue: true
+            # Watchdog 是「监控系统本身活着」的心跳告警，一直处于触发状态，不需要通知
+            - receiver: 'null'
+              matchers: ['alertname = "Watchdog"']
+            - receiver: 'null'
+              matchers: ['alertname = "InfoInhibitor"']
+            # info 级别（如 CPUThrottlingHigh）只在 Grafana 里看，不发通知，避免刷屏
+            - receiver: 'null'
+              matchers: ['severity = "info"']
+        receivers:
+          - name: 'null'
+          - name: autoheal
+            webhook_configs:
+              # 集群内部地址；Ingress 只转发 /api/ai，外网访问不到 /internal
+              - url: http://ai-api.ops-desk.svc/internal/alertmanager
+                send_resolved: true
+          - name: wecom
+            webhook_configs:
+              # 转发器把 Alertmanager 的格式转成企业微信群机器人的 markdown（见 wecom-relay/）
+              - url: http://wecom-relay.monitoring.svc:8080/alert
+                send_resolved: true
+        inhibit_rules:
+          # 同一条告警已经是严重级别时，不再重复发警告级别
+          - source_matchers: ['severity = "critical"']
+            target_matchers: ['severity = "warning"']
+            equal: [alertname, namespace]
+          # 名字不同但说的是同一件事的告警，只保留更严重的那条
+          - source_matchers: ['alertname = "NodeDiskCritical"']
+            target_matchers: ['alertname = "NodeDiskHigh"']
+            equal: [instance, mountpoint]
+          - source_matchers: ['alertname = "OpsDeskNoReplicas"']
+            target_matchers: ['alertname = "DeploymentReplicasLow"']
+            equal: [namespace, deployment]
+
+    grafana:
+      # 管理员账号密码从 Secret 读取，Secret 由人在服务器上创建，不进仓库
+      admin:
+        existingSecret: grafana-admin
+      # 不做持久化：数据源和仪表盘都由代码预置（dashboards/），重建服务器后完全一致
+      persistence: { enabled: false }
+      defaultDashboardsTimezone: browser
+      grafana.ini:
+        server:
+          root_url: https://grafana.liuxd.dev
+        users:
+          allow_sign_up: false
+        auth.anonymous:
+          enabled: false
+        analytics:
+          reporting_enabled: false
+          check_for_updates: false
+      ingress:
+        enabled: true
+        ingressClassName: traefik
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+          traefik.ingress.kubernetes.io/router.middlewares: monitoring-redirect-https@kubernetescrd
+        hosts: [grafana.liuxd.dev]
+        tls:
+          - secretName: grafana-tls
+            hosts: [grafana.liuxd.dev]
+      # 384Mi 时一周 OOMKilled 15 次（2026-10-26 周报），节点内存平均只用了 53%，放宽到 640Mi
+      resources:
+        requests: { cpu: 50m, memory: 192Mi }
+        limits: { cpu: 500m, memory: 640Mi }
+      sidecar:
+        resources:
+          requests: { cpu: 10m, memory: 32Mi }
+          limits: { cpu: 100m, memory: 128Mi }
+
+    kube-state-metrics:
+      resources:
+        requests: { cpu: 10m, memory: 32Mi }
+        limits: { cpu: 400m, memory: 128Mi }
+
+    prometheus-node-exporter:
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits: { cpu: 400m, memory: 64Mi }
+
+    prometheusOperator:
+      resources:
+        requests: { cpu: 20m, memory: 64Mi }
+        limits: { cpu: 200m, memory: 192Mi }
+      # Prometheus 和 Alertmanager Pod 里都有这个重载容器，100m 时启动和重载会被节流
+      prometheusConfigReloader:
+        resources:
+          requests: { cpu: 10m, memory: 16Mi }
+          limits: { cpu: 300m, memory: 64Mi }
+      admissionWebhooks:
+        patch:
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 64Mi }

@@ -1,0 +1,45 @@
+# Dify 不跑在 k3s 里：用官方 Docker Compose 跑在宿主机 /opt/dify（deploy/server/install-dify.sh），
+# 只监听 cni0 网卡 10.42.0.1:8088。这里用一个没有 selector 的 Service + 手写的 EndpointSlice 指向它，
+# 让 Traefik 像访问普通服务一样转发（EndpointSlice 由安装脚本创建：Argo CD 默认忽略这类资源），HTTPS 证书照常由 cert-manager 签发。
+apiVersion: v1
+kind: Service
+metadata:
+  name: dify
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8088
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dify
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: dify-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [dify.liuxd.dev]
+      secretName: dify-tls
+  rules:
+    - host: dify.liuxd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dify
+                port:
+                  name: http

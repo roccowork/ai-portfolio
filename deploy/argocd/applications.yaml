@@ -1,0 +1,174 @@
+# Argo CD 管理的全部应用。集群里的所有组件都从 Git 同步，服务器上不需要手动放任何清单。
+# 都开启自动同步：
+#   prune：Git 里删掉的资源，集群里也删掉（HelmChart 例外，见 deploy/platform/）
+#   selfHeal：有人手动改了集群，自动改回 Git 里的状态
+#   retry：失败后自动重试。全新集群上各组件互相依赖（比如告警规则要等 kube-prometheus-stack 装好 CRD），
+#          第一次同步失败是正常的，重试几次就会成功
+# 没有加 resources-finalizer：误删 Application 时不会连带删掉网站和监控资源。
+#
+# 仓库是公开的，Argo CD 不需要凭据就能拉取；只有 personal 应用（私有仓库 roccowork/ops-desk）用 SSH 部署密钥。
+#
+# root 应用同步的就是这个文件本身：在这里增删应用，提交到 main 后自动生效。
+# 只有首次安装时需要手动 kubectl apply 一次（docs/runbook.md 第 3 节）。
+#
+# 标签显示在 Argo CD 界面的应用卡片上，也可以在左侧按标签筛选（标签值只能用英文）：
+#   layer  分层：bootstrap 管理其他应用 / platform 集群基础组件 / monitoring 监控 / app 业务应用
+#   role   这个应用具体是什么
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  labels:
+    layer: bootstrap
+    role: app-of-apps
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/roccowork/ai-portfolio.git
+    targetRevision: main
+    path: deploy/argocd
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+---
+# 集群基础组件：Argo CD 自己、cert-manager、kube-prometheus-stack（k3s 的 HelmChart）和证书签发者
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform
+  namespace: argocd
+  labels:
+    layer: platform
+    role: argocd-certmanager-prometheus-traefik
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/roccowork/ai-portfolio.git
+    targetRevision: main
+    path: deploy/platform
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 10m }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ops-desk
+  namespace: argocd
+  labels:
+    layer: app
+    role: website
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/roccowork/ai-portfolio.git
+    targetRevision: main
+    path: deploy/k8s/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ops-desk
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # 命名空间由 Argo CD 创建（原来和 CI 账号写在一起，推送式部署下线后一并删除）
+      - CreateNamespace=true
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 10m }
+---
+# 私人助理（Telegram 机器人），代码在私有仓库，和网站分开部署
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: personal
+  namespace: argocd
+  labels:
+    layer: app
+    role: personal-assistant
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:roccowork/ops-desk.git
+    targetRevision: main
+    path: personal
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ops-desk
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 10m }
+---
+# 监控的附加部分：告警转发器、Uptime Kuma、Traefik 指标、告警规则、仪表盘。
+# kube-prometheus-stack 本身在 platform 应用里。
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-extras
+  namespace: argocd
+  labels:
+    layer: monitoring
+    role: alerts-dashboards-uptime
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/roccowork/ai-portfolio.git
+    targetRevision: main
+    path: deploy/monitoring
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # 全新集群上 ServiceMonitor、PrometheusRule 的 CRD 要等 kube-prometheus-stack 装好才有
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 10m }
+---
+# Dify（AI 应用搭建平台）：本体用 Docker Compose 跑在宿主机（deploy/server/install-dify.sh），这里只管域名和证书
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dify
+  namespace: argocd
+  labels:
+    layer: app
+    role: dify
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/roccowork/ai-portfolio.git
+    targetRevision: main
+    path: deploy/apps/dify
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dify
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 10m }

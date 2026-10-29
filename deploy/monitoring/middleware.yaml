@@ -1,0 +1,10 @@
+# HTTP 跳转 HTTPS。Traefik 默认不允许跨命名空间引用中间件，所以监控命名空间里单独建一个。
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: monitoring
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true

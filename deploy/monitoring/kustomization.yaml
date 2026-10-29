@@ -1,0 +1,51 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# 每个资源都写明了自己的命名空间（Traefik 的指标 Service 在 kube-system），这里不统一覆盖
+resources:
+  - namespace.yaml
+  - middleware.yaml
+  - wecom-relay.yaml
+  - weekly-report.yaml
+  - daily-english.yaml
+  - r2-usage.yaml
+  - uptime-kuma.yaml
+  - uptime-kuma-backup.yaml
+  - traefik-metrics.yaml
+  - ai-metrics.yaml
+  - rules/ops-desk.yaml
+# 备份脚本（ConfigMap backup-scripts），由 uptime-kuma-backup.yaml 使用
+components:
+  - ../backup
+configMapGenerator:
+  # 脚本内容变化时 ConfigMap 名字的哈希后缀会变，Deployment 随之滚动更新
+  - name: wecom-relay
+    namespace: monitoring
+    files:
+      - wecom-relay/relay.mjs
+  # 周报复用告警转发器的发送函数，所以两个文件放在同一个 ConfigMap 里
+  - name: weekly-report
+    namespace: monitoring
+    files:
+      - wecom-relay/weekly-report.mjs
+      - wecom-relay/relay.mjs
+  # 每日运维英语，同样复用发送函数
+  - name: daily-english
+    namespace: monitoring
+    files:
+      - wecom-relay/daily-english.mjs
+      - wecom-relay/words.json
+      - wecom-relay/relay.mjs
+  # R2 用量报告，同样复用发送函数
+  - name: r2-usage
+    namespace: monitoring
+    files:
+      - wecom-relay/r2-usage.mjs
+      - wecom-relay/relay.mjs
+  # 仪表盘：Grafana 的 sidecar 会自动加载带 grafana_dashboard=1 标签的 ConfigMap
+  - name: grafana-dashboards-ops-desk
+    namespace: monitoring
+    files:
+      - dashboards/ops-desk-overview.json
+    options:
+      labels:
+        grafana_dashboard: '1'

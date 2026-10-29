@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.astro/
+coverage/
+*.log
+
+# 密钥和凭据永远不进仓库
+.env
+.env.*
+*.pem
+*.key
+kubeconfig*
+*.kubeconfig
+
+# 商业规划，不进仓库
+业务方向规划.docx
+
+# AI 服务的本地虚拟环境和 Python 缓存
+ai/.venv/
+__pycache__/
+.pytest_cache/

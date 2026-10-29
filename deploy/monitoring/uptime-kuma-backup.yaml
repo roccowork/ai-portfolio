@@ -1,0 +1,98 @@
+# 每天把 Uptime Kuma 的数据（监控项、通知设置）加密备份到 Cloudflare R2，和云盘用同一套脚本（deploy/backup/）。
+# 需要先在 monitoring 命名空间手动创建 Secret backup-r2（步骤见 docs/runbook.md 第 9 节）。
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-uptime-kuma
+  namespace: monitoring
+spec:
+  # 和云盘的备份错开时间
+  schedule: '0 4 * * *'
+  timeZone: Asia/Singapore
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          # Uptime Kuma 以 root 运行，数据文件属于 root，备份任务也只能用 root 读取；其余权限全部去掉
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: snapshot
+              image: node:24.21.0-alpine
+              command: [node, /scripts/snapshot.mjs, /data/kuma.db, /snapshot/kuma.db]
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 500m, memory: 256Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - { name: data, mountPath: /data }
+                - { name: snapshot, mountPath: /snapshot }
+                - { name: scripts, mountPath: /scripts }
+          containers:
+            - name: restic
+              image: restic/restic:0.19.1
+              command: [sh, /scripts/backup.sh]
+              env:
+                - name: BACKUP_HOST
+                  value: uptime-kuma
+                - name: AWS_DEFAULT_REGION
+                  value: auto
+                - name: RESTIC_CACHE_DIR
+                  value: /cache
+                - name: TMPDIR
+                  value: /cache
+              envFrom:
+                - secretRef:
+                    name: backup-r2
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 1000m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - { name: data, mountPath: /data, readOnly: true }
+                - { name: snapshot, mountPath: /snapshot, readOnly: true }
+                - { name: scripts, mountPath: /scripts }
+                - { name: cache, mountPath: /cache }
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: uptime-kuma-data
+            - name: snapshot
+              emptyDir: {}
+            - name: cache
+              emptyDir: {}
+            - name: scripts
+              configMap:
+                name: backup-scripts
+---
+# 允许运维 Agent 在这个命名空间自愈（权限定义见 deploy/k8s/base/ai.yaml 的 ai-api-heal）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-api-heal
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ai-api-heal
+subjects:
+  - kind: ServiceAccount
+    name: ai-api
+    namespace: ops-desk

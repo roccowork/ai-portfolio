@@ -1,0 +1,55 @@
+---
+import Base from '../../layouts/Base.astro';
+import ChatBiBox from '../../components/ai/ChatBiBox.vue';
+import { BRAND } from '../../lib/site';
+---
+
+<Base
+  title={`ChatBI：一句话查数据 · ${BRAND.name}`}
+  description="用一句中文问销售数据，AI 写 SQL、程序在只读受限的连接上执行、画图并解读；不同角色只能看到自己权限内的数据。Text-to-SQL 在线演示。"
+>
+  <section class="bg-slate-950 py-16 text-white">
+    <div class="mx-auto max-w-4xl px-5">
+      <p class="text-sm font-semibold tracking-widest text-amber-300">在线体验 · ChatBI</p>
+      <h1 class="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">用一句话查数据</h1>
+      <p class="mt-4 max-w-2xl leading-relaxed text-slate-300">
+        直接问「上个月哪个区域下滑最多」，AI 写查询、出图、给结论。
+        <b class="text-white">演示数据</b>是一家虚构的办公用品公司 2025-01 至 2026-09 的销售记录。
+      </p>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-4xl px-5 py-12">
+    <ChatBiBox client:load />
+  </section>
+
+  <section class="bg-slate-50 py-16">
+    <div class="mx-auto max-w-4xl px-5 text-slate-600">
+      <h2 class="text-2xl font-bold tracking-tight text-slate-900">怎么做的</h2>
+      <ol class="mt-6 list-inside list-decimal space-y-2 leading-relaxed">
+        <li>
+          <b class="text-slate-900">告诉 AI 口径：</b>
+          提示词里写明有哪些表、每列什么意思，以及「销售额」「上月」「同比」怎么算（语义层）。口径统一写死，避免每个人问出不一样的数
+        </li>
+        <li>
+          <b class="text-slate-900">AI 写 SQL：</b>按固定格式输出 SQL
+          和画图方式；执行报错时把报错交给 AI 改一次
+        </li>
+        <li>
+          <b class="text-slate-900">程序管安全：</b>
+          数据库只读打开，只放行查询语句，增删改、改配置一律拒绝；一次最多返回 200 行，超过 2
+          秒自动中断。这些靠程序保证，不靠提示词
+        </li>
+        <li>
+          <b class="text-slate-900">权限在数据层：</b>「华东区经理」连的是只有华东数据的库，SQL
+          怎么写都看不到别的区域。切换身份问同一个问题试试
+        </li>
+        <li>
+          <b class="text-slate-900">解读：</b>查询结果再交给 AI，用一两句话给出结论和关键数字；SQL
+          可以展开核对
+        </li>
+      </ol>
+      <p class="mt-6 text-sm">每人每天可以查 20 次。</p>
+    </div>
+  </section>
+</Base>

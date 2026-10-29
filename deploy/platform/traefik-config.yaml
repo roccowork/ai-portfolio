@@ -1,0 +1,15 @@
+# k3s 自带 Traefik 的参数覆盖。k3s 用 HelmChartConfig 合并到它自己的 traefik HelmChart 上，
+# 由 helm-controller 重新部署 Traefik（会有几秒钟的连接中断）。
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    service:
+      spec:
+        # 保留访客的真实 IP。默认的 Cluster 模式下 ServiceLB 会做 SNAT，
+        # 所有访客 IP 都变成 10.42.0.1，访问统计和 Cloudreve 的登录记录都分不出人。
+        # 单节点上 Traefik 和入口在同一台机器，Local 模式没有副作用
+        externalTrafficPolicy: Local

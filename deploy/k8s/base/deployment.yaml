@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ops-desk
+  labels:
+    app.kubernetes.io/name: ops-desk
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # 先起新 Pod、就绪后再停旧 Pod，更新过程中可用副本数不低于 2
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ops-desk
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ops-desk
+    spec:
+      # 站点不需要访问 K8s API，不挂载 ServiceAccount token
+      automountServiceAccountToken: false
+      # 要大于下面 preStop 的等待时间，留出 nginx 处理完已有请求的时间
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          # 标签由 overlays 里的 images 字段替换成 commit SHA
+          image: ghcr.io/roccowork/ops-desk
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          # Pod 被删除时，"从转发名单摘除"和"nginx 退出"是同时发生的。
+          # 先等 5 秒再退出，让 Traefik 来得及更新，避免把请求转发给已退出的 Pod（滚动更新时出现 504）。
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 200m, memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            # 根文件系统只读，nginx 的 pid 和临时文件写在 /tmp
+            - name: tmp
+              mountPath: /tmp
+            # 平台实况数据（/status.json），由 CronJob ops-desk-status 每 10 分钟更新；
+            # 不用 subPath，ConfigMap 更新后 kubelet 会自动同步到 Pod 里
+            - name: status
+              mountPath: /usr/share/nginx/status
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+        # 第一次运行 CronJob 之前 ConfigMap 还不存在，optional 保证站点照常启动（/status.json 返回 404）
+        - name: status
+          configMap:
+            name: ops-desk-status
+            optional: true

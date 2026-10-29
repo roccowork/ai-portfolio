@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# 集群的基础组件：Argo CD、cert-manager、kube-prometheus-stack 的 HelmChart，证书签发者，以及 k3s 自带 Traefik 的参数覆盖。
+# 由 Argo CD 的 platform 应用同步；HelmChart 交给 k3s 的 helm-controller 实际安装和升级。
+# 资源各自写明了命名空间（HelmChart 在 kube-system，ClusterIssuer 不属于命名空间）
+resources:
+  - argocd.yaml
+  - cert-manager.yaml
+  - cluster-issuers.yaml
+  - kube-prometheus-stack.yaml
+  - traefik-config.yaml

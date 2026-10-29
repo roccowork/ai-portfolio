@@ -1,0 +1,13 @@
+# 备份脚本（Kustomize Component）：需要异地备份的应用在自己的 kustomization 里引用它，
+# 再写一个 CronJob 挂载生成的 ConfigMap backup-scripts。用法见 docs/runbook.md 第 9 节。
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+configMapGenerator:
+  - name: backup-scripts
+    files:
+      - backup.sh
+      - snapshot.mjs
+    options:
+      # 不加哈希后缀：CronJob 每次运行时才读取脚本，改脚本不需要触发任何滚动；
+      # 而且引用它的 kustomization 不一定统一设置命名空间，带哈希时名字可能改写不到 CronJob 上
+      disableNameSuffixHash: true

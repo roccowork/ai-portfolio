@@ -1,0 +1,702 @@
+[
+  {
+    "word": "deploy",
+    "ipa": "/dɪˈplɔɪ/",
+    "zh": "部署",
+    "example": "We deploy the new version every day.",
+    "exampleZh": "我们每天部署新版本。"
+  },
+  {
+    "word": "rollback",
+    "ipa": "/ˈroʊlbæk/",
+    "zh": "回滚",
+    "example": "The new version was bad, so we did a rollback.",
+    "exampleZh": "新版本有问题，所以我们回滚了。"
+  },
+  {
+    "word": "outage",
+    "ipa": "/ˈaʊtɪdʒ/",
+    "zh": "故障，停机",
+    "example": "The outage lasted ten minutes.",
+    "exampleZh": "这次故障持续了十分钟。"
+  },
+  {
+    "word": "incident",
+    "ipa": "/ˈɪnsɪdənt/",
+    "zh": "事件，事故",
+    "example": "We wrote a report after the incident.",
+    "exampleZh": "事故之后我们写了一份报告。"
+  },
+  {
+    "word": "alert",
+    "ipa": "/əˈlɝːt/",
+    "zh": "告警",
+    "example": "I got an alert at 3 a.m.",
+    "exampleZh": "我凌晨 3 点收到一条告警。"
+  },
+  {
+    "word": "threshold",
+    "ipa": "/ˈθreʃhoʊld/",
+    "zh": "阈值",
+    "example": "The disk alert threshold is 80 percent.",
+    "exampleZh": "磁盘告警的阈值是 80%。"
+  },
+  {
+    "word": "latency",
+    "ipa": "/ˈleɪtənsi/",
+    "zh": "延迟",
+    "example": "The latency went up after the update.",
+    "exampleZh": "更新之后延迟变高了。"
+  },
+  {
+    "word": "throughput",
+    "ipa": "/ˈθruːpʊt/",
+    "zh": "吞吐量",
+    "example": "We need more throughput for the sale day.",
+    "exampleZh": "促销那天我们需要更高的吞吐量。"
+  },
+  {
+    "word": "bottleneck",
+    "ipa": "/ˈbɑːtlnek/",
+    "zh": "瓶颈",
+    "example": "The database is the bottleneck.",
+    "exampleZh": "数据库是瓶颈。"
+  },
+  {
+    "word": "capacity",
+    "ipa": "/kəˈpæsəti/",
+    "zh": "容量",
+    "example": "We should plan capacity before the holiday.",
+    "exampleZh": "假期前我们应该做容量规划。"
+  },
+  {
+    "word": "scale out",
+    "ipa": "/skeɪl aʊt/",
+    "zh": "横向扩容",
+    "example": "We scaled out from two pods to four.",
+    "exampleZh": "我们从 2 个 Pod 扩到 4 个。"
+  },
+  {
+    "word": "replica",
+    "ipa": "/ˈreplɪkə/",
+    "zh": "副本",
+    "example": "Each service runs two replicas.",
+    "exampleZh": "每个服务运行两个副本。"
+  },
+  {
+    "word": "high availability",
+    "ipa": "/haɪ əˌveɪləˈbɪləti/",
+    "zh": "高可用",
+    "example": "Keepalived gives us high availability.",
+    "exampleZh": "Keepalived 给我们提供了高可用。"
+  },
+  {
+    "word": "failover",
+    "ipa": "/ˈfeɪloʊvər/",
+    "zh": "故障切换",
+    "example": "The failover to the backup node took five seconds.",
+    "exampleZh": "切换到备用节点用了 5 秒。"
+  },
+  {
+    "word": "redundancy",
+    "ipa": "/rɪˈdʌndənsi/",
+    "zh": "冗余",
+    "example": "We keep two copies for redundancy.",
+    "exampleZh": "我们保留两份副本作为冗余。"
+  },
+  {
+    "word": "single point of failure",
+    "ipa": "/ˈsɪŋɡl pɔɪnt əv ˈfeɪljər/",
+    "zh": "单点故障",
+    "example": "One server is a single point of failure.",
+    "exampleZh": "一台服务器就是单点故障。"
+  },
+  {
+    "word": "backup",
+    "ipa": "/ˈbækʌp/",
+    "zh": "备份",
+    "example": "The backup runs every night at 4 a.m.",
+    "exampleZh": "备份每天凌晨 4 点运行。"
+  },
+  {
+    "word": "restore",
+    "ipa": "/rɪˈstɔːr/",
+    "zh": "恢复",
+    "example": "Test the restore, not just the backup.",
+    "exampleZh": "要测试恢复，而不只是备份。"
+  },
+  {
+    "word": "retention",
+    "ipa": "/rɪˈtenʃn/",
+    "zh": "保留期限",
+    "example": "Our log retention is seven days.",
+    "exampleZh": "我们的日志保留 7 天。"
+  },
+  {
+    "word": "snapshot",
+    "ipa": "/ˈsnæpʃɑːt/",
+    "zh": "快照",
+    "example": "Take a snapshot before you upgrade.",
+    "exampleZh": "升级前先打个快照。"
+  },
+  {
+    "word": "upgrade",
+    "ipa": "/ˈʌpɡreɪd/",
+    "zh": "升级",
+    "example": "We upgraded Kubernetes last week.",
+    "exampleZh": "我们上周升级了 Kubernetes。"
+  },
+  {
+    "word": "patch",
+    "ipa": "/pætʃ/",
+    "zh": "补丁",
+    "example": "Install the security patch today.",
+    "exampleZh": "今天就安装安全补丁。"
+  },
+  {
+    "word": "vulnerability",
+    "ipa": "/ˌvʌlnərəˈbɪləti/",
+    "zh": "漏洞",
+    "example": "The scanner found a vulnerability in the image.",
+    "exampleZh": "扫描器在镜像里发现了一个漏洞。"
+  },
+  {
+    "word": "certificate",
+    "ipa": "/sərˈtɪfɪkət/",
+    "zh": "证书",
+    "example": "The certificate expires in 20 days.",
+    "exampleZh": "证书 20 天后过期。"
+  },
+  {
+    "word": "expire",
+    "ipa": "/ɪkˈspaɪər/",
+    "zh": "过期",
+    "example": "My password will expire next month.",
+    "exampleZh": "我的密码下个月过期。"
+  },
+  {
+    "word": "renew",
+    "ipa": "/rɪˈnuː/",
+    "zh": "续期",
+    "example": "cert-manager renews the certificate for us.",
+    "exampleZh": "cert-manager 帮我们自动续期证书。"
+  },
+  {
+    "word": "credential",
+    "ipa": "/krəˈdenʃl/",
+    "zh": "凭据",
+    "example": "Never put credentials in Git.",
+    "exampleZh": "不要把凭据放进 Git。"
+  },
+  {
+    "word": "secret",
+    "ipa": "/ˈsiːkrət/",
+    "zh": "密钥，Secret",
+    "example": "The API key is stored in a Kubernetes Secret.",
+    "exampleZh": "API 密钥存在 Kubernetes 的 Secret 里。"
+  },
+  {
+    "word": "permission",
+    "ipa": "/pərˈmɪʃn/",
+    "zh": "权限",
+    "example": "The job only has permission to read pods.",
+    "exampleZh": "这个任务只有读 Pod 的权限。"
+  },
+  {
+    "word": "least privilege",
+    "ipa": "/liːst ˈprɪvəlɪdʒ/",
+    "zh": "最小权限",
+    "example": "We follow the rule of least privilege.",
+    "exampleZh": "我们遵循最小权限原则。"
+  },
+  {
+    "word": "firewall",
+    "ipa": "/ˈfaɪərwɔːl/",
+    "zh": "防火墙",
+    "example": "Open port 443 on the firewall.",
+    "exampleZh": "在防火墙上放行 443 端口。"
+  },
+  {
+    "word": "port",
+    "ipa": "/pɔːrt/",
+    "zh": "端口",
+    "example": "Nginx listens on port 80.",
+    "exampleZh": "Nginx 监听 80 端口。"
+  },
+  {
+    "word": "DNS record",
+    "ipa": "/ˌdiː en ˈes ˈrekərd/",
+    "zh": "DNS 记录",
+    "example": "Add a DNS record for the new site.",
+    "exampleZh": "给新网站加一条 DNS 记录。"
+  },
+  {
+    "word": "resolve",
+    "ipa": "/rɪˈzɑːlv/",
+    "zh": "解析",
+    "example": "The name does not resolve.",
+    "exampleZh": "这个域名解析不出来。"
+  },
+  {
+    "word": "timeout",
+    "ipa": "/ˈtaɪmaʊt/",
+    "zh": "超时",
+    "example": "The request failed with a timeout.",
+    "exampleZh": "请求因为超时失败了。"
+  },
+  {
+    "word": "retry",
+    "ipa": "/ˌriːˈtraɪ/",
+    "zh": "重试",
+    "example": "The client will retry three times.",
+    "exampleZh": "客户端会重试三次。"
+  },
+  {
+    "word": "load balancer",
+    "ipa": "/loʊd ˈbælənsər/",
+    "zh": "负载均衡器",
+    "example": "The load balancer sends traffic to two servers.",
+    "exampleZh": "负载均衡器把流量分给两台服务器。"
+  },
+  {
+    "word": "reverse proxy",
+    "ipa": "/rɪˈvɝːs ˈprɑːksi/",
+    "zh": "反向代理",
+    "example": "Nginx works as a reverse proxy.",
+    "exampleZh": "Nginx 用作反向代理。"
+  },
+  {
+    "word": "upstream",
+    "ipa": "/ˈʌpstriːm/",
+    "zh": "上游（后端）",
+    "example": "The upstream server is down.",
+    "exampleZh": "上游服务器挂了。"
+  },
+  {
+    "word": "health check",
+    "ipa": "/ˈhelθ tʃek/",
+    "zh": "健康检查",
+    "example": "The health check failed, so the pod restarted.",
+    "exampleZh": "健康检查失败，所以 Pod 重启了。"
+  },
+  {
+    "word": "probe",
+    "ipa": "/proʊb/",
+    "zh": "探针",
+    "example": "The readiness probe checks /healthz.",
+    "exampleZh": "就绪探针检查 /healthz。"
+  },
+  {
+    "word": "container",
+    "ipa": "/kənˈteɪnər/",
+    "zh": "容器",
+    "example": "Each app runs in its own container.",
+    "exampleZh": "每个应用运行在自己的容器里。"
+  },
+  {
+    "word": "image",
+    "ipa": "/ˈɪmɪdʒ/",
+    "zh": "镜像",
+    "example": "We build a new image for every commit.",
+    "exampleZh": "每次提交我们都构建一个新镜像。"
+  },
+  {
+    "word": "registry",
+    "ipa": "/ˈredʒɪstri/",
+    "zh": "镜像仓库",
+    "example": "Push the image to the registry.",
+    "exampleZh": "把镜像推到镜像仓库。"
+  },
+  {
+    "word": "tag",
+    "ipa": "/tæɡ/",
+    "zh": "标签",
+    "example": "The image tag is the commit SHA.",
+    "exampleZh": "镜像标签就是提交号。"
+  },
+  {
+    "word": "pipeline",
+    "ipa": "/ˈpaɪplaɪn/",
+    "zh": "流水线",
+    "example": "The pipeline runs tests before deploy.",
+    "exampleZh": "流水线在部署前先跑测试。"
+  },
+  {
+    "word": "build",
+    "ipa": "/bɪld/",
+    "zh": "构建",
+    "example": "The build failed because a test failed.",
+    "exampleZh": "一个测试没过，所以构建失败了。"
+  },
+  {
+    "word": "merge",
+    "ipa": "/mɝːdʒ/",
+    "zh": "合并",
+    "example": "Renovate merges the update when CI passes.",
+    "exampleZh": "CI 通过后 Renovate 自动合并更新。"
+  },
+  {
+    "word": "pull request",
+    "ipa": "/pʊl rɪˈkwest/",
+    "zh": "合并请求，PR",
+    "example": "Please open a pull request for the change.",
+    "exampleZh": "请为这个改动提一个 PR。"
+  },
+  {
+    "word": "review",
+    "ipa": "/rɪˈvjuː/",
+    "zh": "审查",
+    "example": "Ask a teammate to review your code.",
+    "exampleZh": "请同事审查你的代码。"
+  },
+  {
+    "word": "commit",
+    "ipa": "/kəˈmɪt/",
+    "zh": "提交",
+    "example": "Write a short commit message.",
+    "exampleZh": "写一条简短的提交信息。"
+  },
+  {
+    "word": "branch",
+    "ipa": "/bræntʃ/",
+    "zh": "分支",
+    "example": "Do your work on a new branch.",
+    "exampleZh": "在新分支上工作。"
+  },
+  {
+    "word": "revert",
+    "ipa": "/rɪˈvɝːt/",
+    "zh": "撤销（提交）",
+    "example": "We used git revert to undo the change.",
+    "exampleZh": "我们用 git revert 撤销了这个改动。"
+  },
+  {
+    "word": "configuration",
+    "ipa": "/kənˌfɪɡjəˈreɪʃn/",
+    "zh": "配置",
+    "example": "The configuration lives in Git.",
+    "exampleZh": "配置放在 Git 里。"
+  },
+  {
+    "word": "drift",
+    "ipa": "/drɪft/",
+    "zh": "配置漂移",
+    "example": "Argo CD fixed the drift in one second.",
+    "exampleZh": "Argo CD 一秒内修正了配置漂移。"
+  },
+  {
+    "word": "idempotent",
+    "ipa": "/ˌaɪdemˈpoʊtnt/",
+    "zh": "幂等",
+    "example": "An Ansible playbook should be idempotent.",
+    "exampleZh": "Ansible playbook 应该是幂等的。"
+  },
+  {
+    "word": "provision",
+    "ipa": "/prəˈvɪʒn/",
+    "zh": "创建（资源）",
+    "example": "Terraform provisions the virtual machines.",
+    "exampleZh": "Terraform 负责创建虚拟机。"
+  },
+  {
+    "word": "inventory",
+    "ipa": "/ˈɪnvəntɔːri/",
+    "zh": "主机清单",
+    "example": "Add the new server to the inventory.",
+    "exampleZh": "把新服务器加到主机清单里。"
+  },
+  {
+    "word": "automate",
+    "ipa": "/ˈɔːtəmeɪt/",
+    "zh": "自动化",
+    "example": "We automate boring tasks with scripts.",
+    "exampleZh": "我们用脚本把重复的工作自动化。"
+  },
+  {
+    "word": "schedule",
+    "ipa": "/ˈskedʒuːl/",
+    "zh": "计划，定时",
+    "example": "The report is scheduled for 9 a.m.",
+    "exampleZh": "报告定在早上 9 点。"
+  },
+  {
+    "word": "cron job",
+    "ipa": "/ˈkrɑːn dʒɑːb/",
+    "zh": "定时任务",
+    "example": "A cron job cleans old logs every day.",
+    "exampleZh": "一个定时任务每天清理旧日志。"
+  },
+  {
+    "word": "log",
+    "ipa": "/lɔːɡ/",
+    "zh": "日志",
+    "example": "Check the logs first.",
+    "exampleZh": "先看日志。"
+  },
+  {
+    "word": "metric",
+    "ipa": "/ˈmetrɪk/",
+    "zh": "指标",
+    "example": "CPU usage is a basic metric.",
+    "exampleZh": "CPU 使用率是一个基础指标。"
+  },
+  {
+    "word": "dashboard",
+    "ipa": "/ˈdæʃbɔːrd/",
+    "zh": "仪表盘",
+    "example": "The dashboard shows the request rate.",
+    "exampleZh": "仪表盘显示请求速率。"
+  },
+  {
+    "word": "monitor",
+    "ipa": "/ˈmɑːnɪtər/",
+    "zh": "监控",
+    "example": "We monitor the site every minute.",
+    "exampleZh": "我们每分钟监控一次网站。"
+  },
+  {
+    "word": "uptime",
+    "ipa": "/ˈʌptaɪm/",
+    "zh": "在线时间，可用时长",
+    "example": "Our uptime last month was 99.9 percent.",
+    "exampleZh": "上个月我们的可用率是 99.9%。"
+  },
+  {
+    "word": "availability",
+    "ipa": "/əˌveɪləˈbɪləti/",
+    "zh": "可用性",
+    "example": "High availability needs at least two nodes.",
+    "exampleZh": "高可用至少需要两个节点。"
+  },
+  {
+    "word": "SLA",
+    "ipa": "/ˌes el ˈeɪ/",
+    "zh": "服务等级协议",
+    "example": "The SLA promises 99.9 percent uptime.",
+    "exampleZh": "SLA 承诺 99.9% 的可用率。"
+  },
+  {
+    "word": "root cause",
+    "ipa": "/ruːt kɔːz/",
+    "zh": "根本原因",
+    "example": "We found the root cause: the disk was full.",
+    "exampleZh": "我们找到了根本原因：磁盘满了。"
+  },
+  {
+    "word": "troubleshoot",
+    "ipa": "/ˈtrʌblʃuːt/",
+    "zh": "排查",
+    "example": "Let's troubleshoot the network first.",
+    "exampleZh": "我们先排查网络。"
+  },
+  {
+    "word": "workaround",
+    "ipa": "/ˈwɝːkəraʊnd/",
+    "zh": "临时解决办法",
+    "example": "Restarting the service is only a workaround.",
+    "exampleZh": "重启服务只是临时办法。"
+  },
+  {
+    "word": "postmortem",
+    "ipa": "/ˌpoʊstˈmɔːrtəm/",
+    "zh": "事后复盘",
+    "example": "The postmortem does not blame anyone.",
+    "exampleZh": "复盘不追究个人责任。"
+  },
+  {
+    "word": "on-call",
+    "ipa": "/ˈɑːn kɔːl/",
+    "zh": "值班",
+    "example": "I am on call this week.",
+    "exampleZh": "这周我值班。"
+  },
+  {
+    "word": "escalate",
+    "ipa": "/ˈeskəleɪt/",
+    "zh": "升级（上报）",
+    "example": "If you can't fix it in 30 minutes, escalate.",
+    "exampleZh": "30 分钟修不好就上报。"
+  },
+  {
+    "word": "maintenance window",
+    "ipa": "/ˈmeɪntənəns ˈwɪndoʊ/",
+    "zh": "维护窗口",
+    "example": "We upgrade the database in the maintenance window.",
+    "exampleZh": "我们在维护窗口升级数据库。"
+  },
+  {
+    "word": "downtime",
+    "ipa": "/ˈdaʊntaɪm/",
+    "zh": "停机时间",
+    "example": "The upgrade needs no downtime.",
+    "exampleZh": "这次升级不需要停机。"
+  },
+  {
+    "word": "rolling update",
+    "ipa": "/ˈroʊlɪŋ ˈʌpdeɪt/",
+    "zh": "滚动更新",
+    "example": "A rolling update replaces pods one by one.",
+    "exampleZh": "滚动更新会一个个替换 Pod。"
+  },
+  {
+    "word": "namespace",
+    "ipa": "/ˈneɪmspeɪs/",
+    "zh": "命名空间",
+    "example": "Each app has its own namespace.",
+    "exampleZh": "每个应用有自己的命名空间。"
+  },
+  {
+    "word": "node",
+    "ipa": "/noʊd/",
+    "zh": "节点",
+    "example": "The node is running out of memory.",
+    "exampleZh": "这个节点的内存快不够了。"
+  },
+  {
+    "word": "cluster",
+    "ipa": "/ˈklʌstər/",
+    "zh": "集群",
+    "example": "The cluster has one control plane node.",
+    "exampleZh": "集群有一个控制平面节点。"
+  },
+  {
+    "word": "storage",
+    "ipa": "/ˈstɔːrɪdʒ/",
+    "zh": "存储",
+    "example": "The database needs fast storage.",
+    "exampleZh": "数据库需要快速存储。"
+  },
+  {
+    "word": "volume",
+    "ipa": "/ˈvɑːljuːm/",
+    "zh": "卷",
+    "example": "The data is on a persistent volume.",
+    "exampleZh": "数据放在持久卷上。"
+  },
+  {
+    "word": "mount",
+    "ipa": "/maʊnt/",
+    "zh": "挂载",
+    "example": "Mount the config file into the container.",
+    "exampleZh": "把配置文件挂载到容器里。"
+  },
+  {
+    "word": "disk usage",
+    "ipa": "/dɪsk ˈjuːsɪdʒ/",
+    "zh": "磁盘使用率",
+    "example": "Disk usage is 85 percent, please clean up.",
+    "exampleZh": "磁盘使用率 85%，请清理。"
+  },
+  {
+    "word": "memory leak",
+    "ipa": "/ˈmeməri liːk/",
+    "zh": "内存泄漏",
+    "example": "The app has a memory leak and restarts every day.",
+    "exampleZh": "应用有内存泄漏，每天都重启。"
+  },
+  {
+    "word": "process",
+    "ipa": "/ˈprɑːses/",
+    "zh": "进程",
+    "example": "Find the process that uses the most CPU.",
+    "exampleZh": "找出最占 CPU 的进程。"
+  },
+  {
+    "word": "service",
+    "ipa": "/ˈsɝːvɪs/",
+    "zh": "服务",
+    "example": "Restart the nginx service.",
+    "exampleZh": "重启 nginx 服务。"
+  },
+  {
+    "word": "daemon",
+    "ipa": "/ˈdiːmən/",
+    "zh": "守护进程",
+    "example": "The Docker daemon is not running.",
+    "exampleZh": "Docker 守护进程没有运行。"
+  },
+  {
+    "word": "environment variable",
+    "ipa": "/ɪnˈvaɪrənmənt ˈveriəbl/",
+    "zh": "环境变量",
+    "example": "Pass the password as an environment variable.",
+    "exampleZh": "把密码作为环境变量传进去。"
+  },
+  {
+    "word": "script",
+    "ipa": "/skrɪpt/",
+    "zh": "脚本",
+    "example": "I wrote a script to check all servers.",
+    "exampleZh": "我写了一个脚本检查所有服务器。"
+  },
+  {
+    "word": "dependency",
+    "ipa": "/dɪˈpendənsi/",
+    "zh": "依赖",
+    "example": "Update the dependencies every week.",
+    "exampleZh": "每周更新依赖。"
+  },
+  {
+    "word": "version",
+    "ipa": "/ˈvɝːʒn/",
+    "zh": "版本",
+    "example": "Which version is running in production?",
+    "exampleZh": "生产环境跑的是哪个版本？"
+  },
+  {
+    "word": "production",
+    "ipa": "/prəˈdʌkʃn/",
+    "zh": "生产环境",
+    "example": "Never test in production.",
+    "exampleZh": "不要在生产环境测试。"
+  },
+  {
+    "word": "staging",
+    "ipa": "/ˈsteɪdʒɪŋ/",
+    "zh": "预发布环境",
+    "example": "Try it in staging first.",
+    "exampleZh": "先在预发布环境试。"
+  },
+  {
+    "word": "documentation",
+    "ipa": "/ˌdɑːkjumenˈteɪʃn/",
+    "zh": "文档",
+    "example": "Good documentation saves time.",
+    "exampleZh": "好的文档能节省时间。"
+  },
+  {
+    "word": "runbook",
+    "ipa": "/ˈrʌnbʊk/",
+    "zh": "运维手册",
+    "example": "Follow the runbook step by step.",
+    "exampleZh": "按运维手册一步步做。"
+  },
+  {
+    "word": "checklist",
+    "ipa": "/ˈtʃeklɪst/",
+    "zh": "检查清单",
+    "example": "Use a checklist before every release.",
+    "exampleZh": "每次发布前用检查清单核对。"
+  },
+  {
+    "word": "requirement",
+    "ipa": "/rɪˈkwaɪərmənt/",
+    "zh": "需求",
+    "example": "Let's write down the requirements first.",
+    "exampleZh": "我们先把需求写下来。"
+  },
+  {
+    "word": "stakeholder",
+    "ipa": "/ˈsteɪkhoʊldər/",
+    "zh": "相关方",
+    "example": "Tell the stakeholders before the maintenance.",
+    "exampleZh": "维护前通知相关方。"
+  },
+  {
+    "word": "estimate",
+    "ipa": "/ˈestɪmət/",
+    "zh": "估计（工作量）",
+    "example": "It will take about two days, by my estimate.",
+    "exampleZh": "我估计需要两天左右。"
+  }
+]

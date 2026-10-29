@@ -1,0 +1,226 @@
+# 网站的 AI 服务：作品集问答、ChatBI、运维 Agent 等演示，以及统一的模型网关。
+# 模型调用走阿里云百炼，密钥放在 Secret ai-api（不进 Git，创建方法见 docs/runbook.md 第 12 节）；
+# Secret 不存在时服务照常启动，页面提示「AI 功能还没有启用」。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ai-data
+  annotations:
+    # 账本、自愈记录和向量缓存在这里；local-path 删 PVC 就删数据，Argo CD 清理时跳过它
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+# 运维 Agent 用的只读账号：能看 Pod、日志、事件、节点和工作负载，看不到 Secret 和 ConfigMap，什么都改不了。
+# 代码里还有一层命名空间白名单（ai/app/opsagent.py 的 NAMESPACES），日志脱敏后才交给模型。
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-api
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ai-api-readonly
+rules:
+  - apiGroups: ['']
+    resources: [pods, pods/log, events, nodes, namespaces, services]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets, replicasets]
+    verbs: [get, list]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [get, list]
+  - apiGroups: [batch]
+    resources: [cronjobs, jobs]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ai-api-readonly
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ai-api-readonly
+subjects:
+  - kind: ServiceAccount
+    name: ai-api
+    namespace: ops-desk
+---
+# 运维 Agent 自愈用的写权限（ai/app/autoheal.py）：只有下面 4 种操作，没有改配置、扩缩容、看 Secret 的权限。
+# 只通过 RoleBinding 绑在 ops-desk、monitoring、dify 三个命名空间（后两个的绑定在各自的目录里），其他命名空间动不了。
+# 代码里还有一层：模型只能从操作清单里提议，参数由代码校验，ai-api 不能动自己。
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ai-api-heal
+rules:
+  # 滚动重启（改 Pod 模板上的 restartedAt 注解，和 kubectl rollout restart 一样）
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [patch]
+  # 删除卡死的 Pod，由控制器重建
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [delete]
+  # 从 CronJob 补跑一次；补跑成功后删掉失败的旧 Job
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-api-heal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ai-api-heal
+subjects:
+  - kind: ServiceAccount
+    name: ai-api
+    namespace: ops-desk
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-api
+  labels:
+    app.kubernetes.io/name: ai-api
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  # SQLite 同一时间只能有一个写入者：先停旧的再起新的（更新时 AI 功能中断十几秒，站点本身不受影响）
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai-api
+    spec:
+      serviceAccountName: ai-api
+      # 运维 Agent 要用这个账号的 token 读 K8s API（权限见上面的 ai-api-readonly）
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: ghcr.io/roccowork/ops-desk-ai
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: ai-api
+                optional: true
+          env:
+            # 网站的 Telegram 机器人：自愈审批按钮、访客留言、演示预约（docs/runbook.md 第 16 节）。
+            # 和私人助理的机器人（Secret telegram-bot）分开：一个机器人只能有一个程序收消息。没建 Secret 就不启动
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef: { name: telegram-ops, key: token, optional: true }
+            - name: TELEGRAM_CHAT_ID
+              valueFrom:
+                secretKeyRef: { name: telegram-ops, key: chat_id, optional: true }
+          readinessProbe:
+            httpGet: { path: /api/ai/health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/ai/health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 20m, memory: 96Mi }
+            limits: { cpu: 500m, memory: 384Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ai-data
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-api
+  labels:
+    app.kubernetes.io/name: ai-api
+spec:
+  selector:
+    app.kubernetes.io/name: ai-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# 只把 /api/ai 交给 AI 服务（/metrics 不对外），并加上限流和请求体大小限制
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-api
+  labels:
+    app.kubernetes.io/name: ai-api
+  annotations:
+    # 证书由站点的 Ingress 签发，这里共用同一个 Secret，不再单独申请
+    traefik.ingress.kubernetes.io/router.middlewares: ops-desk-redirect-https@kubernetescrd,ops-desk-ai-ratelimit@kubernetescrd,ops-desk-ai-body@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [ops.liuxd.dev]
+      secretName: ops-desk-tls
+  rules:
+    - host: ops.liuxd.dev
+      http:
+        paths:
+          - path: /api/ai
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-api
+                port:
+                  name: http
+---
+# 每个来源 IP 平均每秒 1 个请求、最多连发 5 个；每天的次数和费用上限在应用里控制
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ai-ratelimit
+spec:
+  rateLimit:
+    average: 1
+    burst: 5
+---
+# 上传的单据图片不超过 2MB，留一点余量
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ai-body
+spec:
+  buffering:
+    maxRequestBodyBytes: 3145728

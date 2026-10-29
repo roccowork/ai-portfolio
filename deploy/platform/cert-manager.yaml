@@ -1,0 +1,39 @@
+# 由 k3s 内置的 helm-controller 安装，不需要在服务器上装 helm 命令。
+# 这个 HelmChart 由 Argo CD 从 Git 同步（platform 应用），改完提交到 main 即可。
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: cert-manager
+  namespace: kube-system
+  annotations:
+    # 删除 HelmChart 等于卸载整个组件，Argo CD 永远不自动删除它（从 Git 里删掉也不删集群里的）
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  repo: https://charts.jetstack.io
+  chart: cert-manager
+  version: v1.21.2
+  targetNamespace: cert-manager
+  createNamespace: true
+  valuesContent: |-
+    crds:
+      enabled: true
+      keep: true
+    # 暴露证书到期时间等指标给 Prometheus（需要先装好 kube-prometheus-stack，才有 ServiceMonitor 这个资源类型）
+    prometheus:
+      servicemonitor:
+        enabled: true
+    resources:
+      requests: { cpu: 10m, memory: 64Mi }
+      limits: { cpu: 500m, memory: 192Mi }
+    webhook:
+      resources:
+        requests: { cpu: 10m, memory: 32Mi }
+        limits: { cpu: 200m, memory: 96Mi }
+    cainjector:
+      resources:
+        requests: { cpu: 10m, memory: 64Mi }
+        limits: { cpu: 500m, memory: 192Mi }
+    startupapicheck:
+      resources:
+        requests: { cpu: 10m, memory: 32Mi }
+        limits: { cpu: 200m, memory: 64Mi }

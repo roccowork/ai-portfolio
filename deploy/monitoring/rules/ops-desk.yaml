@@ -1,0 +1,139 @@
+# 自定义告警规则（SPEC 7.6）。summary / description 会原样出现在企业微信消息里。
+# 和 kube-prometheus-stack 默认规则重复的那几条，已在 deploy/platform/kube-prometheus-stack.yaml 的 defaultRules.disabled 里关掉，
+# 同一个问题只收到一条中文告警。
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ops-desk
+  namespace: monitoring
+spec:
+  groups:
+    - name: ops-desk.site
+      rules:
+        - alert: OpsDeskNoReplicas
+          expr: kube_deployment_status_replicas_available{namespace="ops-desk", deployment="ops-desk"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: 站点没有可用副本
+            description: ops-desk 的可用副本数为 0，网站无法访问。
+        # 站点层面：Traefik 统计的 5xx 比例和响应时间（和 Grafana 仪表盘用的是同一组指标）。
+        # 站点访问量小，加上「每秒至少 0.05 个请求」（5 分钟约 15 个）的条件，避免一两个请求出错就告警
+        - alert: OpsDeskHigh5xxRate
+          expr: |
+            sum(rate(traefik_service_requests_total{service="ops-desk-ops-desk-http@kubernetes", code=~"5.."}[5m]))
+              / sum(rate(traefik_service_requests_total{service="ops-desk-ops-desk-http@kubernetes"}[5m]))
+              * 100 > 5
+            and
+            sum(rate(traefik_service_requests_total{service="ops-desk-ops-desk-http@kubernetes"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: 站点 5xx 错误比例过高
+            description: '最近 5 分钟有 {{ $value | printf "%.1f" }}% 的请求返回 5xx，已持续 5 分钟。静态站点出现 5xx 通常是 Pod 或 nginx 异常。'
+        - alert: OpsDeskSlowResponses
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(traefik_service_request_duration_seconds_bucket{service="ops-desk-ops-desk-http@kubernetes"}[5m]))
+            ) > 1
+            and
+            sum(rate(traefik_service_requests_total{service="ops-desk-ops-desk-http@kubernetes"}[5m])) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: 站点响应变慢
+            description: '95% 的请求耗时在 {{ $value | printf "%.2f" }} 秒以内，超过 1 秒已持续 10 分钟（正常是几十毫秒）。检查节点 CPU、内存和网络。'
+    - name: ops-desk.workloads
+      rules:
+        # 所有 Deployment 通用（代替默认规则 KubeDeploymentReplicasMismatch）。
+        # 站点副本为 0 时由 OpsDeskNoReplicas（严重）通知，Alertmanager 会抑制这一条，不会重复
+        - alert: DeploymentReplicasLow
+          expr: |
+            kube_deployment_status_replicas_available < kube_deployment_spec_replicas
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Deployment 可用副本数不足
+            description: '{{ $labels.namespace }}/{{ $labels.deployment }} 可用 {{ $value }} 个，少于期望的副本数，已持续 10 分钟。'
+        - alert: PodRestartingOften
+          expr: increase(kube_pod_container_status_restarts_total[30m]) > 3
+          labels:
+            severity: warning
+          annotations:
+            summary: Pod 反复重启
+            description: '{{ $labels.namespace }}/{{ $labels.pod }} 的容器 {{ $labels.container }} 30 分钟内重启了 {{ $value | printf "%.0f" }} 次。'
+    - name: ops-desk.node
+      rules:
+        - alert: NodeMemoryHigh
+          expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: 节点内存使用率过高
+            description: 内存使用率 {{ $value | printf "%.0f" }}%，已持续 5 分钟。
+        - alert: NodeDiskHigh
+          expr: (1 - node_filesystem_avail_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/", fstype!~"tmpfs|overlay"}) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: 根分区磁盘使用率超过 80%
+            description: 当前 {{ $value | printf "%.0f" }}%。
+        - alert: NodeDiskCritical
+          expr: (1 - node_filesystem_avail_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/", fstype!~"tmpfs|overlay"}) * 100 > 90
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: 根分区磁盘使用率超过 90%
+            description: 当前 {{ $value | printf "%.0f" }}%，尽快清理。
+    - name: ops-desk.cert
+      rules:
+        - alert: CertificateExpiringSoon
+          expr: (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < 21
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: 证书 21 天内到期
+            description: '{{ $labels.namespace }}/{{ $labels.name }} 还有 {{ $value | printf "%.0f" }} 天到期。cert-manager 正常会在到期前 30 天自动续期，说明续期已经失败了一段时间，用 kubectl describe certificate 查看原因。'
+    # 异地备份（SPEC 里程碑 5）。备份任务的 CronJob 统一以 backup- 开头
+    - name: ops-desk.backup
+      rules:
+        - alert: BackupJobFailed
+          expr: kube_job_status_failed{job_name=~"backup-.*"} > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: 备份任务失败
+            description: '{{ $labels.namespace }}/{{ $labels.job_name }} 运行失败，用 kubectl logs 查看原因。失败的 Job 保留一天后自动删除，告警随之恢复。'
+        # 只在成功过至少一次之后才有这个指标；第一次部署后要手动跑一次备份
+        - alert: BackupStale
+          expr: time() - kube_cronjob_status_last_successful_time{cronjob=~"backup-.*"} > 26 * 3600
+          labels:
+            severity: warning
+          annotations:
+            summary: 超过 26 小时没有成功的备份
+            description: '{{ $labels.namespace }}/{{ $labels.cronjob }} 上次成功是 {{ $value | humanizeDuration }} 前。'
+    # AI 服务（让 AI 替你上班 · 实战项目）。费用上限在应用里强制执行，这里只负责通知
+    - name: ops-desk.ai
+      rules:
+        - alert: AIDailyBudgetReached
+          expr: ai_spent_today_yuan >= ai_daily_budget_yuan
+          labels:
+            severity: warning
+          annotations:
+            summary: AI 今日费用已达上限
+            description: '今天已用约 {{ $value | printf "%.2f" }} 元，所有 AI 功能暂停到明天（北京时间 0 点）。如果是被刷，查看 ai_blocked_total 和 Traefik 访问量。'
+        - alert: AIModelErrors
+          expr: sum(increase(ai_calls_total{outcome="error"}[15m])) >= 5
+          labels:
+            severity: warning
+          annotations:
+            summary: AI 模型调用连续失败
+            description: '15 分钟内失败 {{ $value | printf "%.0f" }} 次。先看 ai-api 日志：密钥失效、欠费或百炼服务故障都会出现这个告警。'

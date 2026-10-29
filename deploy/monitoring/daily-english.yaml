@@ -1,0 +1,58 @@
+# 每日运维英语：每天新加坡时间 09:15 发 5 个运维常用词和例句到企业微信群（和告警同一个群机器人、同一个 Secret wecom-bot）。
+# 脚本和词库在 wecom-relay/daily-english.mjs、words.json，由 kustomization 生成 ConfigMap 挂载。
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: daily-english
+  namespace: monitoring
+spec:
+  schedule: '15 9 * * *'
+  timeZone: Asia/Singapore
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      # 失败重试一次；企业微信限流时过一会再发通常就好了
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000 # 镜像自带的 node 用户
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: english
+              image: node:24.21.0-alpine
+              command: [node, /app/daily-english.mjs]
+              env:
+                - name: WECOM_KEY
+                  valueFrom:
+                    secretKeyRef: { name: wecom-bot, key: key, optional: true }
+                - name: TELEGRAM_BOT_TOKEN
+                  valueFrom:
+                    secretKeyRef: { name: telegram-bot, key: token, optional: true }
+                - name: TELEGRAM_CHAT_ID
+                  valueFrom:
+                    secretKeyRef: { name: telegram-bot, key: chat_id, optional: true }
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 200m, memory: 96Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: app
+                  mountPath: /app
+          volumes:
+            - name: app
+              configMap:
+                name: daily-english

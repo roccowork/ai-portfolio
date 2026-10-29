@@ -21,6 +21,7 @@ from . import chatbi
 from . import content as ct
 from . import demo_shop
 from . import dutybot
+from .evals import rag as rag_eval
 from . import digest as dg
 from . import extract as ex
 from . import minutes as mn
@@ -96,6 +97,32 @@ def create_app(
             r.raise_for_status()
             return dutybot.platform_text(r.json())
 
+    eval_lock = asyncio.Lock()
+    evals_running: set[asyncio.Task] = set()  # 保留任务引用，免得后台任务被回收
+
+    async def start_eval() -> str:
+        """RAG 评测要跑 1～2 分钟：后台跑，跑完再发结果，不卡住机器人"""
+        if eval_lock.locked():
+            return "评测正在跑，跑完会把结果发给你"
+        if not qa.ready:
+            return "知识库索引还没就绪，过几分钟再试"
+
+        async def job() -> None:
+            async with eval_lock:
+                try:
+                    out = await rag_eval.run(qa, gw)
+                    ledger.add_eval("rag", out)
+                    text = rag_eval.summary_text(out)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("RAG 评测失败：%s", e)
+                    text = f"RAG 评测失败：{html.escape(str(e)[:150])}"
+                if tg:
+                    await tg.send(text)
+
+        evals_running.add(t := asyncio.create_task(job()))
+        t.add_done_callback(evals_running.discard)
+        return f"📏 开始跑 RAG 评测：{len(rag_eval.load_cases())} 道题，大约 1～2 分钟，花几分钱。跑完把结果发给你"
+
     menu = [
         ("🖥 服务器状态", "status", "CPU、内存、磁盘和不正常的 Pod", lambda: dutybot.status_text(k8s)),
         ("🚨 当前告警", "alerts", "正在触发的告警", lambda: dutybot.alerts_text(k8s)),
@@ -103,6 +130,7 @@ def create_app(
         ("📊 平台实况", "live", "最近发布、可用率、备份、证书", platform),
         ("🗓 定时任务", "jobs", "服务器上的备份、周报等任务", lambda: dutybot.jobs_text(k8s)),
         ("💬 最近留言", "leads", "网站访客的留言", lambda: asyncio.to_thread(dutybot.leads_text, ledger)),
+        ("📏 RAG 评测", "eval", "跑一遍作品集问答的评测集", start_eval),
         ("💰 今日用量", "usage", "AI 演示今天的调用和费用", lambda: asyncio.to_thread(dutybot.usage_text, ledger, s.daily_budget)),
     ]
     bot = OpsBot(tg, healer.on_button, menu, dutybot.make_ask(gw, k8s), dutybot.HELP) if tg else None
@@ -417,6 +445,14 @@ def create_app(
         if not k8s.enabled:
             return {"started": 0}
         return {"started": healer.on_webhook(await req.json())}
+
+    # 最近一次评测的完整结果（每道题的问题、回答、检索到的资料、裁判理由），公开：题目和回答都是关于作品集的
+    @app.get("/api/ai/eval/latest")
+    def eval_latest(kind: str = "rag"):
+        out = ledger.latest_eval(kind)
+        if not out:
+            raise HTTPException(404, "还没有跑过评测")
+        return {**out, "history": ledger.eval_history(kind)}
 
     @app.get("/api/ai/heal/recent")
     def heal_recent():

@@ -1,0 +1,217 @@
+{
+  "_说明": "作品集问答（RAG）的评测集。docs：应该检索到的资料（ai/knowledge/ 的文件名）；keywords：答案里必须出现的要点，每一项用 | 分隔同义写法，全部命中才算答对；unanswerable：资料里没有答案，应该说资料里没写、不能编。改了资料要同步改这里",
+  "cases": [
+    {
+      "id": "o1",
+      "question": "作者想找什么工作？",
+      "docs": ["00-overview"],
+      "keywords": ["AI 应用开发|AI应用开发"]
+    },
+    {
+      "id": "o2",
+      "question": "作者以前做什么的？",
+      "docs": ["00-overview"],
+      "keywords": ["制造", "10 年|10年|十年"]
+    },
+    {
+      "id": "o3",
+      "question": "他是怎么转到 AI 开发的？",
+      "docs": ["00-overview"],
+      "keywords": ["自学", "Python"]
+    },
+    {
+      "id": "o4",
+      "question": "有哪些代表作？",
+      "docs": ["00-overview"],
+      "keywords": ["运维 Agent|运维Agent", "ChatBI", "GitOps"]
+    },
+    { "id": "o5", "question": "怎么联系作者？", "docs": ["00-overview"], "keywords": ["留言"] },
+    {
+      "id": "a1",
+      "question": "运维 Agent 能做什么？",
+      "docs": ["10-ops-agent"],
+      "keywords": ["告警", "自愈|自动处理|处理办法"]
+    },
+    {
+      "id": "a2",
+      "question": "运维 Agent 怎么保证不乱操作？",
+      "docs": ["10-ops-agent"],
+      "keywords": ["只读", "确认|审批"]
+    },
+    {
+      "id": "a3",
+      "question": "运维 Agent 最多调用几轮工具？",
+      "docs": ["10-ops-agent"],
+      "keywords": ["8"]
+    },
+    {
+      "id": "a4",
+      "question": "运维 Agent 能查哪些东西？",
+      "docs": ["10-ops-agent"],
+      "keywords": ["告警", "Pod"]
+    },
+    {
+      "id": "a5",
+      "question": "日志交给模型之前会做什么处理？",
+      "docs": ["10-ops-agent"],
+      "keywords": ["脱敏"]
+    },
+    {
+      "id": "a6",
+      "question": "重启服务这种操作是自动的吗？",
+      "docs": ["10-ops-agent"],
+      "keywords": ["Telegram|人确认|人点|手动确认"]
+    },
+    {
+      "id": "a7",
+      "question": "同一个故障会被反复自动处理吗？",
+      "docs": ["10-ops-agent"],
+      "keywords": ["6 小时|6小时|六小时"]
+    },
+    {
+      "id": "b1",
+      "question": "ChatBI 是什么？",
+      "docs": ["20-chatbi"],
+      "keywords": ["SQL", "数据"]
+    },
+    {
+      "id": "b2",
+      "question": "ChatBI 用的是真实数据吗？",
+      "docs": ["20-chatbi"],
+      "keywords": ["虚构|演示"]
+    },
+    {
+      "id": "b3",
+      "question": "ChatBI 怎么防止模型写出删除数据的 SQL？",
+      "docs": ["20-chatbi"],
+      "keywords": ["只读"]
+    },
+    {
+      "id": "b4",
+      "question": "华东区经理能看到华南的数据吗？",
+      "docs": ["20-chatbi"],
+      "keywords": ["不能|看不到|只"]
+    },
+    {
+      "id": "b5",
+      "question": "ChatBI 一次最多返回多少行？",
+      "docs": ["20-chatbi"],
+      "keywords": ["200"]
+    },
+    {
+      "id": "b6",
+      "question": "SQL 执行报错了怎么办？",
+      "docs": ["20-chatbi"],
+      "keywords": ["报错|错误", "改|修正|重试"]
+    },
+    {
+      "id": "g1",
+      "question": "网站是怎么部署上线的？",
+      "docs": ["30-gitops-platform"],
+      "keywords": ["Argo CD|ArgoCD", "Git"]
+    },
+    {
+      "id": "g2",
+      "question": "出问题了怎么回滚？",
+      "docs": ["30-gitops-platform"],
+      "keywords": ["git revert|revert"]
+    },
+    { "id": "g3", "question": "回滚要多久？", "docs": ["30-gitops-platform"], "keywords": ["89"] },
+    {
+      "id": "g4",
+      "question": "用了什么做监控？",
+      "docs": ["30-gitops-platform"],
+      "keywords": ["Prometheus", "Grafana"]
+    },
+    {
+      "id": "g5",
+      "question": "数据有备份吗？备份到哪里？",
+      "docs": ["30-gitops-platform"],
+      "keywords": ["restic", "R2"]
+    },
+    {
+      "id": "g6",
+      "question": "发布新版本时网站会中断吗？",
+      "docs": ["30-gitops-platform"],
+      "keywords": ["就绪|滚动|旧版本"]
+    },
+    {
+      "id": "g7",
+      "question": "CI 能直接操作集群吗？",
+      "docs": ["30-gitops-platform"],
+      "keywords": ["不|没有"]
+    },
+    {
+      "id": "w1",
+      "question": "AI 客服 Agent 是用什么做的？",
+      "docs": ["40-other-works"],
+      "keywords": ["Dify"]
+    },
+    {
+      "id": "w2",
+      "question": "你这个问答助手是怎么实现的？",
+      "docs": ["40-other-works"],
+      "keywords": ["向量|检索|RAG"]
+    },
+    {
+      "id": "w3",
+      "question": "模型网关有什么用？",
+      "docs": ["40-other-works"],
+      "keywords": ["降级|重试", "费用|记账|上限"]
+    },
+    {
+      "id": "f1",
+      "question": "代码能看吗？",
+      "docs": ["50-faq"],
+      "keywords": ["github.com/roccowork/ai-portfolio|ai-portfolio|公开"]
+    },
+    {
+      "id": "f2",
+      "question": "用的是哪家的大模型？",
+      "docs": ["50-faq", "00-overview"],
+      "keywords": ["百炼|通义|阿里"]
+    },
+    {
+      "id": "n1",
+      "question": "作者期望薪资多少？",
+      "docs": [],
+      "keywords": [],
+      "unanswerable": true
+    },
+    {
+      "id": "n2",
+      "question": "作者今年多大了？",
+      "docs": [],
+      "keywords": [],
+      "unanswerable": true
+    },
+    {
+      "id": "n3",
+      "question": "作者以前在哪家公司工作，公司叫什么名字？",
+      "docs": [],
+      "keywords": [],
+      "unanswerable": true
+    },
+    {
+      "id": "n4",
+      "question": "作者有几年 Java 开发经验？",
+      "docs": [],
+      "keywords": [],
+      "unanswerable": true
+    },
+    {
+      "id": "n5",
+      "question": "运维 Agent 一个月帮公司省了多少钱？",
+      "docs": [],
+      "keywords": [],
+      "unanswerable": true
+    },
+    {
+      "id": "n6",
+      "question": "作者做过区块链项目吗？",
+      "docs": [],
+      "keywords": [],
+      "unanswerable": true
+    }
+  ]
+}

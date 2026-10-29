@@ -622,6 +622,10 @@ AI 建的商机和报价单带「AI 创建」标签，在 Odoo 里按标签筛�
 
 值班台的常驻菜单都只读、不调用模型（`ai/app/dutybot.py`）：服务器状态、当前告警、自愈记录、平台实况（读站点的 `/status.json`，和网页 /live 同一份）、定时任务（所有 CronJob，说明在 `ai/app/schedules.py` 的 `KNOWN`，新增 CronJob 时顺手补一行）、最近留言、今日用量。直接打字提问交给运维 Agent（和网站值班台同一套工具，主人自己用可以查日志，日志先脱敏），每次调用模型。菜单在机器人里发 /start 出现。
 
+### 效果评测（RAG）
+
+值班台点「📏 RAG 评测」：用 `ai/app/evals/rag_cases.json` 的题目真实调用一遍问答（后台跑，1～2 分钟，约几毛钱以内），结果存进 `ai.db` 的 `eval_runs` 表，汇总发到 Telegram，完整明细公开在 `https://ops.liuxd.dev/api/ai/eval/latest`（带最近 10 次的汇总，看改动后指标变好还是变坏）。改了 `ai/knowledge/` 或问答的提示词后跑一次。裁判模型默认和回答同一个，可用 `EVAL_JUDGE_MODELS` 换。
+
 ### 创建网站的机器人（telegram-ops）
 
 没建这个 Secret 时 ai-api 照常运行，只是自愈审批、访客留言收不到推送（留言仍然存在 `ai.db` 里）。

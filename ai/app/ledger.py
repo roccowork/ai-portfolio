@@ -1,6 +1,7 @@
 """SQLite 小账本：每天的调用量和费用、访客配额、向量缓存。数据量很小，不需要单独的数据库服务。"""
 
 import hashlib
+import json
 import sqlite3
 import threading
 from datetime import datetime
@@ -35,6 +36,7 @@ class Ledger:
                 CREATE TABLE IF NOT EXISTS emb_cache (sha TEXT PRIMARY KEY, model TEXT, vec BLOB);
                 CREATE TABLE IF NOT EXISTS leads (id INTEGER PRIMARY KEY, ts TEXT, visitor TEXT,
                   name TEXT, contact TEXT, company TEXT, need TEXT, chat TEXT);
+                CREATE TABLE IF NOT EXISTS eval_runs (id INTEGER PRIMARY KEY, ts TEXT, kind TEXT, result TEXT);
                 """
             )
 
@@ -117,6 +119,22 @@ class Ledger:
             )
             self._db.commit()
         return int(cur.lastrowid or 0)
+
+    # ── 效果评测的结果（ai/app/evals/）──────────────
+    def add_eval(self, kind: str, result: dict) -> int:
+        with self._lock:
+            cur = self._db.execute("INSERT INTO eval_runs (ts, kind, result) VALUES (?,?,?)", (result.get("ts", ""), kind, json.dumps(result, ensure_ascii=False)))
+            self._db.commit()
+        return int(cur.lastrowid or 0)
+
+    def latest_eval(self, kind: str) -> dict | None:
+        row = self._db.execute("SELECT result FROM eval_runs WHERE kind=? ORDER BY id DESC LIMIT 1", (kind,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def eval_history(self, kind: str, limit: int = 10) -> list[dict]:
+        """最近几次的汇总（不带每道题的明细），看改了提示词之后指标是变好还是变坏"""
+        rows = self._db.execute("SELECT result FROM eval_runs WHERE kind=? ORDER BY id DESC LIMIT ?", (kind, limit)).fetchall()
+        return [{"ts": (r := json.loads(x[0]))["ts"], **r["summary"]} for x in rows]
 
     def leads(self, limit: int = 50) -> list[dict]:
         rows = self._db.execute("SELECT id, ts, name, contact, company, need FROM leads ORDER BY id DESC LIMIT ?", (limit,)).fetchall()

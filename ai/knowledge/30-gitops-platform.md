@@ -16,14 +16,14 @@ summary: 本站按生产标准部署在单节点 k3s 上：推送到 main 后 CI
 ## 监控和备份
 
 - kube-prometheus-stack（Prometheus、Alertmanager）和 Grafana 做监控，Uptime Kuma 做可用性探测
-- 告警推送到企业微信群；需要人确认的操作走 Telegram
+- 告警推送到 Telegram 的「值班台」机器人：运维 Agent 先查原因再推诊断，需要人确认的操作带「执行」按钮
 - 应用数据用 restic 每天加密备份到 Cloudflare R2
 - 证书由 cert-manager 自动签发和续期（Let's Encrypt）
 
 ## 安全
 
 - 容器以非 root 运行、只读根文件系统、去掉全部 capabilities
-- Secret 静态加密；Argo CD 用只读、只限本仓库的部署密钥拉取
+- Secret 静态加密；代码仓库是公开的，Argo CD 直接拉取，CI 不持有集群凭据
 - 依赖用 lockfile 锁定，基础镜像和组件全部固定版本，Renovate 自动提升级 PR
 
 ## 平台实况

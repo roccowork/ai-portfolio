@@ -18,6 +18,7 @@ from . import autoheal
 from . import chatbi
 from . import content as ct
 from . import demo_shop
+from . import dutybot
 from . import digest as dg
 from . import extract as ex
 from . import minutes as mn
@@ -86,7 +87,14 @@ def create_app(
 
     # 网站的 Telegram 机器人（Secret telegram-ops）：自愈审批按钮、访客留言、演示预约。私人助理用另一个机器人
     tg = telegram or (Telegram(s.tg_token, s.tg_chat_id) if s.tg_token and s.tg_chat_id else None)
-    bot = OpsBot(tg, healer.on_button) if tg else None
+    menu = [
+        ("🖥 服务器状态", "status", "CPU、内存、磁盘和不正常的 Pod", lambda: dutybot.status_text(k8s)),
+        ("🚨 当前告警", "alerts", "正在触发的告警", lambda: dutybot.alerts_text(k8s)),
+        ("🩹 自愈记录", "heal", "运维 Agent 最近处理的故障", lambda: asyncio.to_thread(dutybot.heal_text, healer.store)),
+        ("💬 最近留言", "leads", "网站访客的留言", lambda: asyncio.to_thread(dutybot.leads_text, ledger)),
+        ("💰 今日用量", "usage", "AI 演示今天的调用和费用", lambda: asyncio.to_thread(dutybot.usage_text, ledger, s.daily_budget)),
+    ]
+    bot = OpsBot(tg, healer.on_button, menu, dutybot.make_ask(gw, k8s), dutybot.HELP) if tg else None
     if tg:
         healer.notify = tg.send  # type: ignore[assignment]
 

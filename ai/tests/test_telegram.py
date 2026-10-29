@@ -1,4 +1,4 @@
-"""网站的 Telegram 机器人：只处理主人点的自愈按钮；给私人助理用的两个集群内接口。"""
+"""网站的 Telegram 机器人（值班台）：只理主人、自愈按钮、菜单、提问交给运维 Agent；给私人助理用的两个集群内接口。"""
 
 import asyncio
 import json
@@ -11,6 +11,7 @@ from app.config import Settings
 from app.gateway import Gateway
 from app.ledger import Ledger
 from app.main import create_app
+from app import autoheal, dutybot
 from app.telegram import OpsBot, Telegram
 
 
@@ -36,7 +37,7 @@ def test_ops_bot_only_handles_owner_buttons():
 
     bot = OpsBot(Telegram("T", "42", transport=fake_tg(sent)), on_button)
     asyncio.run(bot.handle(button("heal:ok:1", chat=999)))  # 陌生人
-    asyncio.run(bot.handle({"update_id": 2, "message": {"chat": {"id": 42}, "text": "你好"}}))  # 普通消息不理
+    asyncio.run(bot.handle({"update_id": 2, "message": {"chat": {"id": 999}, "text": "/start"}}))
     assert pressed == [] and sent == []
     asyncio.run(bot.handle(button("heal:ok:1")))
     assert pressed == ["heal:ok:1"]
@@ -79,3 +80,77 @@ def test_internal_endpoints_for_personal_assistant(tmp_path):
         }
     ]
 
+
+
+def msg(text: str, chat: int = 42) -> dict:
+    return {"update_id": 3, "message": {"chat": {"id": chat}, "text": text}}
+
+
+def test_menu_commands_and_questions():
+    sent: list = []
+    asked: list = []
+
+    async def status() -> str:
+        return "<b>🖥 服务器状态</b>  ✅ 正常"
+
+    async def ask(q: str) -> str:
+        asked.append(q)
+        return "内存高是因为 Prometheus 缓存"
+
+    async def on_button(_: str) -> str:
+        return ""
+
+    bot = OpsBot(Telegram("T", "42", transport=fake_tg(sent)), on_button, [("🖥 服务器状态", "status", "服务器状态", status)], ask, "帮助说明")
+    asyncio.run(bot.handle(msg("/start")))
+    method, body = sent[-1]
+    assert body["text"] == "帮助说明" and body["reply_markup"]["keyboard"] == [[{"text": "🖥 服务器状态"}, {"text": "❓ 帮助"}]]
+    asyncio.run(bot.handle(msg("🖥 服务器状态")))
+    asyncio.run(bot.handle(msg("/status@opsdesk_duty_bot")))
+    assert [b["text"] for _, b in sent[-2:]] == ["<b>🖥 服务器状态</b>  ✅ 正常"] * 2
+    assert asked == []  # 按钮不走模型
+    asyncio.run(bot.handle(msg("为什么内存这么高")))
+    assert asked == ["为什么内存这么高"] and sent[-1][1]["text"] == "内存高是因为 Prometheus 缓存"
+    assert "正在查" in sent[-2][1]["text"]
+
+
+def test_menu_error_is_reported_not_raised():
+    sent: list = []
+
+    async def broken() -> str:
+        raise RuntimeError("prometheus down")
+
+    async def on_button(_: str) -> str:
+        return ""
+
+    bot = OpsBot(Telegram("T", "42", transport=fake_tg(sent)), on_button, [("🚨 当前告警", "alerts", "告警", broken)])
+    asyncio.run(bot.handle(msg("🚨 当前告警")))
+    assert "查询失败" in sent[-1][1]["text"] and "prometheus down" in sent[-1][1]["text"]
+
+
+def test_duty_texts(tmp_path):
+    ledger = Ledger(tmp_path / "ai.db")
+    assert "还没有访客留言" in dutybot.leads_text(ledger)
+    ledger.add_lead("1.2.3.4", "王女士", "wx: wang<1>", "某公司", "想约面试", "")
+    text = dutybot.leads_text(ledger)
+    assert "王女士 · 某公司" in text and "wang&lt;1&gt;" in text and "想约面试" in text
+    assert "还剩 ¥1.50" in dutybot.usage_text(ledger, 1.5)
+    store = autoheal.IncidentStore(ledger._db, ledger._lock)
+    assert "没有需要处理的故障" in dutybot.heal_text(store)
+    assert "查不到" in asyncio.run(dutybot.status_text(ops.Cluster("http://prom", sa_dir=tmp_path / "none")))
+
+
+def test_alerts_text_lists_firing_alerts(tmp_path):
+    sa = tmp_path / "sa"
+    sa.mkdir()
+    (sa / "token").write_text("t")
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        alerts = [
+            {"labels": {"alertname": "KubePodCrashLooping", "severity": "warning", "namespace": "ops-desk", "pod": "ai-api-1"}, "state": "firing", "annotations": {"summary": "crash <x>"}},
+            {"labels": {"alertname": "Watchdog", "severity": "none"}, "state": "firing", "annotations": {}},
+        ]
+        return httpx.Response(200, json={"data": {"alerts": alerts}})
+
+    c = ops.Cluster("http://prom", "http://kube", sa_dir=sa, transport=httpx.MockTransport(handler))
+    text = asyncio.run(dutybot.alerts_text(c))
+    assert "🟡 <b>KubePodCrashLooping</b>  ops-desk / ai-api-1" in text and "crash &lt;x&gt;" in text and "Watchdog" not in text

@@ -14,8 +14,8 @@ export const PROFILE = {
   headline: '会 Python 开发、懂数据、能独立部署上线的 AI 应用工程师',
   intro:
     '10 年制造业 IT 背景，做 Agent、RAG、Text-to-SQL 这类能在企业里实际用起来的 AI 应用。这个网站本身就是作品：下面的演示都调用真实的大模型，跑在我自己搭建和运维的 K8s 集群上。',
-  /** 留空时不显示：仓库公开版本整理好、简历写好后再填 */
-  github: '',
+  /** 留空时不显示 */
+  github: 'https://github.com/roccowork/ai-portfolio',
   resume: '',
 };
 

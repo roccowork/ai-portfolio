@@ -195,7 +195,7 @@ class OpsData:
     def __init__(self, src: sqlite3.Connection, lock, path: Path, traffic: Callable[[], Awaitable[list]], deploys: Callable[[], Awaitable[list]]):
         self.src, self.src_lock, self.path = src, lock, path
         self.traffic, self.deploys = traffic, deploys
-        self.built_at = 0.0
+        self.built_at = float("-inf")  # 不能用 0：机器刚开机时 monotonic() 可能还不到 REFRESH
         self._lock = asyncio.Lock()
         for old in ("hq.db", "east.db"):  # 2026-10-29 以前的虚构销售库
             (path.parent / old).unlink(missing_ok=True)

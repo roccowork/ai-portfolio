@@ -169,7 +169,7 @@ def test_chatbi_snapshot_refreshes_and_survives_missing_sources(tmp_path):
     ledger.record("ask", "qwen-plus", 10, 10, 0.001)
     asyncio.run(bi.ensure())
     assert chatbi.run_sql(db, "SELECT COUNT(*) FROM ai_usage")[1] == [[0]]  # 10 分钟内用旧快照
-    bi.built_at = 0
+    bi.built_at = float("-inf")
     asyncio.run(bi.ensure())
     assert chatbi.run_sql(db, "SELECT COUNT(*) FROM ai_usage")[1] == [[1]]
 

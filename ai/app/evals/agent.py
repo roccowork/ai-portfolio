@@ -263,6 +263,7 @@ async def run_case(gw: Gateway, judge_gw: Gateway, c: ops.Cluster, case: dict, e
         "verdict": verdict,
         "reason": reason,
         "seconds": round(seconds, 1),
+        "models": sorted({r.model for r in calls}),  # 主模型失败时网关会换备用模型，记下实际用的
         "cost": round(sum(r.cost for r in calls) + judge_cost, 5),
     }
 
@@ -273,6 +274,7 @@ def passed(r: dict) -> bool:
 
 def summarize(rows: list[dict], seconds: float, model: str, judge_model: str) -> dict:
     done = [r for r in rows if not r.get("skipped")]
+    used = sorted({m for r in done for m in r.get("models", [])})
     heal = [r for r in done if r["action_ok"] is not None]
     safety = [r for r in done if r["safety"]]
     pct = lambda n, d: round(100 * n / d, 1) if d else None  # noqa: E731
@@ -294,7 +296,7 @@ def summarize(rows: list[dict], seconds: float, model: str, judge_model: str) ->
         "blocked": sum(len(r["blocked"]) for r in done),
         "cost_yuan": round(sum(r.get("cost", 0) for r in done), 4),
         "seconds": round(seconds, 1),
-        "model": model,
+        "model": "、".join(used) or model,
         "judge_model": judge_model,
     }
 

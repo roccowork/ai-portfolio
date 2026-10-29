@@ -25,6 +25,7 @@ from . import dutybot
 from . import opsdocs as od
 from .evals import agent as agent_eval
 from .evals import rag as rag_eval
+from .evals.queue import EvalQueue
 from . import digest as dg
 from . import extract as ex
 from . import minutes as mn
@@ -127,59 +128,57 @@ def create_app(
             r.raise_for_status()
             return dutybot.platform_text(r.json())
 
-    eval_lock = asyncio.Lock()
-    evals_running: set[asyncio.Task] = set()  # 保留任务引用，免得后台任务被回收
+    evals = EvalQueue()
+    EVAL_START = {"started": ("开始跑", ""), "queued": ("排队跑", "。前面还有评测在跑，跑完马上接着跑这个")}
 
     async def start_eval() -> str:
         """两套评测（作品集问答、运维知识库）要跑几分钟：后台跑，每跑完一套发一次结果，不卡住机器人"""
-        if eval_lock.locked():
-            return "评测正在跑，跑完会把结果发给你"
         sets = [("rag", "作品集问答评测", qa, rag_eval.CASES), ("ops-rag", "运维知识库评测", docs, rag_eval.OPS_CASES)]
         ready = [x for x in sets if x[2].ready]
         if not ready:
             return "知识库索引还没就绪，过几分钟再试"
 
         async def job() -> None:
-            async with eval_lock:
-                for kind, title, index, path in ready:
-                    try:
-                        out = await rag_eval.run(index, gw, rag_eval.load_cases(path), title=title)
-                        out["kind"] = kind
-                        ledger.add_eval(kind, out)
-                        text = rag_eval.summary_text(out)
-                    except Exception as e:  # noqa: BLE001
-                        log.warning("%s失败：%s", title, e)
-                        text = f"{title}失败：{html.escape(str(e)[:150])}"
-                    if tg:
-                        await tg.send(text)
-
-        evals_running.add(t := asyncio.create_task(job()))
-        t.add_done_callback(evals_running.discard)
-        n = sum(len(rag_eval.load_cases(x[3])) for x in ready)
-        return f"📏 开始跑评测：{'、'.join(x[1] for x in ready)}，共 {n} 道题，大约 2～3 分钟，花一两毛钱。每跑完一套发一次结果"
-
-    async def start_agent_eval() -> str:
-        """故障演练评测：在真实集群数据上注入故障，Agent 只读，自愈题的提议只记录不执行"""
-        if eval_lock.locked():
-            return "评测正在跑，跑完会把结果发给你"
-        cases = agent_eval.load_cases()
-
-        async def job() -> None:
-            async with eval_lock:
+            for kind, title, index, path in ready:
                 try:
-                    out = await agent_eval.run(gw, k8s, cases, extra_tools=runbook if docs.ready else None)
-                    ledger.add_eval("agent", out)
-                    text = agent_eval.summary_text(out)
+                    out = await rag_eval.run(index, gw, rag_eval.load_cases(path), title=title)
+                    out["kind"] = kind
+                    ledger.add_eval(kind, out)
+                    text = rag_eval.summary_text(out)
                 except Exception as e:  # noqa: BLE001
-                    log.warning("运维 Agent 评测失败：%s", e)
-                    text = f"运维 Agent 评测失败：{html.escape(str(e)[:150])}"
+                    log.warning("%s失败：%s", title, e)
+                    text = f"{title}失败：{html.escape(str(e)[:150])}"
                 if tg:
                     await tg.send(text)
 
-        evals_running.add(t := asyncio.create_task(job()))
-        t.add_done_callback(evals_running.discard)
+        n = sum(len(rag_eval.load_cases(x[3])) for x in ready)
+        state = evals.submit("RAG 评测", job)
+        if state == "dup":
+            return "RAG 评测已经在跑或在排队了，跑完会把结果发给你"
+        verb, note = EVAL_START[state]
+        return f"📏 {verb}评测：{'、'.join(x[1] for x in ready)}，共 {n} 道题，大约 2～3 分钟，花一两毛钱。每跑完一套发一次结果{note}"
+
+    async def start_agent_eval() -> str:
+        """故障演练评测：在真实集群数据上注入故障，Agent 只读，自愈题的提议只记录不执行"""
+        cases = agent_eval.load_cases()
+
+        async def job() -> None:
+            try:
+                out = await agent_eval.run(gw, k8s, cases, extra_tools=runbook if docs.ready else None)
+                ledger.add_eval("agent", out)
+                text = agent_eval.summary_text(out)
+            except Exception as e:  # noqa: BLE001
+                log.warning("运维 Agent 评测失败：%s", e)
+                text = f"运维 Agent 评测失败：{html.escape(str(e)[:150])}"
+            if tg:
+                await tg.send(text)
+
+        state = evals.submit("Agent 评测", job)
+        if state == "dup":
+            return "Agent 评测已经在跑或在排队了，跑完会把结果发给你"
         live = "真实集群数据" if k8s.enabled else "没有集群权限，只用注入的数据"
-        return f"🧪 开始跑运维 Agent 评测：{len(cases)} 道故障演练题（{live}），大约 3～5 分钟，花几毛钱。只读，不会动集群"
+        verb, note = EVAL_START[state]
+        return f"🧪 {verb}运维 Agent 评测：{len(cases)} 道故障演练题（{live}），大约 3～5 分钟，花几毛钱。只读，不会动集群{note}"
 
     menu = [
         ("🖥 服务器状态", "status", "CPU、内存、磁盘和不正常的 Pod", lambda: dutybot.status_text(k8s)),

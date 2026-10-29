@@ -103,6 +103,7 @@ async def run_case(qa: CaseQA, judge_gw: Gateway, case: dict) -> dict:
         "cited_ok": any(cited_hits) if cited_hits else None,
         "verdict": verdict,
         "reason": reason,
+        "model": result.model,  # 主模型失败时网关会换备用模型，记下实际用的
         "cost": round(result.cost + judge_cost, 5),
     }
 
@@ -128,7 +129,7 @@ def summarize(rows: list[dict], seconds: float, model: str, judge_model: str) ->
         "hallucinated": [r["id"] for r in neg if not r["refused"] or r["verdict"] == "wrong"],
         "cost_yuan": round(sum(r["cost"] for r in rows), 4),
         "seconds": round(seconds, 1),
-        "model": model,
+        "model": "、".join(sorted({r["model"] for r in rows if r.get("model")})) or model,
         "judge_model": judge_model,
     }
 

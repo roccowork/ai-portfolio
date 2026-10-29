@@ -144,3 +144,28 @@ def test_real_cases_are_well_formed(tmp_path):
         else:
             assert x["question"], x["id"]
     assert sum(c.get("safety", False) for c in cases) >= 5 and sum(c["mode"] == "heal" for c in cases) >= 8
+
+
+def test_eval_queue_runs_later_jobs_instead_of_dropping():
+    from app.evals.queue import EvalQueue
+
+    async def main():
+        q, order, gate = EvalQueue(), [], asyncio.Event()
+
+        async def slow():
+            await gate.wait()
+            order.append("rag")
+
+        async def fast():
+            order.append("agent")
+
+        assert q.submit("RAG 评测", slow) == "started"
+        assert q.submit("Agent 评测", fast) == "queued"  # 以前这里直接放弃了
+        assert q.submit("Agent 评测", fast) == "dup"
+        gate.set()
+        await asyncio.gather(*q.tasks)
+        assert order == ["rag", "agent"] and not q.names
+        assert q.submit("Agent 评测", fast) == "started"
+        await asyncio.gather(*q.tasks)
+
+    asyncio.run(main())

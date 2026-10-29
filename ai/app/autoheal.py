@@ -9,6 +9,7 @@
 - 每天最多分析 HEAL_DAILY 次告警（每次都要调用模型）"""
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
@@ -85,13 +86,17 @@ class IncidentStore:
                 """CREATE TABLE IF NOT EXISTS incidents (id INTEGER PRIMARY KEY, ts TEXT, fingerprint TEXT, alert TEXT, severity TEXT,
                    labels TEXT, started TEXT, diagnosis TEXT, action TEXT, risk TEXT, status TEXT, result TEXT, done_ts TEXT, resolved_ts TEXT)"""
             )
+            # 2026-10-29 加的列：告警本身的说明（annotations.summary），通知里先写清楚是什么告警
+            cols = {r[1] for r in db.execute("PRAGMA table_info(incidents)")}
+            if "summary" not in cols:
+                db.execute("ALTER TABLE incidents ADD COLUMN summary TEXT")
             db.commit()
 
-    def add(self, fp: str, alert: str, severity: str, labels: dict, started: str) -> int:
+    def add(self, fp: str, alert: str, severity: str, labels: dict, started: str, summary: str = "") -> int:
         with self.lock:
             cur = self.db.execute(
-                "INSERT INTO incidents (ts, fingerprint, alert, severity, labels, started, status) VALUES (?,?,?,?,?,?, 'analyzing')",
-                (datetime.now(timezone.utc).isoformat(), fp, alert, severity, json.dumps(labels, ensure_ascii=False), started),
+                "INSERT INTO incidents (ts, fingerprint, alert, severity, labels, started, status, summary) VALUES (?,?,?,?,?,?, 'analyzing', ?)",
+                (datetime.now(timezone.utc).isoformat(), fp, alert, severity, json.dumps(labels, ensure_ascii=False), started, summary),
             )
             self.db.commit()
             return int(cur.lastrowid or 0)
@@ -140,7 +145,15 @@ def card(inc: dict) -> str:
     """Telegram 消息（HTML）"""
     labels = inc["labels"]
     where = "/".join(x for x in (labels.get("namespace"), labels.get("pod") or labels.get("job_name") or labels.get("cronjob") or labels.get("deployment")) if x)
-    lines = [f"🛠 <b>自愈 #{inc['id']} · {escape(inc['alert'])}</b>" + (f"\n对象：{escape(where)}" if where else "")]
+    lines = [f"🛠 <b>自愈 #{inc['id']} · {escape(inc['alert'])}</b>"]
+    # 先说清楚是什么告警：级别、告警自己的说明、什么时候开始的
+    sev = {"critical": "🔴 严重", "warning": "🟡 警告"}.get(inc.get("severity") or "", inc.get("severity") or "")
+    started = ""
+    with contextlib.suppress(ValueError, TypeError):
+        started = fmt_time((inc.get("started") or "").replace("Z", "+00:00"))
+    lines.append("告警：" + " · ".join(x for x in (sev, escape(inc.get("summary") or ""), f"{started} 开始" if started else "") if x))
+    if where:
+        lines.append(f"对象：{escape(where)}")
     if inc["diagnosis"]:
         lines.append(f"分析：{escape(inc['diagnosis'])}")
     if a := inc["action"]:
@@ -203,7 +216,8 @@ class Healer:
                 # 告警转发器不再单独发原始告警，这里不能悄悄跳过：至少把告警本身推给人
                 self.spawn(self.notify_unanalyzed(a))
                 continue
-            iid = self.store.add(fp, labels.get("alertname", ""), labels.get("severity", ""), labels, a.get("startsAt") or "")
+            ann = a.get("annotations") or {}
+            iid = self.store.add(fp, labels.get("alertname", ""), labels.get("severity", ""), labels, a.get("startsAt") or "", ann.get("summary") or ann.get("description") or "")
             self.spawn(self.handle(iid, a))
             n += 1
         return n

@@ -5,7 +5,7 @@
  */
 
 export const BRAND = {
-  name: 'ops-desk',
+  name: 'Applied AI Lab',
   tagline: 'AI 应用开发作品集',
 };
 

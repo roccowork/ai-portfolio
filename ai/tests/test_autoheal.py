@@ -201,3 +201,21 @@ def test_analysis_error_is_sent(env):
 
     asyncio.run(go())
     assert len(sent) == 1 and "分析出错" in sent[0][0]
+
+
+def test_card_explains_the_alert_first(env):
+    h, script, _writes, sent, _ = env
+    script += ["原因：磁盘使用 86%。建议人工清理。"]
+    a = alert("NodeDiskHigh", "card1", namespace="monitoring")
+    a["annotations"] = {"summary": "根分区使用超过 85%"}
+
+    async def go():
+        h.on_webhook({"alerts": [a]})
+        await drain(h)
+
+    asyncio.run(go())
+    text = sent[0][0]
+    lines = text.split("\n")
+    assert lines[0].startswith("🛠 <b>自愈 #") and "NodeDiskHigh" in lines[0]
+    assert lines[1] == "告警：🟡 警告 · 根分区使用超过 85% · 10-28 09:00 开始"  # 新加坡时间
+    assert lines[2] == "对象：monitoring" and lines[3].startswith("分析：")

@@ -21,7 +21,10 @@ from pathlib import Path
 from ..gateway import AIUnavailable, Gateway
 from ..rag import CaseQA
 
-CASES = Path(__file__).with_name("rag_cases.json")
+CASES = Path(__file__).with_name("rag_cases.json")  # 作品集问答
+OPS_CASES = Path(__file__).with_name("ops_cases.json")  # 运维知识库（docs/ 的运维手册）
+# 资料全文不超过这么多字时整份交给裁判；超过了（运维手册有四万多字）只给这道题应该用到的章节和检索到的段落，省钱
+FULL_MATERIAL = 15000
 # 回答里出现这些说法，就算「说了资料里没有」
 REFUSAL = ("资料里没有", "没有写", "没有提到", "没有相关", "未提及", "没有说明", "没有透露", "无法确定", "不清楚", "暂无")
 
@@ -66,13 +69,28 @@ async def judge(gw: Gateway, question: str, answer: str, material: str, points: 
         return "error", "裁判输出不是 JSON", 0.0
 
 
-async def run_case(qa: CaseQA, judge_gw: Gateway, case: dict, material: str) -> dict:
+def expected(chunk, case: dict) -> bool:
+    """这段是不是这道题应该检索到的：作品集按文件名（docs），运维手册按章节路径里的文字（sections）"""
+    if case.get("sections"):
+        return any(sec in chunk.section for sec in case["sections"])
+    return chunk.case_id in set(case.get("docs") or [])
+
+
+def material_for(qa: CaseQA, case: dict, refs: list) -> str:
+    fmt = lambda c: f"《{c.title}》· {c.section}\n{c.text}"  # noqa: E731
+    if sum(len(c.text) for c in qa.chunks) <= FULL_MATERIAL:
+        return "\n\n".join(fmt(c) for c in qa.chunks)
+    picked = [c for c in qa.chunks if expected(c, case)] + [c for c in refs if not expected(c, case)]
+    return "\n\n".join(fmt(c) for c in picked)
+
+
+async def run_case(qa: CaseQA, judge_gw: Gateway, case: dict) -> dict:
     result, refs, cited = await qa.ask(case["question"])
-    retrieved = [c.case_id for c in refs]
-    want = set(case.get("docs") or [])
-    first = next((i + 1 for i, d in enumerate(retrieved) if d in want), None)
-    cited_docs = {retrieved[n - 1] for n in cited}
-    verdict, reason, judge_cost = await judge(judge_gw, case["question"], result.text, material, case.get("keywords"))
+    retrieved = [c.case_id if not case.get("sections") else c.section for c in refs]
+    hits = [expected(c, case) for c in refs]
+    first = next((i + 1 for i, h in enumerate(hits) if h), None)
+    cited_hits = [hits[n - 1] for n in cited]
+    verdict, reason, judge_cost = await judge(judge_gw, case["question"], result.text, material_for(qa, case, refs), case.get("keywords"))
     return {
         "id": case["id"],
         "question": case["question"],
@@ -82,7 +100,7 @@ async def run_case(qa: CaseQA, judge_gw: Gateway, case: dict, material: str) -> 
         "first_rank": first,
         "keywords_ok": keywords_ok(result.text, case.get("keywords") or []),
         "refused": refused(result.text),
-        "cited_ok": bool(cited_docs & want) if cited_docs else None,
+        "cited_ok": any(cited_hits) if cited_hits else None,
         "verdict": verdict,
         "reason": reason,
         "cost": round(result.cost + judge_cost, 5),
@@ -115,20 +133,19 @@ def summarize(rows: list[dict], seconds: float, model: str, judge_model: str) ->
     }
 
 
-async def run(qa: CaseQA, gw: Gateway, cases: list[dict] | None = None, concurrency: int = 4) -> dict:
+async def run(qa: CaseQA, gw: Gateway, cases: list[dict] | None = None, concurrency: int = 4, title: str = "作品集问答") -> dict:
     """跑完整个评测集，返回 {ts, summary, rows}。裁判用 EVAL_JUDGE_MODELS（没配就和回答用同一组模型）"""
     if not qa.ready:
         raise AIUnavailable("知识库索引还没就绪，过几分钟再试")
     cases = cases or load_cases()
     judge_models = gw.s.eval_judge_models or gw.s.chat_models
     judge_gw = Gateway(replace(gw.s, chat_models=judge_models), gw.ledger) if judge_models != gw.s.chat_models else gw
-    # 裁判看的是全部资料（每个文件的全文），而不只是这次检索到的几段：检索漏了也能判断回答对不对
-    material = "\n\n".join(f"《{c.title}》· {c.section}\n{c.text}" for c in qa.chunks)
+    # 裁判看的不只是这次检索到的几段，还有这道题应该用到的资料：检索漏了也能判断回答对不对（见 material_for）
     sem = asyncio.Semaphore(concurrency)
 
     async def one(case: dict) -> dict:
         async with sem:
-            return await run_case(qa, judge_gw, case, material)
+            return await run_case(qa, judge_gw, case)
 
     start = time.monotonic()
     try:
@@ -138,6 +155,7 @@ async def run(qa: CaseQA, gw: Gateway, cases: list[dict] | None = None, concurre
             await judge_gw.close()
     return {
         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "title": title,
         "summary": summarize(list(rows), time.monotonic() - start, gw.s.chat_models[0], judge_models[0]),
         "rows": list(rows),
     }
@@ -147,7 +165,7 @@ def summary_text(run_: dict) -> str:
     """Telegram 消息（HTML）"""
     s = run_["summary"]
     lines = [
-        f"<b>📏 RAG 评测</b>（{s['cases']} 道题，{s['seconds']} 秒，约 ¥{s['cost_yuan']}）",
+        f"<b>📏 {escape(run_.get('title', 'RAG 评测'))}</b>（{s['cases']} 道题，{s['seconds']} 秒，约 ¥{s['cost_yuan']}）",
         "",
         f"检索：命中@1 {s['hit_at_1']}% · 命中@3 {s['hit_at_3']}% · MRR {s['mrr']}",
         f"要点命中：{s['keyword_acc']}%",
@@ -160,5 +178,5 @@ def summary_text(run_: dict) -> str:
         lines += ["", "<b>需要看一下的题</b>"]
         for r in bad[:8]:
             lines.append(f"• {escape(r['id'])} {escape(r['question'])}：{escape(r['verdict'])}，{escape(r['reason'][:60])}")
-    lines += ["", f"回答模型 {escape(s['model'])}，裁判 {escape(s['judge_model'])}。明细：https://ops.liuxd.dev/api/ai/eval/latest"]
+    lines += ["", f"回答模型 {escape(s['model'])}，裁判 {escape(s['judge_model'])}。明细：https://ops.liuxd.dev/api/ai/eval/latest?kind={escape(run_.get('kind', 'rag'))}"]
     return "\n".join(lines)

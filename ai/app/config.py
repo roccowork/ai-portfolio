@@ -83,6 +83,8 @@ class Settings:
     payload_extra: dict = field(default_factory=dict)
     data_dir: Path = field(default_factory=lambda: Path(os.environ.get("AI_DATA_DIR", "/data")))
     cases_dir: Path = field(default_factory=lambda: Path(os.environ.get("AI_CASES_DIR", "/app/knowledge")))
+    # 运维知识库：镜像里的 docs/runbook.md、architecture.md、migrate-server.md（ai/app/opsdocs.py）
+    opsdocs_dir: Path = field(default_factory=lambda: Path(os.environ.get("AI_OPSDOCS_DIR", "/app/opsdocs")))
     samples_dir: Path = field(default_factory=lambda: Path(os.environ.get("AI_SAMPLES_DIR", "/app/samples")))
     timeout: float = field(default_factory=lambda: float(os.environ.get("AI_TIMEOUT", "60")))
 

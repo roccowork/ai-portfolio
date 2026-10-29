@@ -16,7 +16,7 @@
 - 用中文回复，简短、抓重点
 - 用户在对话里同意的改动直接提交并推送到 main，不用开分支和 PR（推送即触发 CI 和 GitOps 上线）。推送前必须跑通：`pnpm format:check && pnpm lint && pnpm check && pnpm test && pnpm build`；动了 AI 后端再跑 `cd ai && python -m pytest -q`
 - 改了 `ai/app/gateway.py`、`ledger.py`、`telegram.py`、`config.py` 的接口时注意：私有仓库的私人助理复用它们（固定在某个镜像版本上，升级前要在那边跑测试）
-- 只改 `docs/` 或 `*.md` 不会触发 CI（见 `.github/workflows/ci.yml` 的 paths-ignore）
+- 只改根目录 `*.md`、`docs/archive/` 不会触发 CI；`docs/runbook.md`、`architecture.md`、`migrate-server.md` 打包进 AI 镜像做运维知识库，改了会重新构建上线（见 `.github/workflows/ci.yml`）
 - Markdown 会被 Prettier 检查（`.prettierrc.json`），新增或修改 md 后运行 `pnpm format`
 - 案例和作品的状态必须如实标注，演示数据要写明是演示
 - 功能尽量做成真正有用的东西，用真实数据和真实文档（比如本仓库的运维手册、网站自己的运行数据），少用虚构的演示数据；确实只能用演示数据的，标清楚

@@ -10,3 +10,7 @@ docs
 ai/.venv
 **/__pycache__
 **/.pytest_cache
+# 例外放在最后（后面的规则优先）：运维知识库要用这三篇（deploy/docker/ai.Dockerfile）
+!docs/runbook.md
+!docs/architecture.md
+!docs/migrate-server.md

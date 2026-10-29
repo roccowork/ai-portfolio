@@ -15,6 +15,7 @@ const TOOL_NAMES: Record<string, string> = {
   pod_events: '查看最近的事件',
   promql: '查询监控指标',
   pod_logs: '查看日志',
+  search_runbook: '查运维手册',
 };
 
 const examples = [
@@ -22,6 +23,7 @@ const examples = [
   '最近有什么告警？',
   '哪个服务最占内存？',
   '网站最近一小时的访问量和错误率怎么样？',
+  '网站出问题了怎么回滚？',
 ];
 const question = ref('');
 const busy = ref(false);

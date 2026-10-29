@@ -16,7 +16,7 @@ from .ledger import Ledger
 from .telegram import to_html
 
 e = html.escape
-TOOL_ZH = {"list_alerts": "告警", "cluster_overview": "服务器概况", "list_pods": "Pod 状态", "pod_events": "事件", "promql": "监控指标", "pod_logs": "日志"}
+TOOL_ZH = {"search_runbook": "运维手册", "list_alerts": "告警", "cluster_overview": "服务器概况", "list_pods": "Pod 状态", "pod_events": "事件", "promql": "监控指标", "pod_logs": "日志"}
 
 HELP = """<b>我是 OPS 值班台</b>，负责网站和服务器这边的事：
 
@@ -29,7 +29,7 @@ HELP = """<b>我是 OPS 值班台</b>，负责网站和服务器这边的事：
 📏 <b>RAG 评测</b>：用评测集把作品集问答跑一遍（1～2 分钟，花几分钱），结果公开在 /api/ai/eval/latest
 💰 <b>今日用量</b>：AI 演示今天的调用次数、费用和剩余预算
 
-除了「RAG 评测」，按钮都不调用模型、不花钱。也可以直接打字问，比如「为什么内存这么高」，运维 Agent 会自己查（每次花几分钱）。
+除了「RAG 评测」，按钮都不调用模型、不花钱。也可以直接打字问，运维 Agent 会自己查（每次花几分钱）：问状态，比如「为什么内存这么高」，它查实时数据；问怎么做，比如「证书快过期怎么办」「怎么回滚」，它查本站的运维手册，按手册回答并写明出处。
 
 会主动推给你的：告警和运维 Agent 的诊断（需要确认的操作带「执行 / 忽略」按钮）、网站周报、R2 用量报告、访客新留言、客服 Agent 演示的预约。
 吃药、提醒、简报在另一个机器人（私人助理）。"""
@@ -177,14 +177,14 @@ async def jobs_text(k8s: ops.Cluster, tz: str = "Asia/Singapore") -> str:
     return "\n".join(lines)
 
 
-def make_ask(gw: Gateway, k8s: ops.Cluster) -> Callable[[str], Awaitable[str]]:
-    """直接打字的问题交给运维 Agent。主人自己用，可以查日志（日志先脱敏）。"""
+def make_ask(gw: Gateway, k8s: ops.Cluster, extra: dict | None = None) -> Callable[[str], Awaitable[str]]:
+    """直接打字的问题交给运维 Agent。主人自己用，可以查日志（日志先脱敏）；extra 里是「查运维手册」等额外工具。"""
 
     async def ask(question: str) -> str:
         if not k8s.enabled:
             return "运维 Agent 只能在集群里运行（没有集群权限）"
         gw.check_budget("opsagent")
-        answer, steps, _ = await ops.investigate(gw, k8s, question[:500], public=False)
+        answer, steps, _ = await ops.investigate(gw, k8s, question[:500], public=False, extra=extra)
         used = "、".join(dict.fromkeys(TOOL_ZH.get(s["tool"], s["tool"]) for s in steps if s.get("tool")))
         return to_html(answer) + (f"\n\n<i>查了：{e(used)}</i>" if used else "")
 

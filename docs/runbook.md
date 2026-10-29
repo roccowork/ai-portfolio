@@ -624,7 +624,7 @@ AI 建的商机和报价单带「AI 创建」标签，在 Odoo 里按标签筛�
 
 ### 效果评测（RAG）
 
-值班台点「📏 RAG 评测」：用 `ai/app/evals/rag_cases.json` 的题目真实调用一遍问答（后台跑，1～2 分钟，约几毛钱以内），结果存进 `ai.db` 的 `eval_runs` 表，汇总发到 Telegram，完整明细公开在 `https://ops.liuxd.dev/api/ai/eval/latest`（带最近 10 次的汇总，看改动后指标变好还是变坏）。改了 `ai/knowledge/` 或问答的提示词后跑一次。裁判模型默认和回答同一个，可用 `EVAL_JUDGE_MODELS` 换。
+值班台点「📏 RAG 评测」：依次用 `ai/app/evals/rag_cases.json`（作品集问答）和 `ops_cases.json`（运维知识库，也就是这份手册）的题目真实调用一遍问答（后台跑，1～2 分钟，约几毛钱以内），结果存进 `ai.db` 的 `eval_runs` 表，汇总发到 Telegram，完整明细公开在 `https://ops.liuxd.dev/api/ai/eval/latest`（运维知识库加 `?kind=ops-rag`）（带最近 10 次的汇总，看改动后指标变好还是变坏）。改了 `ai/knowledge/`、这几篇手册或问答的提示词后跑一次；手册改了导致题目过时，`ai/tests/test_opsdocs.py` 会在 CI 里报出来。裁判模型默认和回答同一个，可用 `EVAL_JUDGE_MODELS` 换。
 
 ### 创建网站的机器人（telegram-ops）
 

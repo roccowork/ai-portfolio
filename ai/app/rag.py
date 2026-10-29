@@ -68,6 +68,10 @@ SYSTEM = """你是一个 AI 应用开发作品集网站的 AI 助手，访客多
 
 
 class CaseQA:
+    # 子类（运维手册 opsdocs.OpsDocs）换掉这几个就能复用同一套检索和问答
+    system = SYSTEM
+    feature = "ask"
+
     def __init__(self, gateway: Gateway, chunks: list[Chunk]):
         self.gw = gateway
         self.chunks = chunks
@@ -112,13 +116,13 @@ class CaseQA:
         history = history or []
         # 检索时把上一句访客的话也带上：「那多少钱？」这种追问单独检索找不到对象
         last_user = next((h["content"] for h in reversed(history) if h["role"] == "user"), "")
-        qvec = (await self.gw.embed("ask", [f"{last_user}\n{question}".strip()]))[0]
+        qvec = (await self.gw.embed(self.feature, [f"{last_user}\n{question}".strip()]))[0]
         refs = self.search(qvec)
         material = "\n\n".join(f"[{i + 1}] 《{c.title}》· {c.section}\n{c.text}" for i, c in enumerate(refs))
         result = await self.gw.chat(
-            "ask",
+            self.feature,
             [
-                {"role": "system", "content": f"{SYSTEM}\n\n资料：\n{material}" + (f"\n\n系统提示：{note}" if note else "")},
+                {"role": "system", "content": f"{self.system}\n\n资料：\n{material}" + (f"\n\n系统提示：{note}" if note else "")},
                 *({"role": h["role"], "content": h["content"]} for h in history),
                 {"role": "user", "content": question},
             ],

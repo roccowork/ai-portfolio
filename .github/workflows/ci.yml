@@ -1,12 +1,13 @@
 name: CI
 
-# 只改文档不跑；同一个 PR 推了新提交就取消旧的运行（公开仓库的 Actions 不限分钟，这些设置是拆分前私有仓库省额度时留下的，留着也不碍事）
+# 只改归档文档和根目录 md 不跑；同一个 PR 推了新提交就取消旧的运行（公开仓库的 Actions 不限分钟，这些设置是拆分前私有仓库省额度时留下的，留着也不碍事）
 on:
   pull_request:
-    paths-ignore: ['docs/**', '*.md']
+    paths-ignore: ['docs/archive/**', 'docs/dify/**', '*.md']
   push:
     branches: [main]
-    paths-ignore: ['docs/**', '*.md']
+    # docs/ 下的运维手册、架构说明、迁移手册打包进 AI 镜像做运维知识库，改了要重新构建，所以不忽略
+    paths-ignore: ['docs/archive/**', 'docs/dify/**', '*.md']
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
@@ -87,7 +88,8 @@ jobs:
           fi
           echo "$files"
           # deploy/docker/ 是 Dockerfile，改了要重新构建
-          if echo "$files" | grep -qvE '^(deploy/|docs/|[^/]*\.md$)' || echo "$files" | grep -qE '^deploy/docker/'; then
+          # docs/ 里的运维知识库三篇（见 deploy/docker/ai.Dockerfile）改了也要重新构建 AI 镜像
+          if echo "$files" | grep -qvE '^(deploy/|docs/|[^/]*\.md$)' || echo "$files" | grep -qE '^(deploy/docker/|docs/(runbook|architecture|migrate-server)\.md$)'; then
             echo "build=true" >> "$GITHUB_OUTPUT"
           else
             echo "build=false" >> "$GITHUB_OUTPUT"; echo "只改了清单或文档，跳过构建"

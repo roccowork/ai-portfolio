@@ -21,6 +21,7 @@ from . import chatbi
 from . import content as ct
 from . import demo_shop
 from . import dutybot
+from . import opsdocs as od
 from .evals import rag as rag_eval
 from . import digest as dg
 from . import extract as ex
@@ -73,6 +74,8 @@ def create_app(
     ledger = gateway.ledger if gateway else Ledger(s.data_dir / "ai.db")
     gw = gateway or Gateway(s, ledger)
     qa = CaseQA(gw, load_chunks(s.cases_dir))
+    docs = od.OpsDocs(gw, od.load_doc_chunks(s.opsdocs_dir))
+    runbook = od.tool(docs)  # 运维 Agent 的「查运维手册」工具
     bi_db = chatbi.ensure(s.data_dir)
     erp = odoo or (Odoo(s.odoo_url, s.odoo_db, s.odoo_user, s.odoo_password) if s.odoo_password else None)
     plans = ag.PlanStore()
@@ -87,6 +90,7 @@ def create_app(
         return {**overview, "alerts": firing}
 
     healer = autoheal.Healer(gw, k8s, autoheal.IncidentStore(ledger._db, ledger._lock), s.heal_daily)
+    healer.extra_tools = runbook
 
     # 网站的 Telegram 机器人（Secret telegram-ops）：自愈审批按钮、访客留言、演示预约。私人助理用另一个机器人
     tg = telegram or (Telegram(s.tg_token, s.tg_chat_id) if s.tg_token and s.tg_chat_id else None)
@@ -101,27 +105,32 @@ def create_app(
     evals_running: set[asyncio.Task] = set()  # 保留任务引用，免得后台任务被回收
 
     async def start_eval() -> str:
-        """RAG 评测要跑 1～2 分钟：后台跑，跑完再发结果，不卡住机器人"""
+        """两套评测（作品集问答、运维知识库）要跑几分钟：后台跑，每跑完一套发一次结果，不卡住机器人"""
         if eval_lock.locked():
             return "评测正在跑，跑完会把结果发给你"
-        if not qa.ready:
+        sets = [("rag", "作品集问答评测", qa, rag_eval.CASES), ("ops-rag", "运维知识库评测", docs, rag_eval.OPS_CASES)]
+        ready = [x for x in sets if x[2].ready]
+        if not ready:
             return "知识库索引还没就绪，过几分钟再试"
 
         async def job() -> None:
             async with eval_lock:
-                try:
-                    out = await rag_eval.run(qa, gw)
-                    ledger.add_eval("rag", out)
-                    text = rag_eval.summary_text(out)
-                except Exception as e:  # noqa: BLE001
-                    log.warning("RAG 评测失败：%s", e)
-                    text = f"RAG 评测失败：{html.escape(str(e)[:150])}"
-                if tg:
-                    await tg.send(text)
+                for kind, title, index, path in ready:
+                    try:
+                        out = await rag_eval.run(index, gw, rag_eval.load_cases(path), title=title)
+                        out["kind"] = kind
+                        ledger.add_eval(kind, out)
+                        text = rag_eval.summary_text(out)
+                    except Exception as e:  # noqa: BLE001
+                        log.warning("%s失败：%s", title, e)
+                        text = f"{title}失败：{html.escape(str(e)[:150])}"
+                    if tg:
+                        await tg.send(text)
 
         evals_running.add(t := asyncio.create_task(job()))
         t.add_done_callback(evals_running.discard)
-        return f"📏 开始跑 RAG 评测：{len(rag_eval.load_cases())} 道题，大约 1～2 分钟，花几分钱。跑完把结果发给你"
+        n = sum(len(rag_eval.load_cases(x[3])) for x in ready)
+        return f"📏 开始跑评测：{'、'.join(x[1] for x in ready)}，共 {n} 道题，大约 2～3 分钟，花一两毛钱。每跑完一套发一次结果"
 
     menu = [
         ("🖥 服务器状态", "status", "CPU、内存、磁盘和不正常的 Pod", lambda: dutybot.status_text(k8s)),
@@ -130,10 +139,10 @@ def create_app(
         ("📊 平台实况", "live", "最近发布、可用率、备份、证书", platform),
         ("🗓 定时任务", "jobs", "服务器上的备份、周报等任务", lambda: dutybot.jobs_text(k8s)),
         ("💬 最近留言", "leads", "网站访客的留言", lambda: asyncio.to_thread(dutybot.leads_text, ledger)),
-        ("📏 RAG 评测", "eval", "跑一遍作品集问答的评测集", start_eval),
+        ("📏 RAG 评测", "eval", "跑一遍作品集问答和运维知识库的评测集", start_eval),
         ("💰 今日用量", "usage", "AI 演示今天的调用和费用", lambda: asyncio.to_thread(dutybot.usage_text, ledger, s.daily_budget)),
     ]
-    bot = OpsBot(tg, healer.on_button, menu, dutybot.make_ask(gw, k8s), dutybot.HELP) if tg else None
+    bot = OpsBot(tg, healer.on_button, menu, dutybot.make_ask(gw, k8s, runbook), dutybot.HELP) if tg else None
     if tg:
         healer.notify = tg.send  # type: ignore[assignment]
 
@@ -146,6 +155,14 @@ def create_app(
                 log.info("知识库索引就绪：%d 段", len(qa.chunks))
             except Exception as e:  # noqa: BLE001
                 log.warning("建索引失败，10 分钟后重试：%s", e)
+                await asyncio.sleep(600)
+        # 运维手册：建不好不影响作品集问答和其他功能，运维 Agent 查手册时会说「还没加载」
+        while docs.chunks and not docs.ready:
+            try:
+                await docs.build()
+                log.info("运维手册索引就绪：%d 段", len(docs.chunks))
+            except Exception as e:  # noqa: BLE001
+                log.warning("运维手册建索引失败，10 分钟后重试：%s", e)
                 await asyncio.sleep(600)
 
     @contextlib.asynccontextmanager
@@ -194,7 +211,7 @@ def create_app(
 
     @app.get("/api/ai/health")
     def health():
-        return {"status": "ok", "enabled": s.enabled, "index_ready": qa.ready}
+        return {"status": "ok", "enabled": s.enabled, "index_ready": qa.ready, "opsdocs_ready": docs.ready, "opsdocs_chunks": len(docs.chunks)}
 
     @app.get("/api/ai/stats")
     def stats():
@@ -464,7 +481,7 @@ def create_app(
             raise HTTPException(503, "运维 Agent 只能在集群里运行（没有 ServiceAccount）")
         gw.check_budget("opsagent")
         guard(req, "opsagent")
-        answer, steps, calls = await ops.investigate(gw, k8s, body.question.strip(), public=True)
+        answer, steps, calls = await ops.investigate(gw, k8s, body.question.strip(), public=True, extra=runbook)
         ledger.add_saved("opsagent", SAVED_MIN["opsagent"])
         return {"answer": answer, "steps": steps, "meta": meta_sum(calls)}
 

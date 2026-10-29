@@ -1,0 +1,153 @@
+{
+  "_说明": "运维知识库（docs/runbook.md、architecture.md、migrate-server.md）的评测集。sections：应该检索到的章节（章节路径里包含这段文字就算）；keywords 和 unanswerable 的含义同 rag_cases.json。只出手册里写得准的内容，改了手册要同步改这里",
+  "cases": [
+    {
+      "id": "r1",
+      "question": "网站出问题了怎么回滚？",
+      "sections": ["2. 回滚"],
+      "keywords": ["git revert|revert", "skip ci"]
+    },
+    {
+      "id": "r2",
+      "question": "回滚为什么不能用 kubectl rollout undo？",
+      "sections": ["2. 回滚"],
+      "keywords": ["selfHeal|改回"]
+    },
+    {
+      "id": "r3",
+      "question": "证书一直签不下来，Challenge 一直 pending 怎么办？",
+      "sections": ["4. 证书问题"],
+      "keywords": ["DNS|80"]
+    },
+    {
+      "id": "r4",
+      "question": "签证书报 rateLimited 怎么处理？",
+      "sections": ["4. 证书问题"],
+      "keywords": ["一小时|1 小时|staging"]
+    },
+    {
+      "id": "r5",
+      "question": "Pod 拉镜像报 ImagePullBackOff 401 怎么办？",
+      "sections": ["5. 常见故障"],
+      "keywords": ["Public|公开"]
+    },
+    {
+      "id": "r6",
+      "question": "滚动更新刚结束时偶尔 504 是什么原因？",
+      "sections": ["5. 常见故障"],
+      "keywords": ["preStop"]
+    },
+    {
+      "id": "r7",
+      "question": "计划维护时怎么避免一直收到告警？",
+      "sections": ["查看告警和静默"],
+      "keywords": ["静默|Silence"]
+    },
+    {
+      "id": "r8",
+      "question": "AI 服务每天的费用上限是多少？怎么改？",
+      "sections": ["费用和配额"],
+      "keywords": ["1.6", "AI_DAILY_BUDGET"]
+    },
+    {
+      "id": "r9",
+      "question": "页面提示「AI 功能还没有启用」怎么排查？",
+      "sections": ["AI 服务（作品集的 AI 后端） › 常见问题"],
+      "keywords": ["Secret"]
+    },
+    {
+      "id": "r10",
+      "question": "网站的 Telegram 机器人 telegram-ops 怎么创建？",
+      "sections": ["创建网站的机器人"],
+      "keywords": ["BotFather", "telegram-ops"]
+    },
+    {
+      "id": "r11",
+      "question": "怎么重新跑一遍 RAG 评测？",
+      "sections": ["效果评测（RAG）"],
+      "keywords": ["RAG 评测|值班台"]
+    },
+    {
+      "id": "r12",
+      "question": "PodRestartingOften 这个告警的触发条件是什么？",
+      "sections": ["告警规则"],
+      "keywords": ["30 分钟|30分钟", "3 次|3次"]
+    },
+    {
+      "id": "r13",
+      "question": "自定义的告警规则写在哪个文件？",
+      "sections": ["告警规则"],
+      "keywords": ["ops-desk.yaml"]
+    },
+    {
+      "id": "r14",
+      "question": "平台实况页面的数据是怎么来的？",
+      "sections": ["平台实况（/live）"],
+      "keywords": ["CronJob", "10 分钟|10分钟"]
+    },
+    {
+      "id": "r15",
+      "question": "Argo CD 的界面地址和用户名是什么？",
+      "sections": ["7. Argo CD"],
+      "keywords": ["argocd.liuxd.dev", "admin"]
+    },
+    {
+      "id": "r16",
+      "question": "为什么用 Argo CD 拉取，而不是 CI 直接 kubectl apply？",
+      "sections": ["技术选型与理由"],
+      "keywords": ["凭据|6443"]
+    },
+    {
+      "id": "r17",
+      "question": "镜像标签为什么用 commit SHA，不用 latest？",
+      "sections": ["技术选型与理由"],
+      "keywords": ["回滚|版本"]
+    },
+    {
+      "id": "r18",
+      "question": "发布新版本时怎么保证网站不中断？",
+      "sections": ["可用性设计"],
+      "keywords": ["maxUnavailable|就绪探针|探针"]
+    },
+    {
+      "id": "r19",
+      "question": "迁移服务器时，停旧机器第一步要做什么？",
+      "sections": ["C. 停掉旧机器"],
+      "keywords": ["Argo CD|argocd"]
+    },
+    {
+      "id": "r20",
+      "question": "新服务器加了 SSH 公钥还是要输密码，怎么回事？",
+      "sections": ["踩坑记录"],
+      "keywords": ["PubkeyAuthentication"]
+    },
+    {
+      "id": "rn1",
+      "question": "怎么给网站接入 CDN 加速？",
+      "sections": [],
+      "keywords": [],
+      "unanswerable": true
+    },
+    {
+      "id": "rn2",
+      "question": "MySQL 主从复制怎么配置？",
+      "sections": [],
+      "keywords": [],
+      "unanswerable": true
+    },
+    {
+      "id": "rn3",
+      "question": "怎么把集群扩成三个节点的高可用？",
+      "sections": [],
+      "keywords": [],
+      "unanswerable": true
+    },
+    {
+      "id": "rn4",
+      "question": "Grafana 的管理员密码是多少？",
+      "sections": [],
+      "keywords": [],
+      "unanswerable": true
+    }
+  ]
+}

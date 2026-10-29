@@ -33,6 +33,9 @@ spec:
             - name: WECOM_KEY
               valueFrom:
                 secretKeyRef: { name: wecom-bot, key: key, optional: true }
+            # 运维 Agent 会发诊断的告警不再重复发原始告警（ai-api 自己出问题、模型费用 / 报错这类它诊断不了的照常发）
+            - name: SKIP_DIAGNOSED
+              value: '1'
             - name: TELEGRAM_BOT_TOKEN
               valueFrom:
                 secretKeyRef: { name: telegram-ops, key: token, optional: true }

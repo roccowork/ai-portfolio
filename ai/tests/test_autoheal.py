@@ -177,3 +177,27 @@ def test_no_action_and_endpoints(env, tmp_path):
         assert items[0]["alert"] == "NodeDiskHigh" and items[0]["action"] == "" and "人处理" in items[0]["status"]
         client.post("/internal/alertmanager", json={"alerts": [{**alert("NodeDiskHigh", "f3"), "status": "resolved", "endsAt": "2026-10-28T02:00:00Z"}]})
     assert not writes
+
+
+def test_cap_and_errors_still_notify(env):
+    h, script, _writes, sent, _ = env
+    h.daily = 0  # 今天的分析次数已经用完
+
+    async def go():
+        h.on_webhook({"alerts": [alert("NodeDiskHigh", "cap1", namespace="monitoring")]})
+        await drain(h)
+
+    asyncio.run(go())
+    assert len(sent) == 1 and "NodeDiskHigh" in sent[0][0] and "没有诊断" in sent[0][0]
+
+
+def test_analysis_error_is_sent(env):
+    h, script, _writes, sent, (s, gw, c) = env
+    s.api_key = ""  # 模型不可用：分析出错
+
+    async def go():
+        h.on_webhook({"alerts": [alert("NodeDiskHigh", "err1")]})
+        await drain(h)
+
+    asyncio.run(go())
+    assert len(sent) == 1 and "分析出错" in sent[0][0]

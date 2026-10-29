@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  diagnosedByAgent,
+  filterPayload,
   formatMessage,
   formatTime,
   isMain,
@@ -155,5 +157,42 @@ describe('truncate', () => {
     const out = truncate(s, 100);
     expect(Buffer.byteLength(out, 'utf8')).toBeLessThanOrEqual(100);
     expect(out).not.toContain('�');
+  });
+});
+
+describe('只发运维 Agent 不会诊断的告警', () => {
+  const alert = (labels: Record<string, string>) => ({ status: 'firing', labels, annotations: {} });
+  const env = { SKIP_DIAGNOSED: '1' };
+
+  it('普通告警交给运维 Agent，转发器不重复发', () => {
+    expect(diagnosedByAgent(alert({ alertname: 'NodeDiskHigh', severity: 'warning' }))).toBe(true);
+    expect(
+      filterPayload({ alerts: [alert({ alertname: 'NodeDiskHigh', severity: 'warning' })] }, env),
+    ).toBeNull();
+  });
+
+  it('ai-api 自己的问题、模型费用告警、非 warning/critical 照常发', () => {
+    const own = alert({
+      alertname: 'PodRestartingOften',
+      severity: 'warning',
+      namespace: 'ops-desk',
+      pod: 'ai-api-7d9f-x2',
+    });
+    const dep = alert({
+      alertname: 'DeploymentReplicasLow',
+      severity: 'critical',
+      namespace: 'ops-desk',
+      deployment: 'ai-api',
+    });
+    const budget = alert({ alertname: 'AIDailyBudgetReached', severity: 'warning' });
+    const other = alert({ alertname: 'Something', severity: 'none' });
+    for (const a of [own, dep, budget, other]) expect(diagnosedByAgent(a)).toBe(false);
+    const mixed = { alerts: [own, alert({ alertname: 'NodeDiskHigh', severity: 'warning' })] };
+    expect(filterPayload(mixed, env)?.alerts).toEqual([own]);
+  });
+
+  it('没开 SKIP_DIAGNOSED 时全部照常发', () => {
+    const p = { alerts: [alert({ alertname: 'NodeDiskHigh', severity: 'warning' })] };
+    expect(filterPayload(p, {})).toBe(p);
   });
 });

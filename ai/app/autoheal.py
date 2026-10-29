@@ -169,6 +169,22 @@ class Healer:
             except Exception as e:  # noqa: BLE001
                 log.warning("自愈通知发送失败：%s", e)
 
+    async def notify_unanalyzed(self, alert: dict) -> None:
+        if not self.notify:
+            return
+        labels, ann = alert.get("labels") or {}, alert.get("annotations") or {}
+        where = "/".join(x for x in (labels.get("namespace"), labels.get("pod") or labels.get("job_name") or labels.get("cronjob") or labels.get("deployment")) if x)
+        text = (
+            f"🚨 <b>{escape(labels.get('alertname', '告警'))}</b>（{escape(labels.get('severity', ''))}）"
+            + (f"\n对象：{escape(where)}" if where else "")
+            + (f"\n{escape(ann.get('summary') or ann.get('description') or '')[:200]}" if ann else "")
+            + f"\n今天的自动分析次数用完了（每天 {self.daily} 次），这条没有诊断，请人看一下"
+        )
+        try:
+            await self.notify(text, None)
+        except Exception as e:  # noqa: BLE001
+            log.warning("告警通知发送失败：%s", e)
+
     # ── 收告警 ──
     def on_webhook(self, payload: dict) -> int:
         """Alertmanager 的 webhook；返回这次开始处理的告警数。分析在后台跑，马上给 Alertmanager 回 200"""
@@ -184,6 +200,8 @@ class Healer:
                 continue
             if self.store.count_since(datetime.now(timezone.utc) - timedelta(days=1)) >= self.daily:
                 log.warning("今天的自愈分析次数已用完，跳过 %s", labels.get("alertname"))
+                # 告警转发器不再单独发原始告警，这里不能悄悄跳过：至少把告警本身推给人
+                self.spawn(self.notify_unanalyzed(a))
                 continue
             iid = self.store.add(fp, labels.get("alertname", ""), labels.get("severity", ""), labels, a.get("startsAt") or "")
             self.spawn(self.handle(iid, a))
@@ -215,6 +233,7 @@ class Healer:
             answer, _, _ = await ops.investigate(self.gw, self.c, ops.redact(question), system=SYSTEM, extra={"propose_action": (PROPOSE, propose)}, feature="autoheal")
         except (AIUnavailable, httpx.HTTPError) as e:
             self.store.update(iid, status="error", result=str(e)[:200])
+            await self.send(self.store.get(iid))  # type: ignore[arg-type]  分析失败也要让人知道有这条告警
             return
         diagnosis = ops.redact(answer.replace("**", "").replace("`", ""))[:400]
         if not proposal:

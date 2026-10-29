@@ -616,6 +616,8 @@ AI 建的商机和报价单带「AI 创建」标签，在 Odoo 里按标签筛�
 | `telegram-ops`（`ops-desk`、`monitoring`，值班台）   | ai-api 收发：自愈消息和「执行 / 忽略」按钮、菜单、访客留言、客服 Agent 演示预约。只发不收：告警转发（wecom-relay）、网站周报、R2 用量报告 |
 | `telegram-bot`（`ops-desk`、`monitoring`，私人助理） | 私人助理收发（私有仓库）。只发不收：每日运维英语                                                                                          |
 
+告警只推一次：warning / critical 告警由运维 Agent 发诊断（每天分析次数用完或诊断出错时也会发一条），告警转发器（`SKIP_DIAGNOSED=1`）只转发它诊断不了的：ai-api 自己的告警、模型费用 / 报错告警，以及这些告警的恢复通知。
+
 告警、网站周报、每日英语、R2 用量共用 `deploy/monitoring/wecom-relay/relay.mjs` 里的推送函数：对应的 Telegram Secret 存在就发 Telegram，否则发企业微信（Secret `wecom-bot`）。消息格式自动转换。
 
 值班台的常驻菜单都只读、不调用模型（`ai/app/dutybot.py`）：服务器状态、当前告警、自愈记录、平台实况（读站点的 `/status.json`，和网页 /live 同一份）、定时任务（所有 CronJob，说明在 `ai/app/schedules.py` 的 `KNOWN`，新增 CronJob 时顺手补一行）、最近留言、今日用量。直接打字提问交给运维 Agent（和网站值班台同一套工具，主人自己用可以查日志，日志先脱敏），每次调用模型。菜单在机器人里发 /start 出现。

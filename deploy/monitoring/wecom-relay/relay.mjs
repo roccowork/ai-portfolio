@@ -1,4 +1,4 @@
-// Alertmanager → 手机 的告警转发器，也是周报、每日英语、R2 月报共用的推送函数。
+// Alertmanager → 手机 的告警转发器（运维 Agent 会诊断的告警不重复发，见 diagnosedByAgent），也是周报、每日英语、R2 月报共用的推送函数。
 // 推送通道：配置了 Telegram 机器人（TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID）就发 Telegram，否则发企业微信群机器人（WECOM_KEY）。
 // 消息统一按企业微信 markdown 写，发 Telegram 时转成它支持的 HTML。
 // 只用 Node 自带的库，没有任何第三方依赖。
@@ -56,6 +56,35 @@ export function truncate(s, max = MAX_BYTES) {
   let out = s;
   while (bytes(out) + bytes(suffix) > max) out = out.slice(0, -1);
   return out + suffix;
+}
+
+/**
+ * 运维 Agent（ai-api 的自愈）会给这条告警发诊断吗？会的话转发器就不再单独发原始告警，免得一条告警推两次。
+ * 和 Alertmanager 里 autoheal 路由的条件一致（deploy/platform/kube-prometheus-stack.yaml），另外：
+ * ai-api 自己出问题时它没法诊断，这类告警照常由转发器发。
+ */
+const NOT_DIAGNOSED = new Set([
+  'Watchdog',
+  'InfoInhibitor',
+  'AIDailyBudgetReached',
+  'AIModelErrors',
+]);
+export function diagnosedByAgent(alert) {
+  const l = alert?.labels ?? {};
+  if (!['warning', 'critical'].includes(l.severity) || NOT_DIAGNOSED.has(l.alertname)) return false;
+  const aboutAiApi =
+    l.namespace === 'ops-desk' &&
+    [l.deployment, l.pod, l.job_name, l.container].some(
+      (v) => v === 'ai-api' || String(v ?? '').startsWith('ai-api-'),
+    );
+  return !aboutAiApi;
+}
+
+/** SKIP_DIAGNOSED=1 时只留运维 Agent 不会诊断的告警；没有剩下的就返回 null（不发） */
+export function filterPayload(payload, env = process.env) {
+  if (env.SKIP_DIAGNOSED !== '1' || !Array.isArray(payload?.alerts)) return payload;
+  const alerts = payload.alerts.filter((a) => !diagnosedByAgent(a));
+  return alerts.length ? { ...payload, alerts } : null;
 }
 
 /**
@@ -199,7 +228,8 @@ export function startServer({ port = 8080, webhookUrl, deliver = (c) => send(web
     });
     req.on('end', async () => {
       try {
-        const content = formatMessage(JSON.parse(raw));
+        const payload = filterPayload(JSON.parse(raw));
+        const content = payload && formatMessage(payload);
         if (content) await deliver(content);
         res.writeHead(200).end('ok\n');
       } catch (err) {

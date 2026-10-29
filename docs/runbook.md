@@ -435,7 +435,7 @@ k3s kubectl -n n8n create secret generic backup-r2 \
 
 ## 12. AI 服务（作品集的 AI 后端）
 
-**2026-10-29 改版为作品集**：首页是代表作（运维 Agent、ChatBI、GitOps 平台），恢复了 `/live/`，ChatBI 演示在 `/chatbi/`；报价和服务套餐下线。
+**2026-10-29 改版为作品集**：首页是代表作（运维 Agent、ChatBI、GitOps 平台），恢复了 `/live/`，ChatBI 在 `/chatbi/`（2026-10-29 起查本站真实运行数据，之前是虚构公司的销售库）；报价和服务套餐下线。
 
 - 右下角的 AI 助手调用 `/api/ai/ask`，只按 `ai/knowledge/*.md` 的作品资料回答（改作品介绍时，`src/lib/site.ts` 和这里要一起改）；带最近几轮对话，每个访客每天 30 次
 - 访客留言调用 `/api/ai/lead`：存进 `ai.db` 的 `leads` 表，并推送到我的 Telegram；每个访客每天 5 次
@@ -478,7 +478,7 @@ kubectl -n ops-desk rollout restart deployment ai-api
 - **提示「知识库还在准备中」**：索引失败会每 10 分钟重试，`kubectl -n ops-desk logs deploy/ai-api` 看原因（多半是密钥或地址不对）
 - **某个功能提示「暂时不可用」**：`kubectl -n ops-desk logs deploy/ai-api --tail=50` 会记录失败的模型和百炼返回的原因。常见是该模型在百炼「免费额度」里没有额度、又开了「用完即停」或余额为 0（返回 403），换一个有额度的模型（改对应的环境变量）或充值
 - **用到的模型**：qwen-plus、qwen-flash、qwen3-vl-plus、text-embedding-v3、qwen3-asr-flash。在百炼「免费额度」页逐个确认有额度
-- **查数据的演示库**：启动时生成在 `/data/chatbi/`（hq.db 全部区域、east.db 只有华东），改了生成逻辑要把 `chatbi.py` 的 `DATA_VERSION` 加一，重启后自动重建
+- **ChatBI 的数据**：查的是本站真实运行数据的快照 `/data/chatbi/ops.db`，有人提问时如果超过 10 分钟没更新就重新生成：从 ai.db 复制费用账本（不含私人助理）、自愈记录、评测记录，从 Prometheus 取最近 7 天每天的访问量和 5xx，从 `/status.json` 取最近发布。访客留言和访客标识不复制，SQL 怎么写都查不到。Prometheus 或 `/status.json` 查不到时那张表为空，其他照常。快照不备份，删了会自动重建
 - **换密钥**：删除重建 Secret 后 `rollout restart`
 - **清空账本和缓存**：删除 PVC `ai-data` 前先缩容 `ai-api` 到 0；它设置了 `Prune=false`，Argo CD 不会自动删
 

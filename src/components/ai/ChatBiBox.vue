@@ -19,19 +19,16 @@ interface Result {
   meta: Meta;
 }
 
-const ROLES = [
-  { id: 'hq', name: '总部（全部区域）' },
-  { id: 'east', name: '华东区经理（只能看华东）' },
-];
+// 查的是本站自己的运行数据（每 10 分钟更新）
 const EXAMPLES = [
-  '上个月哪个区域销售额下滑最多？',
-  '今年每个月的销售额走势',
-  '软件服务今年比去年同期增长多少？',
-  '销售额前 5 的客户是谁，属于什么行业？',
-  '各渠道的客单价对比',
+  '最近 7 天每天的 AI 调用次数',
+  '哪个 AI 功能花钱最多？',
+  '告警自愈一共处理了几次，成功率多少？',
+  '运维知识库评测的命中率变化',
+  '最近每天的访问量和 5xx 错误',
+  '最近几次发布是什么时候？',
 ];
 
-const role = ref('hq');
 const question = ref('');
 const loading = ref(false);
 const error = ref('');
@@ -45,7 +42,7 @@ async function ask(q?: string) {
   error.value = '';
   res.value = null;
   try {
-    res.value = await postJSON<Result>('/api/ai/chatbi', { question: text, role: role.value });
+    res.value = await postJSON<Result>('/api/ai/chatbi', { question: text });
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
@@ -93,28 +90,11 @@ const show = (v: unknown) => (v === null || v === undefined ? '—' : String(v))
 
 <template>
   <div>
-    <div class="flex flex-wrap items-center gap-2 text-sm">
-      <span class="text-slate-500">我的身份：</span>
-      <button
-        v-for="r in ROLES"
-        :key="r.id"
-        type="button"
-        class="rounded-full border px-3 py-1"
-        :class="
-          role === r.id
-            ? 'border-slate-900 bg-slate-900 text-white'
-            : 'border-slate-300 text-slate-600'
-        "
-        @click="role = r.id"
-      >
-        {{ r.name }}
-      </button>
-    </div>
-    <form class="mt-3 flex flex-col gap-2 sm:flex-row" @submit.prevent="ask()">
+    <form class="flex flex-col gap-2 sm:flex-row" @submit.prevent="ask()">
       <input
         v-model="question"
         maxlength="200"
-        placeholder="用一句话问数据，例如：上个月哪个区域下滑最多？"
+        placeholder="用一句话问数据，例如：哪个 AI 功能花钱最多？"
         class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2"
       />
       <button

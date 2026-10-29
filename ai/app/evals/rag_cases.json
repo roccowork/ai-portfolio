@@ -78,7 +78,7 @@
       "id": "b2",
       "question": "ChatBI 用的是真实数据吗？",
       "docs": ["20-chatbi"],
-      "keywords": ["虚构|演示"]
+      "keywords": ["真实", "10 分钟|10分钟"]
     },
     {
       "id": "b3",
@@ -88,9 +88,9 @@
     },
     {
       "id": "b4",
-      "question": "华东区经理能看到华南的数据吗？",
+      "question": "ChatBI 能查到访客留言和联系方式吗？",
       "docs": ["20-chatbi"],
-      "keywords": ["不能|看不到|只"]
+      "keywords": ["不能|查不到|不复制"]
     },
     {
       "id": "b5",

@@ -6,6 +6,7 @@ import html
 import logging
 import re
 import secrets
+from datetime import datetime, timedelta
 from typing import Literal
 
 import httpx
@@ -76,7 +77,6 @@ def create_app(
     qa = CaseQA(gw, load_chunks(s.cases_dir))
     docs = od.OpsDocs(gw, od.load_doc_chunks(s.opsdocs_dir))
     runbook = od.tool(docs)  # 运维 Agent 的「查运维手册」工具
-    bi_db = chatbi.ensure(s.data_dir)
     erp = odoo or (Odoo(s.odoo_url, s.odoo_db, s.odoo_user, s.odoo_password) if s.odoo_password else None)
     plans = ag.PlanStore()
     k8s = cluster or ops.Cluster(s.prom_url)
@@ -88,6 +88,31 @@ def create_app(
         # 只算需要处理的：提示级（info / none）不算告警
         firing = [a for a in alerts if a.get("state") == "firing" and a.get("severity") not in ("info", "none")]  # type: ignore[union-attr]
         return {**overview, "alerts": firing}
+
+    async def site_traffic() -> list[tuple[str, int, int]]:
+        """最近 7 个完整的天，每天的请求数和 5xx（新加坡时间按天切）。Prometheus 只保留 7 天"""
+        if not k8s.enabled:
+            return []
+        end = datetime.now(chatbi.SG).replace(hour=0, minute=0, second=0, microsecond=0)
+        site = 'service="ops-desk-ops-desk-http@kubernetes"'
+        out: dict[str, list[int]] = {}
+        for i, expr in enumerate((f"sum(increase(traefik_service_requests_total{{{site}}}[1d]))", f'sum(increase(traefik_service_requests_total{{{site}, code=~"5.."}}[1d]))')):
+            params = {"query": expr, "start": (end - timedelta(days=6)).timestamp(), "end": end.timestamp(), "step": 86400}
+            r = await k8s.prom.get("/api/v1/query_range", params=params)
+            r.raise_for_status()
+            for series in r.json()["data"]["result"]:
+                for ts, v in series["values"]:
+                    day = (datetime.fromtimestamp(float(ts), chatbi.SG) - timedelta(days=1)).date().isoformat()  # 每个点是前 24 小时的量
+                    out.setdefault(day, [0, 0])[i] = round(float(v))
+        return [(d, req, err) for d, (req, err) in sorted(out.items())]
+
+    async def recent_deploys() -> list[dict]:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(s.status_url)
+            r.raise_for_status()
+            return r.json().get("deploys") or []
+
+    bi = chatbi.OpsData(ledger._db, ledger._lock, s.data_dir / "chatbi" / "ops.db", site_traffic, recent_deploys)
 
     healer = autoheal.Healer(gw, k8s, autoheal.IncidentStore(ledger._db, ledger._lock), s.heal_daily)
     healer.extra_tools = runbook
@@ -399,14 +424,13 @@ def create_app(
 
     class BiIn(BaseModel):
         question: str = Field(min_length=2, max_length=200)
-        role: str = Field(default="hq", pattern="^(hq|east)$")
 
     @app.post("/api/ai/chatbi")
     async def chatbi_ask(body: BiIn, req: Request):
         gw.check_budget("chatbi")
         guard(req, "chatbi")
         try:
-            out = await chatbi.ask(gw, bi_db[body.role], body.role, body.question.strip())
+            out = await chatbi.ask(gw, await bi.ensure(), body.question.strip())
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
         ledger.add_saved("chatbi", SAVED_MIN["chatbi"])

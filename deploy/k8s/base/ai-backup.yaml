@@ -1,5 +1,5 @@
 # 每天把 AI 服务的数据（ai.db：费用账本、自愈记录、向量缓存）加密备份到 Cloudflare R2，写法和其他应用的备份相同。
-# 查数据的演示库（/data/chatbi/）启动时会自动重建，不备份。需要先在 ops-desk 命名空间创建 Secret backup-r2（docs/runbook.md 第 12 节「备份」）。
+# ChatBI 的快照库（/data/chatbi/）每 10 分钟从 ai.db 重新生成，不备份。需要先在 ops-desk 命名空间创建 Secret backup-r2（docs/runbook.md 第 12 节「备份」）。
 apiVersion: batch/v1
 kind: CronJob
 metadata:

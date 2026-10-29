@@ -6,15 +6,16 @@ import { BRAND } from '../../lib/site';
 
 <Base
   title={`ChatBI：一句话查数据 · ${BRAND.name}`}
-  description="用一句中文问销售数据，AI 写 SQL、程序在只读受限的连接上执行、画图并解读；不同角色只能看到自己权限内的数据。Text-to-SQL 在线演示。"
+  description="用一句中文问本站自己的真实运行数据：AI 调用和费用、告警自愈、评测分数、访问量。AI 写 SQL、程序在只读受限的连接上执行、画图并解读。"
 >
   <section class="bg-slate-950 py-16 text-white">
     <div class="mx-auto max-w-4xl px-5">
       <p class="text-sm font-semibold tracking-widest text-amber-300">在线体验 · ChatBI</p>
       <h1 class="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">用一句话查数据</h1>
       <p class="mt-4 max-w-2xl leading-relaxed text-slate-300">
-        直接问「上个月哪个区域下滑最多」，AI 写查询、出图、给结论。
-        <b class="text-white">演示数据</b>是一家虚构的办公用品公司 2025-01 至 2026-09 的销售记录。
+        直接问「哪个 AI 功能花钱最多」，AI 写查询、出图、给结论。查的是
+        <b class="text-white">本站自己的真实运行数据</b>：AI 调用和费用、告警自愈记录、RAG
+        评测分数、每天的访问量和发布记录，每 10 分钟更新一次。
       </p>
     </div>
   </section>
@@ -29,7 +30,7 @@ import { BRAND } from '../../lib/site';
       <ol class="mt-6 list-inside list-decimal space-y-2 leading-relaxed">
         <li>
           <b class="text-slate-900">告诉 AI 口径：</b>
-          提示词里写明有哪些表、每列什么意思，以及「销售额」「上月」「同比」怎么算（语义层）。口径统一写死，避免每个人问出不一样的数
+          提示词里写明有哪些表、每列什么意思、「费用」「自愈成功率」怎么算，以及「今天」「本周」对应的真实日期（语义层）。口径统一写死，避免每次问出不一样的数
         </li>
         <li>
           <b class="text-slate-900">AI 写 SQL：</b>按固定格式输出 SQL
@@ -41,8 +42,9 @@ import { BRAND } from '../../lib/site';
           秒自动中断。这些靠程序保证，不靠提示词
         </li>
         <li>
-          <b class="text-slate-900">权限在数据层：</b>「华东区经理」连的是只有华东数据的库，SQL
-          怎么写都看不到别的区域。切换身份问同一个问题试试
+          <b class="text-slate-900">权限在数据层：</b>每 10 分钟从费用账本、自愈记录、Prometheus
+          生成一份只含统计表的快照，访客留言、联系方式、访客标识不复制进来，SQL
+          怎么写都查不到。切换身份问同一个问题试试
         </li>
         <li>
           <b class="text-slate-900">解读：</b>查询结果再交给 AI，用一两句话给出结论和关键数字；SQL

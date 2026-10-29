@@ -609,16 +609,16 @@ AI 建的商机和报价单带「AI 创建」标签，在 Odoo 里按标签筛�
 
 ## 16. Telegram 推送（替代企业微信群机器人）
 
-用两个机器人。一个机器人同一时间只能有一个程序收消息（getUpdates），分开以后互不影响：
+用两个机器人，按「作品 / 私人」严格分开。一个机器人同一时间只能有一个程序收消息（getUpdates），分开以后也互不影响：
 
-| Secret                                        | 谁在用                                                                                           | 收消息吗                                         |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| `telegram-ops`（`ops-desk` 命名空间，值班台） | ai-api：运维 Agent 自愈消息和「执行 / 忽略」按钮、访客留言、客服 Agent 演示预约                  | 只收按钮点击（`ai/app/telegram.py` 的 `OpsBot`） |
-| `telegram-bot`（`ops-desk`、`monitoring`）    | 私人助理（私有仓库）；告警、运维周报、每日英语、R2 用量也用它的 token 发消息（只发不收，不冲突） | 私人助理收                                       |
+| Secret                                               | 谁在用                                                                                                                                    |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `telegram-ops`（`ops-desk`、`monitoring`，值班台）   | ai-api 收发：自愈消息和「执行 / 忽略」按钮、菜单、访客留言、客服 Agent 演示预约。只发不收：告警转发（wecom-relay）、网站周报、R2 用量报告 |
+| `telegram-bot`（`ops-desk`、`monitoring`，私人助理） | 私人助理收发（私有仓库）。只发不收：每日运维英语                                                                                          |
 
-告警、运维周报、每日英语、R2 用量共用 `deploy/monitoring/wecom-relay/relay.mjs` 里的推送函数：Secret `telegram-bot` 存在就发 Telegram，否则发企业微信（Secret `wecom-bot`）。消息格式自动转换。
+告警、网站周报、每日英语、R2 用量共用 `deploy/monitoring/wecom-relay/relay.mjs` 里的推送函数：对应的 Telegram Secret 存在就发 Telegram，否则发企业微信（Secret `wecom-bot`）。消息格式自动转换。
 
-网站的机器人（值班台）还有常驻菜单，按钮都只读、不调用模型（`ai/app/dutybot.py`）：服务器状态、当前告警、自愈记录、最近留言、今日用量；直接打字提问交给运维 Agent（和网站值班台同一套工具，主人自己用可以查日志，日志先脱敏），每次调用模型。菜单在机器人里发 /start 出现。
+值班台的常驻菜单都只读、不调用模型（`ai/app/dutybot.py`）：服务器状态、当前告警、自愈记录、平台实况（读站点的 `/status.json`，和网页 /live 同一份）、定时任务（所有 CronJob，说明在 `ai/app/schedules.py` 的 `KNOWN`，新增 CronJob 时顺手补一行）、最近留言、今日用量。直接打字提问交给运维 Agent（和网站值班台同一套工具，主人自己用可以查日志，日志先脱敏），每次调用模型。菜单在机器人里发 /start 出现。
 
 ### 创建网站的机器人（telegram-ops）
 
@@ -632,22 +632,24 @@ read -rs -p 'Bot Token: ' TG; echo
 # 取自己的 chat id：就是刚才给机器人发消息的那个会话
 CHAT=$(curl -s "https://api.telegram.org/bot$TG/getUpdates" | grep -o '"chat":{"id":[0-9-]*' | head -1 | grep -o '[0-9-]*$')
 echo "chat id: $CHAT"
-k3s kubectl -n ops-desk create secret generic telegram-ops --from-literal=token="$TG" --from-literal=chat_id="$CHAT"
+for ns in ops-desk monitoring; do
+  k3s kubectl -n "$ns" create secret generic telegram-ops --from-literal=token="$TG" --from-literal=chat_id="$CHAT"
+done
 unset TG
 k3s kubectl -n ops-desk rollout restart deployment ai-api
+k3s kubectl -n monitoring rollout restart deployment wecom-relay
 ```
 
 - `chat id` 为空：说明还没给新机器人发过消息，先发一句再执行
 
 ### 重建私人助理的机器人（telegram-bot）
 
-只在换服务器、Secret 丢了的时候需要。步骤同上，Secret 名换成 `telegram-bot`，并且 `monitoring` 命名空间也要建一份：
+只在换服务器、Secret 丢了的时候需要。步骤同上，Secret 名换成 `telegram-bot`：
 
 ```bash
 for ns in monitoring ops-desk; do
   k3s kubectl -n "$ns" create secret generic telegram-bot --from-literal=token="$TG" --from-literal=chat_id="$CHAT"
 done
-k3s kubectl -n monitoring rollout restart deployment wecom-relay
 k3s kubectl -n ops-desk rollout restart deployment assistant
 k3s kubectl -n monitoring create job tg-test --from=cronjob/daily-english   # 手机上应该收到今天的运维英语
 ```

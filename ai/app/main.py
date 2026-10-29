@@ -8,6 +8,8 @@ import re
 import secrets
 from typing import Literal
 
+import httpx
+
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
@@ -76,7 +78,7 @@ def create_app(
     k8s = cluster or ops.Cluster(s.prom_url)
 
     async def ops_status() -> dict:
-        """服务器状态：集群概况 + 正在触发的告警（只读）。私人助理通过 /internal/ops/status 调用。"""
+        """服务器状态：集群概况 + 正在触发的告警（只读）"""
         overview = await ops.run_tool(k8s, "cluster_overview", {})
         alerts = await ops.run_tool(k8s, "list_alerts", {})
         # 只算需要处理的：提示级（info / none）不算告警
@@ -87,10 +89,19 @@ def create_app(
 
     # 网站的 Telegram 机器人（Secret telegram-ops）：自愈审批按钮、访客留言、演示预约。私人助理用另一个机器人
     tg = telegram or (Telegram(s.tg_token, s.tg_chat_id) if s.tg_token and s.tg_chat_id else None)
+    async def platform() -> str:
+        """平台实况的数据和网页 /live 是同一份：站点 nginx 提供的 /status.json（集群内地址）"""
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(s.status_url)
+            r.raise_for_status()
+            return dutybot.platform_text(r.json())
+
     menu = [
         ("🖥 服务器状态", "status", "CPU、内存、磁盘和不正常的 Pod", lambda: dutybot.status_text(k8s)),
         ("🚨 当前告警", "alerts", "正在触发的告警", lambda: dutybot.alerts_text(k8s)),
         ("🩹 自愈记录", "heal", "运维 Agent 最近处理的故障", lambda: asyncio.to_thread(dutybot.heal_text, healer.store)),
+        ("📊 平台实况", "live", "最近发布、可用率、备份、证书", platform),
+        ("🗓 定时任务", "jobs", "服务器上的备份、周报等任务", lambda: dutybot.jobs_text(k8s)),
         ("💬 最近留言", "leads", "网站访客的留言", lambda: asyncio.to_thread(dutybot.leads_text, ledger)),
         ("💰 今日用量", "usage", "AI 演示今天的调用和费用", lambda: asyncio.to_thread(dutybot.usage_text, ledger, s.daily_budget)),
     ]
@@ -453,25 +464,6 @@ def create_app(
         if actions is None:
             raise HTTPException(404, "这组操作已过期或已执行，请重新提问")
         return {"results": await ag.execute(odoo_client, actions, s.odoo_public_url)}
-
-    # 只给集群内的私人助理用：Ingress 只转发 /api/ai，这两个路径从外面访问不到
-    @app.get("/internal/ops/status")
-    async def internal_status():
-        if not k8s.enabled:
-            raise HTTPException(503, "没有集群访问权限")
-        return await ops_status()
-
-    @app.get("/internal/ops/cronjobs")
-    async def internal_cronjobs():
-        """所有命名空间的 CronJob，只留名字、时间表和运行状态"""
-        if not k8s.enabled:
-            raise HTTPException(503, "没有集群访问权限")
-        items = (await k8s.k8s("/apis/batch/v1/cronjobs"))["items"]  # type: ignore[index]
-        keep = ("schedule", "timeZone", "suspend")
-        return [
-            {"metadata": {"name": i["metadata"]["name"]}, "spec": {k: v for k, v in i["spec"].items() if k in keep}, "status": i.get("status") or {}}
-            for i in items
-        ]
 
     @app.get("/metrics")
     def metrics():

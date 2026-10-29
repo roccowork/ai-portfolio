@@ -72,6 +72,8 @@ class Settings:
     demo_booking_daily: int = field(default_factory=lambda: int(os.environ.get("DEMO_BOOKING_DAILY", "30")))
     # 运维 Agent 查询的 Prometheus（kube-prometheus-stack，集群内地址）
     prom_url: str = field(default_factory=lambda: os.environ.get("PROM_URL", "http://kps-prometheus.monitoring.svc:9090"))
+    # 平台实况的数据（站点 nginx 提供的 /status.json，集群内地址），值班台的「📊 平台实况」读它
+    status_url: str = field(default_factory=lambda: os.environ.get("STATUS_URL", "http://ops-desk.ops-desk.svc/status.json"))
     # 网站的 Telegram 机器人（Secret telegram-ops）：自愈审批、访客留言；没配就不启动
     tg_token: str = field(default_factory=lambda: os.environ.get("TELEGRAM_BOT_TOKEN", ""))
     tg_chat_id: str = field(default_factory=lambda: os.environ.get("TELEGRAM_CHAT_ID", ""))

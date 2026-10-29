@@ -1,16 +1,12 @@
-"""网站的 Telegram 机器人（值班台）：只理主人、自愈按钮、菜单、提问交给运维 Agent；给私人助理用的两个集群内接口。"""
+"""网站的 Telegram 机器人（值班台）：只理主人、自愈按钮、菜单、提问交给运维 Agent。"""
 
 import asyncio
 import json
 
 import httpx
-from fastapi.testclient import TestClient
 
 from app import opsagent as ops
-from app.config import Settings
-from app.gateway import Gateway
 from app.ledger import Ledger
-from app.main import create_app
 from app import autoheal, dutybot
 from app.telegram import OpsBot, Telegram
 
@@ -43,43 +39,6 @@ def test_ops_bot_only_handles_owner_buttons():
     assert pressed == ["heal:ok:1"]
     assert [m for m, _ in sent] == ["answerCallbackQuery", "editMessageText"]
     assert sent[1][1]["text"] == "✅ 已执行" and sent[1][1]["message_id"] == 7
-
-
-def fake_k8s() -> httpx.MockTransport:
-    def handler(req: httpx.Request) -> httpx.Response:
-        if req.url.path == "/apis/batch/v1/cronjobs":
-            item = {
-                "metadata": {"name": "weekly-report", "namespace": "monitoring", "uid": "x", "annotations": {"a": "b"}},
-                "spec": {"schedule": "0 9 * * 1", "timeZone": "Asia/Singapore", "jobTemplate": {"spec": {}}},
-                "status": {"lastSuccessfulTime": "2026-10-26T01:00:05Z"},
-            }
-            return httpx.Response(200, json={"items": [item]})
-        return httpx.Response(404)
-
-    return httpx.MockTransport(handler)
-
-
-def test_internal_endpoints_for_personal_assistant(tmp_path):
-    s = Settings(api_key="", data_dir=tmp_path, cases_dir=tmp_path, samples_dir=tmp_path)
-    gw = Gateway(s, Ledger(tmp_path / "ai.db"))
-    # 没有集群权限（本地运行）时明确返回 503
-    with TestClient(create_app(s, gw, cluster=ops.Cluster("http://prom", sa_dir=tmp_path / "none"))) as c:
-        assert c.get("/internal/ops/status").status_code == 503
-    sa = tmp_path / "sa"
-    sa.mkdir()
-    (sa / "token").write_text("t")
-    cluster = ops.Cluster("http://prom", "http://kube", sa_dir=sa, transport=fake_k8s())
-    with TestClient(create_app(s, gw, cluster=cluster)) as c:
-        jobs = c.get("/internal/ops/cronjobs").json()
-    # 只给名字、时间表和运行状态，不带 jobTemplate、注解这些
-    assert jobs == [
-        {
-            "metadata": {"name": "weekly-report"},
-            "spec": {"schedule": "0 9 * * 1", "timeZone": "Asia/Singapore"},
-            "status": {"lastSuccessfulTime": "2026-10-26T01:00:05Z"},
-        }
-    ]
-
 
 
 def msg(text: str, chat: int = 42) -> dict:
@@ -154,3 +113,42 @@ def test_alerts_text_lists_firing_alerts(tmp_path):
     c = ops.Cluster("http://prom", "http://kube", sa_dir=sa, transport=httpx.MockTransport(handler))
     text = asyncio.run(dutybot.alerts_text(c))
     assert "🟡 <b>KubePodCrashLooping</b>  ops-desk / ai-api-1" in text and "crash &lt;x&gt;" in text and "Watchdog" not in text
+
+
+def test_platform_text_matches_live_page():
+    from datetime import datetime, timezone
+
+    now = datetime(2026, 10, 29, 13, 30, tzinfo=timezone.utc)
+    st = {
+        "generatedAt": "2026-10-29T13:20:00Z",
+        "deploys": [{"time": "2026-10-29T13:22:00Z", "sha": "8bf110c", "state": "current"}, {"time": "2026-10-29T12:31:00Z", "sha": "4329d94", "state": "replaced"}],
+        "availability7d": 99.97,
+        "p95Ms": 80,
+        "requests7d": 15234,
+        "backups": [{"name": "backup-ai-api", "lastSuccess": "2026-10-29T05:12:00Z"}, {"name": "backup-old", "lastSuccess": "2026-10-20T05:00:00Z"}],
+        "certs": [{"name": "ops-desk-tls", "daysLeft": 12}],
+        "alerts7d": None,
+    }
+    text = dutybot.platform_text(st, now)
+    assert "数据更新于 10 分钟前" in text and "7 天可用率 99.97% · p95 < 100 ms · 请求 15,234" in text
+    assert "<code>8bf110c</code> 8 分钟前 · 当前版本" in text
+    assert "✅ backup-ai-api：最近成功 8 小时前" in text and "⚠️ backup-old" in text
+    assert "⚠️ ops-desk-tls：剩余 12 天" in text and "7 天告警</b>：查询失败" in text
+
+
+def test_jobs_text_groups_cronjobs(tmp_path):
+    sa = tmp_path / "sa"
+    sa.mkdir()
+    (sa / "token").write_text("t")
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        items = [
+            {"metadata": {"name": "weekly-report"}, "spec": {"schedule": "0 9 * * 1", "timeZone": "Asia/Singapore"}, "status": {"lastScheduleTime": "2026-10-26T01:00:00Z", "lastSuccessfulTime": "2026-10-26T01:00:05Z"}},
+            {"metadata": {"name": "backup-ai-api"}, "spec": {"schedule": "10 5 * * *", "timeZone": "Asia/Singapore"}, "status": {"lastScheduleTime": "2026-10-28T21:10:00Z"}},
+        ]
+        return httpx.Response(200, json={"items": items})
+
+    c = ops.Cluster("http://prom", "http://kube", sa_dir=sa, transport=httpx.MockTransport(handler))
+    text = asyncio.run(dutybot.jobs_text(c))
+    assert "📮 会发消息的" in text and "📈 网站周报 · 每周一 09:00" in text and "上次 ✅" in text
+    assert "🔧 后台维护" in text and "💾 备份网站 AI 服务数据" in text and "上次 ❌ 失败" in text

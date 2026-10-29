@@ -115,3 +115,17 @@ def test_ops_eval_matches_by_section(tmp_path):
     s = out["summary"]
     assert s["hit_at_1"] == 100.0 and s["keyword_acc"] == 100.0 and out["rows"][0]["retrieved"][0].endswith("2. 回滚")
     assert ev.summary_text(out).startswith("<b>📏 运维知识库评测</b>")
+
+
+def test_hybrid_finds_exact_terms_vectors_miss(tmp_path):
+    """向量对英文专有名词不敏感：假向量全都一样时，只有关键词那一路能把 rateLimited 那一节排到第一"""
+    (tmp_path / "runbook.md").write_text(
+        "# 运维手册\n\n## 4. 证书问题\n\n报 rateLimited：失败验证每小时最多 5 次，等一小时。\n\n## 5. 常见故障\n\n滚动更新时偶发 504，已加 preStop。\n\n## 6. 监控告警\n\n告警推到值班台。\n",
+        encoding="utf-8",
+    )
+    docs = make(tmp_path, tmp_path)
+    asyncio.run(docs.build())
+    flat = docs.matrix[0] * 0 + 1.0  # 和每一段的相似度都一样
+    assert docs.retrieve("签证书报 rateLimited 怎么处理？", flat)[0].section.endswith("4. 证书问题")
+    assert docs.retrieve("504 是怎么回事", flat)[0].section.endswith("5. 常见故障")
+    assert od.tokens("PodRestartingOften 告警") == ["podrestartingoften", "告警"]

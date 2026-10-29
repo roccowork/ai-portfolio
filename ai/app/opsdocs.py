@@ -8,7 +8,9 @@
 代码块不从中间切开。文档改了，内容哈希变了的段落才重新算向量。
 """
 
+import math
 import re
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -106,20 +108,69 @@ def load_doc_chunks(docs_dir: Path) -> list[Chunk]:
     return chunks
 
 
+def tokens(text: str) -> list[str]:
+    """关键词检索用的词：英文、数字、命令按单词（rateLimited、PodRestartingOften、6443），中文按相邻两个字"""
+    text = text.lower()
+    words = re.findall(r"[a-z0-9][a-z0-9_.\-]*[a-z0-9]|[a-z0-9]", text)
+    han = re.findall(r"[\u4e00-\u9fff]+", text)
+    return words + [h[i : i + 2] for h in han for i in range(max(1, len(h) - 1))]
+
+
+class BM25:
+    """经典的 BM25 关键词打分，几十段文字不需要搜索引擎"""
+
+    def __init__(self, docs: list[str], k1: float = 1.5, b: float = 0.75):
+        self.k1, self.b = k1, b
+        self.tf = [Counter(tokens(d)) for d in docs]
+        self.len = [sum(t.values()) for t in self.tf]
+        self.avg = sum(self.len) / max(1, len(self.len))
+        df = Counter(w for t in self.tf for w in t)
+        n = len(docs)
+        self.idf = {w: math.log(1 + (n - f + 0.5) / (f + 0.5)) for w, f in df.items()}
+
+    def scores(self, query: str) -> list[float]:
+        q = set(tokens(query))
+        out = []
+        for tf, ln in zip(self.tf, self.len, strict=True):
+            s = 0.0
+            for w in q & tf.keys():
+                f = tf[w]
+                s += self.idf[w] * f * (self.k1 + 1) / (f + self.k1 * (1 - self.b + self.b * ln / self.avg))
+            out.append(s)
+        return out
+
+
 class OpsDocs(CaseQA):
+    """2026-10-29 第一次评测：纯向量检索命中@1 只有 70%，问题里的英文专有名词（rateLimited）、章节名（C. 停掉旧机器）
+    向量不敏感。改成向量 + 关键词（BM25）两路各排一次名次，再按倒数排名融合（RRF）"""
+
     system = SYSTEM
     feature = "opsdocs"
+    RRF_K = 60  # RRF 的常数：名次越靠前分越高，60 是论文和各家搜索引擎常用的默认值
 
-    def search(self, qvec: np.ndarray, k: int = 5, per_case: int = 99) -> list[Chunk]:
-        # 只有三篇文档，不按篇限制段数：同一篇手册里相关的几节都可能有用
-        return super().search(qvec, k, per_case)
+    def __init__(self, gateway, chunks: list[Chunk]):
+        super().__init__(gateway, chunks)
+        self.bm25 = BM25([f"{c.section}\n{c.text}" for c in chunks])
+
+    def retrieve(self, query: str, qvec: np.ndarray, k: int = 5) -> list[Chunk]:
+        assert self.matrix is not None
+        vec_rank = np.argsort(-(self.matrix @ qvec))
+        kw = self.bm25.scores(query)
+        kw_rank = sorted(range(len(kw)), key=lambda i: -kw[i])
+        fused: dict[int, float] = {}
+        for rank, i in enumerate(vec_rank):
+            fused[int(i)] = fused.get(int(i), 0.0) + 1 / (self.RRF_K + rank + 1)
+        for rank, i in enumerate(kw_rank):
+            if kw[i] > 0:  # 一个词都没对上的不算关键词命中
+                fused[i] = fused.get(i, 0.0) + 1 / (self.RRF_K + rank + 1)
+        return [self.chunks[i] for i in sorted(fused, key=lambda i: -fused[i])[:k]]
 
     async def lookup(self, query: str, k: int = 4) -> list[dict]:
         """给运维 Agent 用的工具：返回最相关的几段手册原文和出处"""
         if not self.ready:
             return [{"error": "运维手册还没加载（索引没建好）"}]
         qvec = (await self.gw.embed(self.feature, [query[:300]]))[0]
-        return [{"出处": c.section, "内容": c.text} for c in self.search(qvec, k)]  # 章节路径里已经带了文档名（一级标题）
+        return [{"出处": c.section, "内容": c.text} for c in self.retrieve(query, qvec, k)]  # 章节路径里已经带了文档名（一级标题）
 
 
 TOOL = {

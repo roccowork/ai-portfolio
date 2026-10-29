@@ -122,6 +122,12 @@
       "keywords": ["PubkeyAuthentication"]
     },
     {
+      "id": "r21",
+      "question": "Grafana 的管理员密码在哪里查？",
+      "sections": ["6. 监控告警 › 入口"],
+      "keywords": ["grafana-admin"]
+    },
+    {
       "id": "rn1",
       "question": "怎么给网站接入 CDN 加速？",
       "sections": [],
@@ -144,7 +150,7 @@
     },
     {
       "id": "rn4",
-      "question": "Grafana 的管理员密码是多少？",
+      "question": "Redis 的连接密码怎么改？",
       "sections": [],
       "keywords": [],
       "unanswerable": true

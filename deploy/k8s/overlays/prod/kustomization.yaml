@@ -5,7 +5,7 @@ resources:
 images:
   - name: ghcr.io/roccowork/ops-desk
     # 线上运行的版本（commit SHA）。由 CI 在构建镜像后自动更新并提交，Argo CD 据此同步
-    newTag: fe7b7b4ad04db5ee2c2adc06edd8c556f7550d13
+    newTag: 4329d9451f686bf2b34a86bc372fb4d5e3b9a582
   - name: ghcr.io/roccowork/ops-desk-ai
     # 和站点镜像用同一个 commit SHA，CI 一起更新
-    newTag: fe7b7b4ad04db5ee2c2adc06edd8c556f7550d13
+    newTag: 4329d9451f686bf2b34a86bc372fb4d5e3b9a582

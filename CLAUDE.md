@@ -19,3 +19,4 @@
 - 只改 `docs/` 或 `*.md` 不会触发 CI（见 `.github/workflows/ci.yml` 的 paths-ignore）
 - Markdown 会被 Prettier 检查（`.prettierrc.json`），新增或修改 md 后运行 `pnpm format`
 - 案例和作品的状态必须如实标注，演示数据要写明是演示
+- 功能尽量做成真正有用的东西，用真实数据和真实文档（比如本仓库的运维手册、网站自己的运行数据），少用虚构的演示数据；确实只能用演示数据的，标清楚

@@ -73,7 +73,8 @@ def test_metrics(tmp_path):
     assert s["keyword_acc"] == 50.0 and s["judge_correct"] == 50.0 and s["judge_wrong"] == 1
     assert s["refusal_acc"] == 50.0 and s["hallucinated"] == ["n2"]
     assert s["citation_acc"] == 100.0 and s["cost_yuan"] > 0
-    assert len(judged) == 4 and "《" in judged[0]  # 裁判拿到了资料
+    assert len(judged) == 4 and all("《" in j for j in judged)  # 裁判拿到了资料
+    assert any("【必须答到的要点】89" in j for j in judged)  # 和这道题必须答到的要点
     text = ev.summary_text(out)
     assert "命中@1 100.0%" in text and "编了：n2" in text and "b5" in text
 

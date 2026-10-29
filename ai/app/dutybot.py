@@ -18,7 +18,7 @@ from .telegram import to_html
 e = html.escape
 TOOL_ZH = {"list_alerts": "告警", "cluster_overview": "服务器概况", "list_pods": "Pod 状态", "pod_events": "事件", "promql": "监控指标", "pod_logs": "日志"}
 
-HELP = """<b>我是 ops-desk 值班台</b>，负责网站和服务器这边的事：
+HELP = """<b>我是 OPS 值班台</b>，负责网站和服务器这边的事：
 
 🖥 <b>服务器状态</b>：CPU、内存、磁盘，哪些 Pod 不正常
 🚨 <b>当前告警</b>：正在触发和等待中的告警

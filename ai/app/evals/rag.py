@@ -29,7 +29,9 @@ JUDGE = """你是评测员，判断一个作品集问答助手的回答是否正
 - correct：回答了问题，关键内容都能在资料里找到依据
 - partial：方向对，但漏了问题要的关键信息
 - wrong：答错、答非所问，或者给出了资料里没有的具体事实（编造）
+如果给了【必须答到的要点】：回答漏了任何一个要点，最多算 partial。
 如果资料里根本没有这个问题的答案：回答明确说资料里没有 / 建议给作者留言，算 correct；给出了具体答案，算 wrong。
+回答里夹带资料里没有的具体说法（哪怕后面又说「资料里没有写」），算 wrong。
 只输出 JSON：{"verdict": "correct" | "partial" | "wrong", "reason": "一句话理由"}"""
 
 
@@ -47,11 +49,13 @@ def refused(answer: str) -> bool:
     return any(p in answer for p in REFUSAL)
 
 
-async def judge(gw: Gateway, question: str, answer: str, material: str) -> tuple[str, str, float]:
+async def judge(gw: Gateway, question: str, answer: str, material: str, points: list[str] | None = None) -> tuple[str, str, float]:
+    """points：这道题必须答到的要点（评测集里的 keywords）。2026-10-29 第一次评测时裁判没有它，漏答要点也判了 correct"""
+    must = f"\n\n【必须答到的要点】{'；'.join(p.replace('|', ' 或 ') for p in points)}" if points else ""
     try:
         r = await gw.chat(
             "eval",
-            [{"role": "system", "content": JUDGE}, {"role": "user", "content": f"【问题】{question}\n\n【回答】{answer}\n\n【资料】\n{material}"}],
+            [{"role": "system", "content": JUDGE}, {"role": "user", "content": f"【问题】{question}\n\n【回答】{answer}{must}\n\n【资料】\n{material}"}],
             json_mode=True,
             max_tokens=200,
         )
@@ -68,7 +72,7 @@ async def run_case(qa: CaseQA, judge_gw: Gateway, case: dict, material: str) -> 
     want = set(case.get("docs") or [])
     first = next((i + 1 for i, d in enumerate(retrieved) if d in want), None)
     cited_docs = {retrieved[n - 1] for n in cited}
-    verdict, reason, judge_cost = await judge(judge_gw, case["question"], result.text, material)
+    verdict, reason, judge_cost = await judge(judge_gw, case["question"], result.text, material, case.get("keywords"))
     return {
         "id": case["id"],
         "question": case["question"],

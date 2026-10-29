@@ -90,7 +90,8 @@ class CaseQA:
             cached.update(new)
         self.matrix = np.stack([cached[s] for s in shas])
 
-    def search(self, qvec: np.ndarray, k: int = 6, per_case: int = 2) -> list[Chunk]:
+    # 每篇资料最多取 3 段（2026-10-29 评测前是 2 段：「SQL 报错了怎么办」要的那段排在同一篇的第 3，被挤掉了，答案漏了要点）
+    def search(self, qvec: np.ndarray, k: int = 6, per_case: int = 3) -> list[Chunk]:
         assert self.matrix is not None
         order = np.argsort(-(self.matrix @ qvec))
         picked: list[Chunk] = []

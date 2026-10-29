@@ -3,6 +3,7 @@
 
 import json
 import re
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -217,11 +218,20 @@ def _summary(result: object) -> str:
 
 
 async def investigate(
-    gw: Gateway, c: Cluster, question: str, public: bool = False, system: str = SYSTEM, extra: dict | None = None, feature: str = "opsagent"
+    gw: Gateway,
+    c: Cluster,
+    question: str,
+    public: bool = False,
+    system: str = SYSTEM,
+    extra: dict | None = None,
+    feature: str = "opsagent",
+    runner: Callable[[str, dict], Awaitable[object]] | None = None,
 ) -> tuple[str, list[dict], list[ChatResult]]:
     """public=True：官网访客用，不能查日志。
-    extra：额外的工具 {名字: (工具定义, async 处理函数(args) -> 结果)}，自愈用它让模型提议操作"""
+    extra：额外的工具 {名字: (工具定义, async 处理函数(args) -> 结果)}，自愈用它让模型提议操作
+    runner：代替 run_tool 执行只读工具，故障演练评测（evals/agent.py）用它在真实数据上注入故障"""
     extra = extra or {}
+    runner = runner or (lambda name, args: run_tool(c, name, args))
     tools = (PUBLIC_TOOLS if public else TOOLS) + [d for d, _ in extra.values()]
     now = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
     msgs: list[dict] = [{"role": "system", "content": system.format(now=now)}, {"role": "user", "content": question}]
@@ -242,7 +252,7 @@ async def investigate(
             try:
                 if name not in {t["function"]["name"] for t in tools}:
                     raise PermissionError(f"这里不能使用 {name}")
-                result: object = await extra[name][1](args) if name in extra else await run_tool(c, name, args)
+                result: object = await extra[name][1](args) if name in extra else await runner(name, args)
                 summary = _summary(result)
             except PermissionError as e:
                 result, summary = {"error": str(e)}, f"被程序拦下：{e}"

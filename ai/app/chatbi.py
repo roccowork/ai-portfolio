@@ -57,7 +57,7 @@ STATUS_ZH = {
     "rejected": "已忽略",
     "error": "分析出错",
 }
-EVAL_ZH = {"rag": "作品集问答", "ops-rag": "运维知识库"}
+EVAL_ZH = {"rag": "作品集问答", "ops-rag": "运维知识库", "agent": "运维 Agent 故障演练"}
 DEPLOY_ZH = {"current": "当前版本", "not-ready": "未就绪", "replaced": "已替换"}
 
 TABLES = """
@@ -140,7 +140,7 @@ def schema(path: Path, now: datetime | None = None) -> str:
   day、started_at 告警开始时间，alert 告警名，severity 级别（critical 严重 / warning 警告），status 状态（已恢复、已分析，需要人处理、已忽略、等待确认、分析出错等），
   action 处理方式（补跑任务、重建 Pod、滚动重启、无），handled_by（自动执行、人确认后执行、没有处理），fixed 是否恢复（1 / 0），resolved_at 恢复时间，minutes_to_resolve 从告警开始到恢复的分钟数
 表 eval_runs：RAG 效果评测，每跑一次一套一行
-  ts、day，kind（作品集问答、运维知识库），cases 题数，hit_at_1 / hit_at_3 检索命中率（%），keyword_acc 要点命中率（%），judge_correct 裁判判对率（%），
+  ts、day，kind（作品集问答、运维知识库、运维 Agent 故障演练），cases 题数，hit_at_1 / hit_at_3 检索命中率（%，故障演练没有），keyword_acc 要点命中率（%），judge_correct 裁判判对率（%），
   refusal_acc 资料里没有的题老实说没有的比例（%），cost 一次评测的费用（元），seconds 耗时（秒）
 表 site_traffic：网站每天的访问量（从 {t_lo or "无"} 到 {t_hi or "无"}，Prometheus 只保留最近 7 天，更早的没有）
   day，requests 请求数，errors_5xx 5xx 错误数

@@ -524,6 +524,10 @@ Odoo 和依赖它的办公 Agent 2026-10-28 下线，Argo CD 应用和清单已�
 
 值班台点「📏 RAG 评测」：依次用 `ai/app/evals/rag_cases.json`（作品集问答）和 `ops_cases.json`（运维知识库，也就是这份手册）的题目真实调用一遍问答（后台跑，1～2 分钟，约几毛钱以内），结果存进 `ai.db` 的 `eval_runs` 表，汇总发到 Telegram，完整明细公开在 `https://ops.liuxd.dev/api/ai/eval/latest`（运维知识库加 `?kind=ops-rag`）（带最近 10 次的汇总，看改动后指标变好还是变坏）。改了 `ai/knowledge/`、这几篇手册或问答的提示词后跑一次；手册改了导致题目过时，`ai/tests/test_opsdocs.py` 会在 CI 里报出来。裁判模型默认和回答同一个，可用 `EVAL_JUDGE_MODELS` 换。
 
+### 效果评测（运维 Agent 故障演练）
+
+值班台点「🧪 Agent 评测」：`ai/app/evals/agent_cases.json` 的 21 道题，在集群的实时数据上注入故障（OOMKilled、备份连 R2 超时、备份密码错、进程卡住、拉镜像 401、磁盘满、证书续期失败、日志里夹带指令等），让运维 Agent 按自愈（收到告警、可以提议操作）或值班台（回答问题）的方式排查（`ai/app/evals/agent.py`，后台跑 3～5 分钟，约几毛钱，和网站的 AI 功能共用每天的费用上限）。注入只发生在交给模型的工具结果里，集群不受影响；自愈题的提议只校验和记录，不执行。打分：该查的工具查了没有、根因关键词、提议的操作对不对（包括不该动手时没有动手）、裁判对照出题人写的真实情况和 Agent 看到的工具结果判对错、安全题（越权、日志注入、处理自己）。结果存 `eval_runs`（kind=agent），明细在 `https://ops.liuxd.dev/api/ai/eval/latest?kind=agent`。「集群整体状况」那道题以当时的真实状态为准，集群正好有告警时自动跳过。改了运维 Agent 或自愈的提示词、工具后跑一次。
+
 ### 创建网站的机器人（telegram-ops）
 
 没建这个 Secret 时 ai-api 照常运行，只是自愈审批、访客留言收不到推送（留言仍然存在 `ai.db` 里）。

@@ -73,6 +73,38 @@ PROPOSE = ops._fn(
 )
 
 
+OBJECT_PATH = {
+    "rerun_cronjob": "/apis/batch/v1/namespaces/{ns}/cronjobs/{n}",
+    "delete_pod": "/api/v1/namespaces/{ns}/pods/{n}",
+    "restart_deployment": "/apis/apps/v1/namespaces/{ns}/deployments/{n}",
+}
+
+
+def check_action(args: dict) -> tuple[str, str, str]:
+    """提议的操作先过这一关（不访问集群）：在清单里、命名空间允许、名字合法、不是 ai-api 自己"""
+    action, ns, name = str(args.get("action") or ""), str(args.get("namespace") or ""), str(args.get("name") or "")
+    if action not in ACTIONS:
+        raise ValueError(f"不在操作清单里：{action}")
+    if ns not in HEAL_NAMESPACES:
+        raise PermissionError(f"命名空间 {ns} 不允许操作，只能是 {', '.join(HEAL_NAMESPACES)}")
+    if not NAME_RE.fullmatch(name):
+        raise ValueError("名字不合法")
+    if action != "rerun_cronjob" and (name == SELF or name.startswith(SELF + "-")):
+        raise PermissionError("ai-api 不能处理自己")
+    return action, ns, name
+
+
+def alert_question(alert: dict) -> str:
+    """把 Alertmanager 的一条告警写成交给 Agent 的问题"""
+    labels = alert.get("labels") or {}
+    ann = alert.get("annotations") or {}
+    return (
+        f"告警：{labels.get('alertname')}（{labels.get('severity')}），开始于 {alert.get('startsAt', '')[:19]} UTC\n"
+        f"标签：{json.dumps({k: v for k, v in labels.items() if k not in ('prometheus', 'endpoint', 'service')}, ensure_ascii=False)}\n"
+        f"说明：{ann.get('summary', '')} {ann.get('description', '')}"
+    )
+
+
 def fmt_time(ts: str) -> str:
     return datetime.fromisoformat(ts).astimezone(SG).strftime("%m-%d %H:%M")
 
@@ -239,15 +271,8 @@ class Healer:
                 return {"error": f"找不到这个对象（HTTP {e.response.status_code}）"}
             return {"ok": True, "message": "已记录，程序会按风险自动执行或交给人确认"}
 
-        labels = alert.get("labels") or {}
-        ann = alert.get("annotations") or {}
-        question = (
-            f"告警：{labels.get('alertname')}（{labels.get('severity')}），开始于 {alert.get('startsAt', '')[:19]} UTC\n"
-            f"标签：{json.dumps({k: v for k, v in labels.items() if k not in ('prometheus', 'endpoint', 'service')}, ensure_ascii=False)}\n"
-            f"说明：{ann.get('summary', '')} {ann.get('description', '')}"
-        )
         try:
-            answer, _, _ = await ops.investigate(self.gw, self.c, ops.redact(question), system=SYSTEM, extra={**self.extra_tools, "propose_action": (PROPOSE, propose)}, feature="autoheal")
+            answer, _, _ = await ops.investigate(self.gw, self.c, ops.redact(alert_question(alert)), system=SYSTEM, extra={**self.extra_tools, "propose_action": (PROPOSE, propose)}, feature="autoheal")
         except (AIUnavailable, httpx.HTTPError) as e:
             self.store.update(iid, status="error", result=str(e)[:200])
             await self.send(self.store.get(iid))  # type: ignore[arg-type]  分析失败也要让人知道有这条告警
@@ -268,17 +293,8 @@ class Healer:
 
     # ── 操作清单 ──
     async def validate(self, args: dict) -> dict:
-        action, ns, name = args.get("action"), args.get("namespace"), str(args.get("name") or "")
-        if action not in ACTIONS:
-            raise ValueError(f"不在操作清单里：{action}")
-        if ns not in HEAL_NAMESPACES:
-            raise PermissionError(f"命名空间 {ns} 不允许操作，只能是 {', '.join(HEAL_NAMESPACES)}")
-        if not NAME_RE.fullmatch(name):
-            raise ValueError("名字不合法")
-        if action != "rerun_cronjob" and (name == SELF or name.startswith(SELF + "-")):
-            raise PermissionError("ai-api 不能处理自己")
-        kind = {"rerun_cronjob": "/apis/batch/v1/namespaces/{ns}/cronjobs/{n}", "delete_pod": "/api/v1/namespaces/{ns}/pods/{n}", "restart_deployment": "/apis/apps/v1/namespaces/{ns}/deployments/{n}"}
-        obj = await self.c.k8s(kind[action].format(ns=ns, n=name))
+        action, ns, name = check_action(args)
+        obj = await self.c.k8s(OBJECT_PATH[action].format(ns=ns, n=name))
         if action == "delete_pod" and not obj["metadata"].get("ownerReferences"):
             raise PermissionError("这个 Pod 没有控制器，删了不会重建")
         return {"action": action, "namespace": ns, "name": name, "target": f"{ns}/{name}", "reason": str(args.get("reason") or "")[:200]}

@@ -23,6 +23,7 @@ from . import content as ct
 from . import demo_shop
 from . import dutybot
 from . import opsdocs as od
+from .evals import agent as agent_eval
 from .evals import rag as rag_eval
 from . import digest as dg
 from . import extract as ex
@@ -157,6 +158,29 @@ def create_app(
         n = sum(len(rag_eval.load_cases(x[3])) for x in ready)
         return f"📏 开始跑评测：{'、'.join(x[1] for x in ready)}，共 {n} 道题，大约 2～3 分钟，花一两毛钱。每跑完一套发一次结果"
 
+    async def start_agent_eval() -> str:
+        """故障演练评测：在真实集群数据上注入故障，Agent 只读，自愈题的提议只记录不执行"""
+        if eval_lock.locked():
+            return "评测正在跑，跑完会把结果发给你"
+        cases = agent_eval.load_cases()
+
+        async def job() -> None:
+            async with eval_lock:
+                try:
+                    out = await agent_eval.run(gw, k8s, cases, extra_tools=runbook if docs.ready else None)
+                    ledger.add_eval("agent", out)
+                    text = agent_eval.summary_text(out)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("运维 Agent 评测失败：%s", e)
+                    text = f"运维 Agent 评测失败：{html.escape(str(e)[:150])}"
+                if tg:
+                    await tg.send(text)
+
+        evals_running.add(t := asyncio.create_task(job()))
+        t.add_done_callback(evals_running.discard)
+        live = "真实集群数据" if k8s.enabled else "没有集群权限，只用注入的数据"
+        return f"🧪 开始跑运维 Agent 评测：{len(cases)} 道故障演练题（{live}），大约 3～5 分钟，花几毛钱。只读，不会动集群"
+
     menu = [
         ("🖥 服务器状态", "status", "CPU、内存、磁盘和不正常的 Pod", lambda: dutybot.status_text(k8s)),
         ("🚨 当前告警", "alerts", "正在触发的告警", lambda: dutybot.alerts_text(k8s)),
@@ -165,6 +189,7 @@ def create_app(
         ("🗓 定时任务", "jobs", "服务器上的备份、周报等任务", lambda: dutybot.jobs_text(k8s)),
         ("💬 最近留言", "leads", "网站访客的留言", lambda: asyncio.to_thread(dutybot.leads_text, ledger)),
         ("📏 RAG 评测", "eval", "跑一遍作品集问答和运维知识库的评测集", start_eval),
+        ("🧪 Agent 评测", "agenteval", "故障演练：注入故障，看运维 Agent 的诊断和处置", start_agent_eval),
         ("💰 今日用量", "usage", "AI 演示今天的调用和费用", lambda: asyncio.to_thread(dutybot.usage_text, ledger, s.daily_budget)),
     ]
     bot = OpsBot(tg, healer.on_button, menu, dutybot.make_ask(gw, k8s, runbook), dutybot.HELP) if tg else None

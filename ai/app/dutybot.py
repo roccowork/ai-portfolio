@@ -23,7 +23,7 @@ HELP = """<b>我是 OPS 值班台</b>，负责网站和服务器这边的事：
 🖥 <b>服务器状态</b>：CPU、内存、磁盘，哪些 Pod 不正常
 🚨 <b>当前告警</b>：正在触发和等待中的告警
 🩹 <b>自愈记录</b>：运维 Agent 最近处理的故障
-📊 <b>平台实况</b>：最近发布、7 天可用率、备份、证书、7 天告警（和网页 /live 同一份数据）
+📊 <b>平台实况</b>：最近发布、7 天可用率、备份、证书、7 天告警（和网页值班大屏同一份数据）
 🗓 <b>定时任务</b>：服务器上的备份、周报等任务，下次几点、上次成没成功
 💬 <b>最近留言</b>：网站访客在 AI 助手里给你的留言
 📏 <b>RAG 评测</b>：用评测集把作品集问答和运维知识库跑一遍（2～3 分钟，花一两毛钱），结果公开在 /api/ai/eval/latest
@@ -111,7 +111,7 @@ def usage_text(ledger: Ledger, daily_budget: float, public_budget: float) -> str
 
 
 def ago(iso: str | None, now: datetime | None = None) -> str:
-    """「3 分钟前」「5 小时前」「2 天前」，和网页 /live 的写法一样"""
+    """「3 分钟前」「5 小时前」「2 天前」，和网页上的写法一样"""
     if not iso:
         return "未知"
     try:
@@ -159,7 +159,7 @@ def platform_text(st: dict, now: datetime | None = None) -> str:
     lines.append("🚨 <b>7 天告警</b>" + ("：查询失败" if alerts is None else ("：没有 ✅" if not alerts else "")))
     for a in alerts or []:
         lines.append(f"　{'🔴' if a.get('severity') == 'critical' else '🟡'} {e(a['name'])}：累计约 {a['minutes']} 分钟")
-    lines.append("\n网页版：https://ops.liuxd.dev/live/")
+    lines.append("\n网页版（值班大屏）：https://ops.liuxd.dev/ops-agent/")
     return "\n".join(lines)
 
 

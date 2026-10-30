@@ -23,7 +23,7 @@ const badge = (s: WorkStatus) =>
 
 <Base
   title={`${PROFILE.role}作品集 · ${BRAND.name}`}
-  description="AI 应用开发作品集：运维 Agent（自动排查与自愈）、ChatBI（Text-to-SQL）、K8s + GitOps 平台。所有演示都调用真实的大模型，跑在自建的 K8s 集群上。"
+  description="AI 应用开发作品集：运维 Agent（自动排查与自愈）、RAG 知识库（带评测）、ChatBI（Text-to-SQL）、K8s + GitOps 平台。所有演示都调用真实的大模型，跑在自建的 K8s 集群上。"
 >
   <!-- 首屏 -->
   <section class="relative overflow-hidden bg-slate-950 text-white">
@@ -42,10 +42,10 @@ const badge = (s: WorkStatus) =>
           看代表作
         </a>
         <a
-          href="/live/"
+          href="/ops-agent/"
           class="rounded-full px-7 py-3 font-semibold text-white ring-1 ring-white/25 transition hover:bg-white/10"
         >
-          平台实况
+          值班大屏
         </a>
         {PROFILE.github && (
           <a
@@ -144,7 +144,7 @@ const badge = (s: WorkStatus) =>
       </div>
 
       <h3 class="mt-16 text-xl font-bold text-slate-900">其他作品</h3>
-      <div class="mt-6 grid gap-6 md:grid-cols-3">
+      <div class="mt-6 grid gap-6 md:grid-cols-2">
         {OTHER_WORKS.map((w) => (
           <article class="flex flex-col rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <span

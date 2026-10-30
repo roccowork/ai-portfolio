@@ -1,0 +1,139 @@
+---
+import Base from '../../layouts/Base.astro';
+import EvalBoard from '../../components/EvalBoard.vue';
+import { BRAND, PROFILE } from '../../lib/site';
+
+const repo = `${PROFILE.github}/blob/main`;
+
+const pipeline = [
+  {
+    t: '切块',
+    d: '按标题切成小段，段落带上所属章节（「运维手册 › 2. 回滚」）；代码块和表格不从中间拆开，超长的表格每段都带表头',
+  },
+  { t: '向量化', d: 'text-embedding-v3 把每段变成向量；按内容哈希缓存，文档改了只重算变化的段落' },
+  {
+    t: '混合检索',
+    d: '向量检索擅长「意思相近」，BM25 关键词检索擅长专有名词和报错码；两路各排一次名次，用 RRF 合并',
+  },
+  {
+    t: '生成',
+    d: '把最相关的几段交给模型，只按资料回答，每条关键信息标出处 [1]；命令和网址只能从资料原样复制',
+  },
+  { t: '拒答', d: '资料里没有的就说没有，不编；评测集里专门放了 10 道资料里没有答案的题' },
+];
+
+const files = [
+  { t: 'RAG 问答（切块、检索、生成、引用）', f: 'ai/app/rag.py' },
+  { t: '运维知识库（按标题切块、BM25、RRF 融合）', f: 'ai/app/opsdocs.py' },
+  { t: '评测程序（检索指标、要点、LLM 裁判、拒答）', f: 'ai/app/evals/rag.py' },
+  { t: '作品集问答的 36 道评测题', f: 'ai/app/evals/rag_cases.json' },
+  { t: '运维知识库的 25 道评测题', f: 'ai/app/evals/ops_cases.json' },
+];
+---
+
+<Base
+  title={`RAG 知识库问答：带评测的检索增强 · ${BRAND.name}`}
+  description="自己写代码实现的 RAG：切块、向量 + BM25 混合检索、引用出处和拒答。用 61 道题的评测集衡量效果，公开每一次评测的真实分数和没答好的题。"
+>
+  <section class="bg-slate-950 py-16 text-white">
+    <div class="mx-auto max-w-5xl px-5">
+      <p class="text-sm font-semibold tracking-widest text-amber-300">代表作 · RAG 知识库问答</p>
+      <h1 class="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">回答准不准，用评测集说话</h1>
+      <p class="mt-4 max-w-3xl leading-relaxed text-slate-300">
+        两个知识库都在真实使用：<b class="text-white">作品集问答</b>是右下角的 AI 助手；
+        <b class="text-white">运维知识库</b>是运维 Agent
+        的工具，问「怎么回滚」时按本站的运维手册回答。没有用现成框架，切块、检索、生成都是自己写的代码，每次改动都用评测集验证。
+      </p>
+      <div class="mt-8 flex flex-wrap gap-3">
+        <button
+          type="button"
+          data-open-chat
+          class="rounded-full bg-amber-400 px-6 py-2.5 font-semibold text-slate-950 hover:bg-amber-300"
+        >
+          问作品集 AI 助手
+        </button>
+        <a
+          href="/ops-agent/"
+          class="rounded-full px-6 py-2.5 font-semibold ring-1 ring-white/25 hover:bg-white/10"
+        >
+          问运维 Agent「网站出问题怎么回滚」→
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-5xl px-5 py-16">
+    <p class="text-sm font-semibold tracking-widest text-amber-600">怎么做的</p>
+    <h2 class="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+      从文档到带出处的回答
+    </h2>
+    <ol class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      {pipeline.map((p, i) => (
+        <li class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <span class="grid size-8 place-items-center rounded-full bg-slate-900 font-mono text-sm font-bold text-amber-300">
+            {i + 1}
+          </span>
+          <p class="mt-3 font-semibold text-slate-900">{p.t}</p>
+          <p class="mt-1 text-sm leading-relaxed text-slate-600">{p.d}</p>
+        </li>
+      ))}
+    </ol>
+  </section>
+
+  <section class="bg-slate-50 py-16">
+    <div class="mx-auto max-w-5xl px-5">
+      <p class="text-sm font-semibold tracking-widest text-amber-600">改进过程</p>
+      <h2 class="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+        评测发现问题，改完再测
+      </h2>
+      <div class="mt-8 grid gap-4 md:grid-cols-2">
+        <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+          <p class="font-semibold text-slate-900">运维知识库：命中@1 从 70% 到 85.7%</p>
+          <p class="mt-2 text-sm leading-relaxed text-slate-600">
+            第 1 次评测发现：问「签证书报 rateLimited
+            怎么处理」，向量检索找不到对应章节——向量对英文专有名词、章节名不敏感；手册里早已下线的章节也混进了检索结果。改成向量
+            + BM25 混合检索、RRF 融合，并删掉过时章节。第 2 次：命中@1 70% → 85.7%，要点命中 85% →
+            100%，拒答 75% → 100%。
+          </p>
+        </div>
+        <div class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+          <p class="font-semibold text-slate-900">裁判也要被检验</p>
+          <p class="mt-2 text-sm leading-relaxed text-slate-600">
+            作品集问答第 1
+            次评测，有道题漏了要点，裁判却判了「对」：它只看资料，不知道必须答到什么。把标准要点交给裁判后，漏答最多判「部分对」。还有一次，模型编了一条手册里没有的命令，之后提示词禁止编命令，裁判遇到资料里没有的命令直接判错。
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-5xl px-5 py-16">
+    <p class="text-sm font-semibold tracking-widest text-amber-600">最近一次评测</p>
+    <h2 class="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+      真实分数，没答好的题也公开
+    </h2>
+    <p class="mt-3 max-w-3xl text-slate-600">
+      每次评测都真实调用模型：先检索、再回答，另一次模型调用当裁判。检索看「应该找到的资料排第几」，生成看要点、裁判判断和拒答。模型输出有随机性，每次分数会有小幅波动。
+    </p>
+    <div class="mt-8">
+      <EvalBoard client:visible />
+    </div>
+
+    <h3 class="mt-14 text-xl font-bold text-slate-900">代码</h3>
+    <ul class="mt-4 divide-y divide-slate-200 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+      {files.map((f) => (
+        <li>
+          <a
+            href={`${repo}/${f.f}`}
+            target="_blank"
+            rel="noopener"
+            class="flex flex-wrap items-baseline justify-between gap-2 px-5 py-4 hover:bg-slate-50"
+          >
+            <span class="text-slate-900">{f.t}</span>
+            <span class="font-mono text-xs text-slate-500">{f.f} ↗</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </section>
+</Base>

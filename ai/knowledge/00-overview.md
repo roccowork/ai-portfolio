@@ -19,11 +19,12 @@ summary: ops.liuxd.dev 是一个 AI 应用开发作品集。作者有 10 年制�
 
 ## 代表作
 
-1. 运维 Agent：告警自动排查与自愈，查的是本站真实运行的服务器。在线体验：ops.liuxd.dev/ops-agent/
-2. ChatBI：一句话查数据（Text-to-SQL），查的是本站自己的真实运行数据（AI 调用和费用、告警自愈、评测分数、访问量）。在线体验：ops.liuxd.dev/chatbi/
-3. K8s + GitOps 平台：本站自己的部署和监控。集群真实数据：ops.liuxd.dev/live/
+1. 运维 Agent：告警自动排查与自愈，查的是本站真实运行的服务器。在线体验和服务器实时状态（值班大屏）：ops.liuxd.dev/ops-agent/
+2. RAG 知识库问答：作品集问答（右下角的 AI 助手）和运维手册问答，自己写代码实现混合检索，带 61 道题的评测集。评测结果和改进过程：ops.liuxd.dev/rag/
+3. ChatBI：一句话查数据（Text-to-SQL），查的是本站自己的真实运行数据（AI 调用和费用、告警自愈、评测分数、访问量）。在线体验：ops.liuxd.dev/chatbi/
+4. K8s + GitOps 平台：本站自己的部署和监控。部署流程和真实配置：ops.liuxd.dev/gitops/；集群实时数据在值班大屏 ops.liuxd.dev/ops-agent/（以前的 /live/ 已并进去）
 
-其他作品：Dify 搭的 AI 客服 Agent（虚构公司，演示数据）、本站右下角的作品集问答助手（RAG）、自写的轻量模型网关。
+其他作品：Dify 搭的 AI 客服 Agent（虚构公司，演示数据）、自写的轻量模型网关。
 
 ## 怎么联系作者
 

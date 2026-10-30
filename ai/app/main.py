@@ -124,7 +124,7 @@ def create_app(
     # 网站的 Telegram 机器人（Secret telegram-ops）：自愈审批按钮、访客留言、演示预约。私人助理用另一个机器人
     tg = telegram or (Telegram(s.tg_token, s.tg_chat_id) if s.tg_token and s.tg_chat_id else None)
     async def platform() -> str:
-        """平台实况的数据和网页 /live 是同一份：站点 nginx 提供的 /status.json（集群内地址）"""
+        """平台实况的数据和网页值班大屏是同一份：站点 nginx 提供的 /status.json（集群内地址）"""
         async with httpx.AsyncClient(timeout=10) as c:
             r = await c.get(s.status_url)
             r.raise_for_status()

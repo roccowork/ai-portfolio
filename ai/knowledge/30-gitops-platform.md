@@ -1,6 +1,6 @@
 ---
 title: K8s + GitOps 平台：本站的部署和监控
-summary: 本站按生产标准部署在单节点 k3s 上：推送到 main 后 CI 自动测试、构建镜像，Argo CD 从 Git 同步上线；监控、证书、Argo CD 自己也都由 Git 管理。状态：真实环境运行中，集群数据在 ops.liuxd.dev/live/ 公开。
+summary: 本站按生产标准部署在单节点 k3s 上：推送到 main 后 CI 自动测试、构建镜像，Argo CD 从 Git 同步上线；监控、证书、Argo CD 自己也都由 Git 管理。状态：真实环境运行中。部署流程和真实配置在 ops.liuxd.dev/gitops/，集群实时数据在值班大屏 ops.liuxd.dev/ops-agent/。
 ---
 
 ## 发布流程
@@ -28,4 +28,4 @@ summary: 本站按生产标准部署在单节点 k3s 上：推送到 main 后 CI
 
 ## 平台实况
 
-集群里的 CronJob 每 10 分钟查询 K8s API 和 Prometheus，把最近发布、7 天可用率和响应时间、备份、证书、告警汇总成 /status.json，ops.liuxd.dev/live/ 页面直接展示。
+集群里的 CronJob 每 10 分钟查询 K8s API 和 Prometheus，把最近发布、7 天可用率和响应时间、备份、证书、告警汇总成 /status.json，值班大屏（ops.liuxd.dev/ops-agent/）读它显示这几项（2026-10-30 以前在单独的 /live/ 页面，现在并进值班大屏）。

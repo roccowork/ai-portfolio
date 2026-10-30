@@ -13,7 +13,7 @@ export const PROFILE = {
   role: 'AI 应用开发工程师',
   headline: '会 Python 开发、懂数据、能独立部署上线的 AI 应用工程师',
   intro:
-    '10 年制造业 IT 背景，做 Agent、RAG、Text-to-SQL 这类能在企业里实际用起来的 AI 应用。这个网站本身就是作品：下面的演示都调用真实的大模型，跑在我自己搭建和运维的 K8s 集群上。',
+    '11 年制造业 IT 背景，做 Agent、RAG、Text-to-SQL 这类能在企业里实际用起来的 AI 应用。这个网站本身就是作品：下面的演示都调用真实的大模型，跑在我自己搭建和运维的 K8s 集群上。',
   /** 留空时不显示 */
   github: 'https://github.com/roccowork/ai-portfolio',
   resume: '',
@@ -25,7 +25,7 @@ export const LEARNING_SITE = 'https://agent-workforce-70y.pages.dev';
 /** 顶部导航 */
 export const NAV = [
   { name: '代表作', href: '/#projects' },
-  { name: '平台实况', href: '/live/' },
+  { name: '值班大屏', href: '/ops-agent/' },
   { name: '技术栈', href: '/#skills' },
   { name: '关于我', href: '/about/' },
 ];
@@ -72,8 +72,26 @@ export const PROJECTS: Work[] = [
     ],
     demo: {
       href: '/ops-agent/',
-      label: '在线提问，查看自愈记录',
-      hint: '它会查本站真实运行的服务器',
+      label: '值班大屏：实时状态 + 在线提问',
+      hint: '它会查本站真实运行的服务器，每一步实时显示',
+    },
+  },
+  {
+    id: 'rag',
+    name: 'RAG 知识库问答：带评测的检索增强',
+    summary:
+      '两个知识库：作品集问答（右下角的 AI 助手）和运维手册问答（运维 Agent 的工具）。自己写代码实现切块、向量 + 关键词混合检索、引用出处和拒答，用 61 道题的评测集衡量效果，按评测结果一轮轮改进。',
+    status: 'production',
+    highlights: [
+      '混合检索：向量对 rateLimited 这类专有名词不敏感，加上 BM25 关键词检索、用 RRF 融合两路结果，运维手册命中@1 从 70% 提到 85.7%',
+      '评测分检索和生成：命中@1 / @3、MRR、要点命中、LLM 裁判、引用准确；还有 10 道资料里没有答案的题，专测会不会编',
+      '按标题切块，代码块和表格不拆开；向量按内容哈希缓存，文档改了只重算变化的段落',
+    ],
+    stack: ['Python', 'Embedding', 'BM25', 'RRF', 'LLM 裁判', '评测集'],
+    demo: {
+      href: '/rag/',
+      label: '看评测结果和改进过程',
+      hint: '最近一次评测的真实分数，每道题的回答都能查',
     },
   },
   {
@@ -103,7 +121,7 @@ export const PROJECTS: Work[] = [
     highlights: [
       'CI 不持有集群凭据，只把新镜像标签写回 Git；回滚就是 git revert',
       '就绪探针通过才接流量，新版本不健康时旧版本继续服务',
-      'kube-prometheus-stack、Grafana、Uptime Kuma 监控，告警推企业微信；数据用 restic 每天加密备份到 R2',
+      'kube-prometheus-stack、Grafana、Uptime Kuma 监控，告警推 Telegram 并交给运维 Agent 排查；数据用 restic 每天加密备份到 R2',
     ],
     stack: [
       'k3s',
@@ -115,9 +133,9 @@ export const PROJECTS: Work[] = [
       'restic',
     ],
     demo: {
-      href: '/live/',
-      label: '平台实况',
-      hint: '集群真实数据：最近发布、可用率、备份、证书、告警',
+      href: '/gitops/',
+      label: '看部署流程和真实配置',
+      hint: '从 git push 到上线、到一键回滚，每一步都链接到仓库里的配置',
     },
   },
 ];
@@ -136,16 +154,6 @@ export const OTHER_WORKS: Work[] = [
       label: '在线体验',
       hint: '可以查订单 QY1001～QY1005，无需注册',
     },
-  },
-  {
-    id: 'portfolio-rag',
-    name: '作品集问答（RAG）',
-    summary:
-      '右下角的 AI 助手：把本站的作品资料切块、算向量，按问题检索最相关的几段交给模型，只按资料回答并记下引用了哪几段。',
-    status: 'production',
-    highlights: [],
-    stack: ['Embedding', '向量检索', '多轮对话'],
-    demo: 'chat',
   },
   {
     id: 'gateway',

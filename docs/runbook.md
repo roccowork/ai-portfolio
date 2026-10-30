@@ -221,7 +221,7 @@ k3s kubectl -n monitoring logs job/<上一步的 Job 名>
 
 某一项查询失败时，那一节显示「查询失败」，其他照常发送；所有查询都失败（Prometheus 不可用）或企业微信返回错误时 Job 失败，重试 1 次。告警规则 `KubeJobFailed`（默认规则）会通知。
 
-### 平台实况（/live）
+### 平台实况数据（/status.json，值班大屏用）
 
 CronJob `ops-desk-status`（命名空间 ops-desk，`deploy/k8s/base/status/`）每 10 分钟查询 K8s API（站点的 ReplicaSet = 发布历史）和 Prometheus（7 天可用率、p95、请求数、备份、证书、告警），写进 ConfigMap `ops-desk-status`。站点 Pod 把它挂载到 `/usr/share/nginx/status`，nginx 以 `/status.json` 提供；ConfigMap 更新后 kubelet 约 1 分钟内同步到 Pod，不用重启。
 
@@ -435,7 +435,7 @@ k3s kubectl -n n8n create secret generic backup-r2 \
 
 ## 12. AI 服务（作品集的 AI 后端）
 
-**2026-10-29 改版为作品集**：首页是代表作（运维 Agent、ChatBI、GitOps 平台），恢复了 `/live/`，ChatBI 在 `/chatbi/`（2026-10-29 起查本站真实运行数据，之前是虚构公司的销售库）；报价和服务套餐下线。
+**2026-10-29 改版为作品集**：首页是代表作（运维 Agent、ChatBI、GitOps 平台）。2026-10-30：加了 RAG 代表作（`/rag/`）；`/live/` 并进运维 Agent 的值班大屏（`/ops-agent/`，旧地址自动跳转），GitOps 代表作改成讲部署流程（`/gitops/`）；ChatBI 在 `/chatbi/`（2026-10-29 起查本站真实运行数据，之前是虚构公司的销售库）；报价和服务套餐下线。
 
 - 右下角的 AI 助手调用 `/api/ai/ask`，只按 `ai/knowledge/*.md` 的作品资料回答（改作品介绍时，`src/lib/site.ts` 和这里要一起改）；带最近几轮对话，每个访客每天 30 次
 - 访客留言调用 `/api/ai/lead`：存进 `ai.db` 的 `leads` 表，并推送到我的 Telegram；每个访客每天 5 次
@@ -519,7 +519,7 @@ Odoo 和依赖它的办公 Agent 2026-10-28 下线，Argo CD 应用和清单已�
 
 告警、网站周报、每日英语、R2 用量共用 `deploy/monitoring/wecom-relay/relay.mjs` 里的推送函数：对应的 Telegram Secret 存在就发 Telegram，否则发企业微信（Secret `wecom-bot`）。消息格式自动转换。
 
-值班台的常驻菜单都只读、不调用模型（`ai/app/dutybot.py`）：服务器状态、当前告警、自愈记录、平台实况（读站点的 `/status.json`，和网页 /live 同一份）、定时任务（所有 CronJob，说明在 `ai/app/schedules.py` 的 `KNOWN`，新增 CronJob 时顺手补一行）、最近留言、今日用量。直接打字提问交给运维 Agent（和网站值班台同一套工具，主人自己用可以查日志，日志先脱敏），每次调用模型。菜单在机器人里发 /start 出现。
+值班台的常驻菜单都只读、不调用模型（`ai/app/dutybot.py`）：服务器状态、当前告警、自愈记录、平台实况（读站点的 `/status.json`，和网页值班大屏的发布、证书、备份同一份）、定时任务（所有 CronJob，说明在 `ai/app/schedules.py` 的 `KNOWN`，新增 CronJob 时顺手补一行）、最近留言、今日用量。直接打字提问交给运维 Agent（和网站值班台同一套工具，主人自己用可以查日志，日志先脱敏），每次调用模型。菜单在机器人里发 /start 出现。
 
 ### 效果评测（RAG）
 

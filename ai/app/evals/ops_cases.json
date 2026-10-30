@@ -82,7 +82,7 @@
     {
       "id": "r14",
       "question": "平台实况页面的数据是怎么来的？",
-      "sections": ["平台实况（/live）"],
+      "sections": ["平台实况数据"],
       "keywords": ["CronJob", "10 分钟|10分钟"]
     },
     {

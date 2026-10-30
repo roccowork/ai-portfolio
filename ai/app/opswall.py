@@ -103,6 +103,7 @@ class OpsWall:
             "deploy": {"sha": deploy.get("sha"), "time": deploy.get("time")} if deploy else None,
             "cert_days_left": min((x["daysLeft"] for x in certs), default=None),
             "backups": st.get("backups"),
+            "alerts7d": st.get("alerts7d"),
             **self.extras(),
         }
 

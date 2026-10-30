@@ -1,0 +1,187 @@
+---
+import Base from '../../layouts/Base.astro';
+import { BRAND, PROFILE } from '../../lib/site';
+
+// 「怎么搭的」：每一步都链接到仓库里的真实配置。实时数据在 /ops-agent/ 的值班大屏
+const repo = `${PROFILE.github}/blob/main`;
+const tree = `${PROFILE.github}/tree/main`;
+
+const steps = [
+  { t: 'git push 到 main', d: '代码和部署配置都在同一个仓库，线上应该是什么样，以 Git 为准' },
+  { t: 'GitHub Actions 检查', d: '格式、lint、类型检查、网站和 AI 后端的单元测试，不通过就停' },
+  { t: '构建镜像', d: '推到 GHCR，标签是 commit SHA，不用 latest' },
+  { t: '把新标签写回 Git', d: '只改部署清单里的一行；提交带 [skip ci]，不会再触发流水线' },
+  { t: 'Argo CD 同步', d: '每 60 秒检查一次 Git，发现变化就同步到集群' },
+  { t: '滚动更新', d: '2 个副本，maxUnavailable = 0，新 Pod 就绪探针通过才接流量' },
+];
+
+const whys = [
+  {
+    t: 'CI 不持有集群凭据',
+    d: '拉取式 GitOps：集群自己去 Git 拉，不用把 6443 端口和管理员凭据交给 CI。CI 被攻破也碰不到集群',
+  },
+  {
+    t: '镜像标签用 commit SHA',
+    d: '线上任何一个版本都能对应到一次提交；回滚就是回到某个提交，有记录、可审计',
+  },
+  {
+    t: '回滚用 git revert，不用 kubectl rollout undo',
+    d: 'Argo CD 开了 selfHeal，手动改集群会被改回 Git 里的状态。改 Git 才是唯一的入口',
+  },
+  {
+    t: '发布不中断',
+    d: '就绪探针通过才接流量；停 Pod 前 preStop 先等几秒，让 Traefik 把它摘掉，已有请求处理完再退出',
+  },
+  {
+    t: '平台组件也在 Git 里',
+    d: 'Traefik 配置、cert-manager、监控，连 Argo CD 自己都由 Argo CD 从 Git 同步，换服务器时整套重建',
+  },
+];
+
+const parts = [
+  { t: 'Traefik', d: '入口、HTTPS、按 IP 限流' },
+  { t: 'cert-manager', d: "Let's Encrypt 证书自动续期" },
+  { t: 'kube-prometheus-stack', d: 'Prometheus、Grafana、Alertmanager，自定义告警规则' },
+  { t: 'Uptime Kuma', d: '定时拨测网站、AI 服务和 VPS 是否在线' },
+  { t: 'restic → R2', d: '每天加密备份到另一家云，失败或超过 26 小时没成功就告警' },
+  { t: '运维 Agent', d: '告警来了自动排查原因，低风险问题自动处理' },
+];
+
+const files = [
+  { t: 'CI 流水线', p: `${repo}/.github/workflows/ci.yml`, f: '.github/workflows/ci.yml' },
+  {
+    t: 'Argo CD 的应用清单',
+    p: `${repo}/deploy/argocd/applications.yaml`,
+    f: 'deploy/argocd/applications.yaml',
+  },
+  {
+    t: '网站的 Deployment（滚动更新、探针、preStop）',
+    p: `${repo}/deploy/k8s/base/deployment.yaml`,
+    f: 'deploy/k8s/base/deployment.yaml',
+  },
+  {
+    t: '监控和告警',
+    p: `${repo}/deploy/platform/kube-prometheus-stack.yaml`,
+    f: 'deploy/platform/kube-prometheus-stack.yaml',
+  },
+  { t: '自定义告警规则', p: `${tree}/deploy/monitoring/rules`, f: 'deploy/monitoring/rules/' },
+  { t: '运维手册（部署、回滚、排障）', p: `${repo}/docs/runbook.md`, f: 'docs/runbook.md' },
+];
+---
+
+<Base
+  title={`K8s + GitOps：本站怎么部署上线 · ${BRAND.name}`}
+  description="单节点 k3s 上按生产标准部署：推送代码约 3～4 分钟自动上线，git revert 约 1 分钟回滚。每一步都链接到仓库里的真实配置。"
+>
+  <section class="bg-slate-950 py-16 text-white">
+    <div class="mx-auto max-w-5xl px-5">
+      <p class="text-sm font-semibold tracking-widest text-amber-300">代表作 · K8s + GitOps 平台</p>
+      <h1 class="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+        从一次 git push 到上线，再到一次回滚
+      </h1>
+      <p class="mt-4 max-w-3xl leading-relaxed text-slate-300">
+        这个网站和 AI 后端都跑在单节点 k3s 上，按生产标准部署。推送代码约
+        <b class="text-white">3～4 分钟</b>自动上线，回滚用 git revert 约
+        <b class="text-white">1 分钟</b>（实测）。下面每一步都链接到仓库里的真实配置。
+      </p>
+      <div class="mt-8 flex flex-wrap gap-3">
+        <a
+          href="/ops-agent/"
+          class="rounded-full bg-amber-400 px-6 py-2.5 font-semibold text-slate-950 hover:bg-amber-300"
+        >
+          看实时状态：值班大屏 →
+        </a>
+        <a
+          href={PROFILE.github}
+          target="_blank"
+          rel="noopener"
+          class="rounded-full px-6 py-2.5 font-semibold ring-1 ring-white/25 hover:bg-white/10"
+        >
+          GitHub 仓库 ↗
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-5xl px-5 py-16">
+    <p class="text-sm font-semibold tracking-widest text-amber-600">发布流程</p>
+    <h2 class="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+      推送到上线，全程不用登录服务器
+    </h2>
+    <ol class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {steps.map((s, i) => (
+        <li class="relative rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <span class="grid size-8 place-items-center rounded-full bg-slate-900 font-mono text-sm font-bold text-amber-300">
+            {i + 1}
+          </span>
+          <p class="mt-3 font-semibold text-slate-900">{s.t}</p>
+          <p class="mt-1 text-sm leading-relaxed text-slate-600">{s.d}</p>
+        </li>
+      ))}
+    </ol>
+    <div class="mt-6 grid gap-4 md:grid-cols-2">
+      <div class="rounded-2xl bg-emerald-50 p-5 ring-1 ring-emerald-200">
+        <p class="font-semibold text-emerald-900">✓ 约 3～4 分钟上线</p>
+        <p class="mt-1 text-sm leading-relaxed text-emerald-800">
+          只改了文档时不构建镜像；新版本不健康（就绪探针不通过）时，旧版本继续服务，用户无感知。
+        </p>
+      </div>
+      <div class="rounded-2xl bg-amber-50 p-5 ring-1 ring-amber-200">
+        <p class="font-semibold text-amber-900">↺ 回滚：git revert，约 1 分钟</p>
+        <p class="mt-1 text-sm leading-relaxed text-amber-800">
+          revert 那次「deploy:」提交并推送，Argo CD 同步回上一个镜像标签。回滚本身也是一条 Git
+          记录。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="bg-slate-50 py-16">
+    <div class="mx-auto max-w-5xl px-5">
+      <p class="text-sm font-semibold tracking-widest text-amber-600">设计取舍</p>
+      <h2 class="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+        为什么这样做
+      </h2>
+      <ul class="mt-8 space-y-4">
+        {whys.map((w) => (
+          <li class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+            <p class="font-semibold text-slate-900">{w.t}</p>
+            <p class="mt-1 text-sm leading-relaxed text-slate-600">{w.d}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-5xl px-5 py-16">
+    <p class="text-sm font-semibold tracking-widest text-amber-600">平台组件</p>
+    <h2 class="mt-3 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+      监控、证书、备份都自动
+    </h2>
+    <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {parts.map((p) => (
+        <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <p class="font-mono text-sm font-semibold text-slate-900">{p.t}</p>
+          <p class="mt-1 text-sm text-slate-600">{p.d}</p>
+        </div>
+      ))}
+    </div>
+
+    <h3 class="mt-14 text-xl font-bold text-slate-900">真实配置</h3>
+    <ul class="mt-4 divide-y divide-slate-200 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+      {files.map((f) => (
+        <li>
+          <a
+            href={f.p}
+            target="_blank"
+            rel="noopener"
+            class="flex flex-wrap items-baseline justify-between gap-2 px-5 py-4 hover:bg-slate-50"
+          >
+            <span class="text-slate-900">{f.t}</span>
+            <span class="font-mono text-xs text-slate-500">{f.f} ↗</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </section>
+</Base>

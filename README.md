@@ -3,11 +3,11 @@
 个人作品集网站，线上地址：<https://ops.liuxd.dev>。代表作有三个，都能在线体验，状态如实标注：
 
 - **运维 Agent**（`/ops-agent/`）：用只读工具查本站真实的服务器，告警时自动排查，低风险操作自动执行、关键操作等人在 Telegram 确认
-- **运维值班大屏**（`/ops-agent/`）：服务器实时状态（CPU / 内存 / 磁盘、访问量、告警、Pod、最近发布、评测分数），直接查 Prometheus，每 15 秒刷新、不调用模型；运维 Agent 排查时每一步（思考、调用工具、程序核对）用 SSE 实时推到页面
+- **运维值班大屏**（`/ops-agent/`）：服务器实时状态（CPU / 内存 / 磁盘、访问量、告警、Pod、1 小时趋势、最近发布、证书、备份、7 天告警），直接查 Prometheus，每 15 秒刷新、不调用模型；运维 Agent 排查时每一步（思考、调用工具、程序核对）用 SSE 实时推到页面
 - **ChatBI**（`/chatbi/`）：一句话查本站自己的真实运行数据（Text-to-SQL）：AI 调用和费用、告警自愈、评测分数、访问量、发布记录；程序保证只读，留言等隐私数据不进查询库
-- **K8s + GitOps 平台**（`/live/`）：本站自己的部署和监控，页面展示集群的真实数据
-
-另有右下角的作品集问答助手（RAG，资料在 `ai/knowledge/`）。网站文案集中在 `src/lib/site.ts`。
+- **RAG 知识库问答**（`/rag/`）：作品集问答（右下角的 AI 助手，资料在 `ai/knowledge/`）和运维手册问答；混合检索，页面公开最近一次评测的真实分数和没答好的题
+- **K8s + GitOps 平台**（`/gitops/`）：本站自己的部署流程和设计取舍，链接到仓库里的真实配置；实时数据在值班大屏（原 `/live/` 已并进去，旧地址自动跳转）
+  网站文案集中在 `src/lib/site.ts`。
 
 这也是一个 K8s / CI/CD 实战项目：静态站点按生产标准部署在单节点 k3s 上，推送到 main 后自动测试、构建镜像，由 Argo CD 从 Git 同步上线；新版本不健康时旧版本继续服务，回滚就是 git revert。集群里的所有组件（包括监控、证书、Argo CD 自己）都由 Git 管理。
 
@@ -96,9 +96,9 @@ cd ai && python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 
 值班台点「🧪 Agent 评测」重跑，明细在 <https://ops.liuxd.dev/api/ai/eval/latest?kind=agent>。
 
-## 平台实况（/live）
+## 平台实况数据（/status.json）
 
-`deploy/k8s/base/status/` 下的 CronJob 每 10 分钟查询 K8s API 和 Prometheus，写进 ConfigMap `ops-desk-status`，站点 Pod 挂载后由 nginx 以 `/status.json` 提供。字段定义在 `src/lib/status.ts`，排障见 [docs/runbook.md](docs/runbook.md)「平台实况」。
+`deploy/k8s/base/status/` 下的 CronJob 每 10 分钟查询 K8s API 和 Prometheus，写进 ConfigMap `ops-desk-status`，站点 Pod 挂载后由 nginx 以 `/status.json` 提供。值班大屏（`/ops-agent/`）显示其中的发布、证书、备份、7 天告警，排障见 [docs/runbook.md](docs/runbook.md)「平台实况」。
 
 ## 目录
 

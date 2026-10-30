@@ -37,6 +37,8 @@ interface Overview {
   cert_days_left: number | null;
   evals: Record<'rag' | 'ops-rag' | 'agent', EvalScore | null>;
   heal: { total: number; fixed: number };
+  backups: { name: string; lastSuccess: string }[] | null;
+  alerts7d: { name: string; severity: string; minutes: number }[] | null;
 }
 type Series = [number, number][];
 interface Trend {
@@ -148,16 +150,14 @@ function path(s: Series | undefined, max = 100): string {
 const reqMax = computed(() => Math.max(1, ...(trend.value?.req ?? []).map(([, v]) => v)) * 1.15);
 const last = (s: Series | undefined) => (s?.length ? s[s.length - 1][1] : null);
 
-const EVALS: [keyof Overview['evals'], string, keyof EvalScore][] = [
-  ['rag', '作品集问答', 'judge_correct'],
-  ['ops-rag', '运维知识库', 'hit_at_1'],
-  ['agent', '运维 Agent 故障演练', 'pass_rate'],
-];
-const EVAL_METRIC: Record<string, string> = {
-  judge_correct: '裁判判对',
-  hit_at_1: '命中@1',
-  pass_rate: '通过率',
-};
+// 备份：看最久没成功的那个（超过 26 小时会告警）
+const oldestBackup = computed(() =>
+  (ov.value?.backups ?? []).reduce<string | null>(
+    (o, b) => (!o || b.lastSuccess < o ? b.lastSuccess : o),
+    null,
+  ),
+);
+const alerts7d = computed(() => ov.value?.alerts7d ?? []);
 </script>
 
 <template>
@@ -398,18 +398,32 @@ const EVAL_METRIC: Record<string, string> = {
           </div>
           <div class="text-xs text-slate-500">已恢复 / 处理过</div>
         </div>
-        <div
-          v-for="[k, name, metric] in EVALS"
-          :key="k"
-          class="rounded-2xl bg-white/[0.04] p-4 ring-1 ring-white/10"
-        >
-          <div class="truncate text-xs text-slate-400">评测 · {{ name }}</div>
+        <div class="rounded-2xl bg-white/[0.04] p-4 ring-1 ring-white/10">
+          <div class="text-xs text-slate-400">异地备份</div>
           <div class="mt-1 font-mono text-lg text-slate-100">
-            {{ fmt(ov?.evals?.[k]?.[metric] as number | null, 1) }}<span class="text-sm">%</span>
+            {{ ov?.backups?.length ?? '—' }} 个任务
+          </div>
+          <div class="text-xs text-slate-500">最久的 {{ ago(oldestBackup) }}成功 · R2</div>
+        </div>
+        <div class="rounded-2xl bg-white/[0.04] p-4 ring-1 ring-white/10">
+          <div class="text-xs text-slate-400">7 天告警</div>
+          <div
+            class="mt-1 font-mono text-lg"
+            :class="alerts7d.length ? 'text-amber-300' : 'text-emerald-400'"
+          >
+            {{ alerts7d.length }} 种
+          </div>
+          <div class="truncate text-xs text-slate-500">
+            {{ alerts7d.length ? alerts7d.map((a) => a.name).join('、') : '一周没有告警' }}
+          </div>
+        </div>
+        <div class="rounded-2xl bg-white/[0.04] p-4 ring-1 ring-white/10">
+          <div class="truncate text-xs text-slate-400">Agent 故障演练评测</div>
+          <div class="mt-1 font-mono text-lg text-slate-100">
+            {{ fmt(ov?.evals?.agent?.pass_rate, 1) }}<span class="text-sm">%</span>
           </div>
           <div class="text-xs text-slate-500">
-            {{ EVAL_METRIC[metric] }} · {{ ov?.evals?.[k]?.cases ?? '—' }} 题 ·
-            {{ ago(ov?.evals?.[k]?.ts) }}
+            通过率 · {{ ov?.evals?.agent?.cases ?? '—' }} 题 · {{ ago(ov?.evals?.agent?.ts) }}
           </div>
         </div>
       </div>

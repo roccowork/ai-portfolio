@@ -23,9 +23,11 @@ SCALARS = {
     "disk_total_gb": 'max(node_filesystem_size_bytes{mountpoint="/"}) / 1024^3',
     "uptime_days": "(time() - max(node_boot_time_seconds)) / 86400",
     "req_per_min": f"sum(rate(traefik_service_requests_total{{{SITE}}}[5m])) * 60",
-    "err_5xx_pct": f'100 * sum(rate(traefik_service_requests_total{{{SITE},code=~"5.."}}[5m])) / clamp_min(sum(rate(traefik_service_requests_total{{{SITE}}}[5m])), 1e-9)',
+    # 没有 5xx 时分子那一组是空的，整个表达式也会是空：用 or vector(0) 补成 0
+    "err_5xx_pct": f'100 * (sum(rate(traefik_service_requests_total{{{SITE},code=~"5.."}}[5m])) or vector(0)) / clamp_min(sum(rate(traefik_service_requests_total{{{SITE}}}[5m])), 1e-9)',
 }
-PODS = f'sum by (namespace, phase) (kube_pod_status_phase{{namespace=~"{NS}"}}) > 0'
+# 跑完的 Job（备份、周报等 CronJob 留下的 Pod）是 Succeeded，不算「没在运行」
+PODS = f'sum by (namespace, phase) (kube_pod_status_phase{{namespace=~"{NS}",phase!="Succeeded"}}) > 0'
 TREND = {
     "cpu": '100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])))',
     "mem": "100 * (1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes))",

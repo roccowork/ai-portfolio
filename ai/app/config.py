@@ -33,21 +33,24 @@ class Settings:
     base_url: str = field(
         default_factory=lambda: os.environ.get("DASHSCOPE_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1")
     )
-    # 模型按用途分组，前面的优先，失败时依次降级。百炼的免费额度按模型名分开算（别名和带日期的版本各 100 万 token），
-    # 2026-10-30 别名 qwen-plus 的额度用完、开着「用完即停」，全站降级到 qwen-flash。改用固定日期的版本：
-    # 价格和 qwen-plus 一样，行为不会随别名更新而变，评测结果前后可比
-    chat_models: list[str] = field(default_factory=lambda: _list("AI_CHAT_MODELS", "qwen-plus-2025-12-01,qwen-plus-latest,qwen-flash"))
+    # 模型按用途分组，前面的优先，失败时依次降级（可以配多个，逗号分隔）。
+    # 2026-10-30 起只用一个固定日期的版本：行为不随别名更新而变、不会悄悄换成别的模型，评测结果前后可比。
+    # 它失败时 AI 功能直接提示暂时不可用，不降级。百炼免费额度按模型名分开算，这个版本已关掉「用完即停」，额度用完从余额扣
+    chat_models: list[str] = field(default_factory=lambda: _list("AI_CHAT_MODELS", "qwen-plus-2025-12-01"))
     vision_models: list[str] = field(default_factory=lambda: _list("AI_VISION_MODELS", "qwen3-vl-plus"))
     embed_model: str = field(default_factory=lambda: os.environ.get("AI_EMBED_MODEL", "text-embedding-v3"))
     # 语音识别按音频秒数计费，单独配置
     asr_model: str = field(default_factory=lambda: os.environ.get("AI_ASR_MODEL", "qwen3-asr-flash"))
     asr_price_per_sec: float = field(default_factory=lambda: float(os.environ.get("AI_ASR_PRICE", "0.00022")))
     prices: dict[str, tuple[float, float]] = field(default_factory=_prices)
-    # 全站每天的费用上限（元）。超过后当天所有 AI 功能暂停，第二天自动恢复
-    daily_budget: float = field(default_factory=lambda: float(os.environ.get("AI_DAILY_BUDGET", "1.6")))
-    # 每个访客每天的次数上限（按功能）
+    # 全站每天的费用上限（元），包括主人自己用的值班台、自愈、评测：防程序出错死循环。超过后当天所有 AI 功能暂停，第二天自动恢复
+    daily_budget: float = field(default_factory=lambda: float(os.environ.get("AI_DAILY_BUDGET", "5")))
+    # 网站访客每天合计的费用上限（元）：访客用完只停访客的功能，值班台、自愈、评测不受影响
+    public_budget: float = field(default_factory=lambda: float(os.environ.get("AI_PUBLIC_BUDGET", "1")))
+    # 每个访客（按 IP）每天的次数上限：total 是所有功能合计，其余按功能
     quota: dict[str, int] = field(
         default_factory=lambda: {
+            "total": int(os.environ.get("AI_QUOTA_TOTAL", "30")),
             "ask": int(os.environ.get("AI_QUOTA_ASK", "30")),
             "lead": int(os.environ.get("AI_QUOTA_LEAD", "5")),
             "extract": int(os.environ.get("AI_QUOTA_EXTRACT", "5")),

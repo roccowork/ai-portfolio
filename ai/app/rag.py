@@ -114,17 +114,21 @@ class CaseQA:
                 break
         return picked
 
-    async def ask(self, question: str, history: list[dict] | None = None, note: str = "") -> tuple[ChatResult, list[Chunk], list[int]]:
+    async def ask(
+        self, question: str, history: list[dict] | None = None, note: str = "", feature: str | None = None
+    ) -> tuple[ChatResult, list[Chunk], list[int]]:
         """history：之前几轮对话 [{"role": "user"/"assistant", "content": ...}]，让助手能接着上文聊；
-        note：系统补充的情况（比如访客刚留了联系方式），附在系统提示最后"""
+        note：系统补充的情况（比如访客刚留了联系方式），附在系统提示最后；
+        feature：记账用的功能名，评测传 eval，不占访客的额度"""
         history = history or []
+        feature = feature or self.feature
         # 检索时把上一句访客的话也带上：「那多少钱？」这种追问单独检索找不到对象
         last_user = next((h["content"] for h in reversed(history) if h["role"] == "user"), "")
-        qvec = (await self.gw.embed(self.feature, [f"{last_user}\n{question}".strip()]))[0]
+        qvec = (await self.gw.embed(feature, [f"{last_user}\n{question}".strip()]))[0]
         refs = self.retrieve(f"{last_user}\n{question}".strip(), qvec)
         material = "\n\n".join(f"[{i + 1}] 《{c.title}》· {c.section}\n{c.text}" for i, c in enumerate(refs))
         result = await self.gw.chat(
-            self.feature,
+            feature,
             [
                 {"role": "system", "content": f"{self.system}\n\n资料：\n{material}" + (f"\n\n系统提示：{note}" if note else "")},
                 *({"role": h["role"], "content": h["content"]} for h in history),

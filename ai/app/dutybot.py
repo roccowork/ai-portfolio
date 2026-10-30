@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from . import autoheal
 from . import opsagent as ops
 from . import schedules
-from .gateway import Gateway
+from .gateway import PUBLIC_FEATURES, Gateway
 from .ledger import Ledger
 from .telegram import to_html
 
@@ -94,15 +94,17 @@ def leads_text(ledger: Ledger, limit: int = 5) -> str:
     return "\n".join(lines)
 
 
-def usage_text(ledger: Ledger, daily_budget: float) -> str:
+def usage_text(ledger: Ledger, daily_budget: float, public_budget: float) -> str:
     s = ledger.summary()
     t, total = s["today"], s["total"]
     left = max(0.0, daily_budget - ledger.spent_today())
+    public = ledger.spent_today(PUBLIC_FEATURES)
     return "\n".join(
         [
-            "<b>💰 今日用量</b>（网站的 AI 演示）",
+            "<b>💰 今日用量</b>",
             f"今天：{t['calls']} 次调用，约 ¥{t['cost']:.3f}",
-            f"每日预算 ¥{daily_budget:.2f}，还剩 ¥{left:.2f}" + ("（已用完，演示暂停到明天）" if left <= 0 else ""),
+            f"其中访客 ¥{public:.3f}，访客每日上限 ¥{public_budget:.2f}" + ("（已用完，访客的功能暂停到明天）" if public >= public_budget else ""),
+            f"全站每日上限 ¥{daily_budget:.2f}（含值班台、自愈、评测），还剩 ¥{left:.2f}" + ("（已用完，全部暂停到明天）" if left <= 0 else ""),
             f"累计：{total['calls']} 次调用，约 ¥{total['cost']:.2f}",
         ]
     )
@@ -184,8 +186,8 @@ def make_ask(gw: Gateway, k8s: ops.Cluster, extra: dict | None = None) -> Callab
     async def ask(question: str) -> str:
         if not k8s.enabled:
             return "运维 Agent 只能在集群里运行（没有集群权限）"
-        gw.check_budget("opsagent")
-        answer, steps, _ = await ops.investigate(gw, k8s, question[:500], public=False, extra=extra)
+        gw.check_budget("dutybot")
+        answer, steps, _ = await ops.investigate(gw, k8s, question[:500], public=False, extra=extra, feature="dutybot")
         used = "、".join(dict.fromkeys(TOOL_ZH.get(s["tool"], s["tool"]) for s in steps if s.get("tool")))
         return to_html(answer) + (f"\n\n<i>查了：{e(used)}</i>" if used else "")
 

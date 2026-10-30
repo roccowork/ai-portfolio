@@ -33,7 +33,7 @@ from .telegram import OpsBot, Telegram
 from . import opsagent as ops
 from . import triage as tr
 from .config import Settings
-from .gateway import AIUnavailable, ChatResult, Gateway
+from .gateway import PUBLIC_FEATURES, AIUnavailable, ChatResult, Gateway
 from .ledger import Ledger
 from .odoo import Odoo, OdooError
 from .rag import CaseQA, load_chunks
@@ -189,7 +189,7 @@ def create_app(
         ("💬 最近留言", "leads", "网站访客的留言", lambda: asyncio.to_thread(dutybot.leads_text, ledger)),
         ("📏 RAG 评测", "eval", "跑一遍作品集问答和运维知识库的评测集", start_eval),
         ("🧪 Agent 评测", "agenteval", "故障演练：注入故障，看运维 Agent 的诊断和处置", start_agent_eval),
-        ("💰 今日用量", "usage", "AI 演示今天的调用和费用", lambda: asyncio.to_thread(dutybot.usage_text, ledger, s.daily_budget)),
+        ("💰 今日用量", "usage", "AI 演示今天的调用和费用", lambda: asyncio.to_thread(dutybot.usage_text, ledger, s.daily_budget, s.public_budget)),
     ]
     bot = OpsBot(tg, healer.on_button, menu, dutybot.make_ask(gw, k8s, runbook), dutybot.HELP) if tg else None
     if tg:
@@ -237,8 +237,12 @@ def create_app(
         return req.headers.get("x-real-ip") or (req.headers.get("x-forwarded-for") or "").split(",")[0].strip() or (req.client.host if req.client else "-")
 
     def guard(req: Request, feature: str) -> None:
-        if not ledger.take_quota(client_ip(req), feature, s.quota[feature]):
+        """每个访客每天：单个功能的次数，加上所有功能合计的次数（换着功能刷也有上限）"""
+        ip = client_ip(req)
+        if not ledger.take_quota(ip, feature, s.quota[feature]):
             raise HTTPException(429, f"今天的体验次数已用完（每天 {s.quota[feature]} 次），明天再来")
+        if not ledger.take_quota(ip, "total", s.quota["total"]):
+            raise HTTPException(429, f"今天的体验次数已用完（所有功能合计每天 {s.quota['total']} 次），明天再来")
 
     def meta(r: ChatResult) -> dict:
         return {"model": r.model, "tokens_in": r.tokens_in, "tokens_out": r.tokens_out, "cost": round(r.cost, 5), "seconds": round(r.seconds, 2)}
@@ -265,7 +269,8 @@ def create_app(
     @app.get("/api/ai/stats")
     def stats():
         out = ledger.summary()
-        out["budget"] = {"daily": s.daily_budget, "left": round(max(0.0, s.daily_budget - ledger.spent_today()), 3)}
+        out["budget"] = {"daily": s.daily_budget, "left": round(max(0.0, s.daily_budget - ledger.spent_today()), 3),
+                         "public": s.public_budget, "public_left": round(max(0.0, s.public_budget - ledger.spent_today(PUBLIC_FEATURES)), 3)}
         out["enabled"] = s.enabled
         return out
 

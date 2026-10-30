@@ -47,7 +47,7 @@
       "id": "r8",
       "question": "AI 服务每天的费用上限是多少？怎么改？",
       "sections": ["费用和配额"],
-      "keywords": ["1.6", "AI_DAILY_BUDGET"]
+      "keywords": ["5 元", "AI_DAILY_BUDGET"]
     },
     {
       "id": "r9",

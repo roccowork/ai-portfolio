@@ -16,6 +16,10 @@ from prometheus_client import Counter, Histogram
 from .config import Settings
 from .ledger import Ledger
 
+# 网站访客能触发的功能，合计受 public_budget 限制。主人自己用的（值班台 dutybot、自愈 autoheal、评测 eval、
+# 建索引 index、运维手册检索 opsdocs、私人助理 assistant）只受全站上限限制
+PUBLIC_FEATURES = frozenset({"ask", "extract", "triage", "minutes", "chatbi", "agent", "content", "opsagent", "digest"})
+
 log = logging.getLogger("ai")
 
 CALLS = Counter("ai_calls_total", "模型调用次数", ["feature", "model", "outcome"])
@@ -70,6 +74,9 @@ class Gateway:
         if self.ledger.spent_today() >= self.s.daily_budget:
             BLOCKED.labels(feature, "budget").inc()
             raise AIUnavailable("今天的 AI 费用额度已用完，明天会自动恢复")
+        if feature in PUBLIC_FEATURES and self.ledger.spent_today(PUBLIC_FEATURES) >= self.s.public_budget:
+            BLOCKED.labels(feature, "public_budget").inc()
+            raise AIUnavailable("今天给访客体验的 AI 额度已用完，明天会自动恢复")
 
     async def _post(self, path: str, payload: dict) -> dict:
         # 网络抖动、限流（429）和服务端错误重试一次；其他 4xx（参数错、密钥错）直接失败

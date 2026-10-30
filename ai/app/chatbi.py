@@ -36,6 +36,7 @@ FEATURE_ZH = {
     "index": "作品集问答建索引",
     "chatbi": "ChatBI 查数据",
     "opsagent": "运维 Agent 问答",
+    "dutybot": "值班台问答",
     "autoheal": "告警自愈",
     "opsdocs": "运维手册检索",
     "eval": "效果评测",

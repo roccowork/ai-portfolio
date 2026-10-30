@@ -61,9 +61,14 @@ class Ledger:
             )
             self._db.commit()
 
-    def spent_today(self) -> float:
+    def spent_today(self, features: set[str] | frozenset[str] | None = None) -> float:
+        """今天的估算费用；给了 features 只算这些功能"""
+        where, args = "day=?", [today()]
+        if features is not None:
+            where += f" AND feature IN ({','.join('?' * len(features))})"
+            args += sorted(features)
         with self._lock:
-            row = self._db.execute("SELECT COALESCE(SUM(cost),0) FROM usage WHERE day=?", (today(),)).fetchone()
+            row = self._db.execute(f"SELECT COALESCE(SUM(cost),0) FROM usage WHERE {where}", args).fetchone()
         return float(row[0])
 
     def feature_usage(self, feature: str, since: str) -> dict:

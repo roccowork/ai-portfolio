@@ -107,6 +107,33 @@ def test_quota_per_visitor(setup):
         assert client.post("/api/ai/extract", data={"sample": "demo"}, headers={"x-real-ip": "8.8.8.8"}).status_code == 200
 
 
+
+def test_quota_total_across_features(setup):
+    """换着功能刷也有上限：每个功能还有次数，但所有功能合计超了"""
+    s, gw, _ = setup
+    s.quota["total"] = 3
+    h = {"x-real-ip": "7.7.7.7"}
+    with TestClient(create_app(s, gw)) as client:
+        for _ in range(3):
+            assert client.post("/api/ai/extract", data={"sample": "demo"}, headers=h).status_code == 200
+        r = client.post("/api/ai/triage", json={"text": "官网打不开了，麻烦尽快看一下"}, headers=h)
+        assert r.status_code == 429 and "合计" in r.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_visitor_budget_separate_from_owner(tmp_path):
+    """访客的额度用完，只停访客的功能；值班台、评测照常（全站上限另算）"""
+    s = Settings(api_key="k", data_dir=tmp_path, cases_dir=CASES, daily_budget=5, public_budget=0.1)
+    gw = Gateway(s, Ledger(tmp_path / "ai.db"), transport=fake_transport([]))
+    gw.ledger.record("chatbi", "qwen-plus-2025-12-01", 0, 0, 0.1)
+    with pytest.raises(AIUnavailable, match="访客"):
+        await gw.chat("ask", [{"role": "user", "content": "hi"}])
+    assert (await gw.chat("dutybot", [{"role": "user", "content": "hi"}])).text
+    assert (await gw.chat("eval", [{"role": "user", "content": "hi"}])).text
+    gw.ledger.record("eval", "qwen-plus-2025-12-01", 0, 0, 5)
+    with pytest.raises(AIUnavailable, match="今天的 AI 费用额度"):
+        await gw.chat("dutybot", [{"role": "user", "content": "hi"}])
+
 def test_extract_rejects_bad_input(setup):
     s, gw, _ = setup
     with TestClient(create_app(s, gw)) as client:

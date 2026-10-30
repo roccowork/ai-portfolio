@@ -85,7 +85,7 @@ def material_for(qa: CaseQA, case: dict, refs: list) -> str:
 
 
 async def run_case(qa: CaseQA, judge_gw: Gateway, case: dict) -> dict:
-    result, refs, cited = await qa.ask(case["question"])
+    result, refs, cited = await qa.ask(case["question"], feature="eval")  # 评测的费用记在 eval，不占访客的额度
     retrieved = [c.case_id if not case.get("sections") else c.section for c in refs]
     hits = [expected(c, case) for c in refs]
     first = next((i + 1 for i, h in enumerate(hits) if h), None)

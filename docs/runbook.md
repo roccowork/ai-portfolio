@@ -463,12 +463,13 @@ kubectl -n ops-desk rollout restart deployment ai-api
 
 ### 费用和配额
 
-| 项目                                  | 默认值                                                                                                                                   | 修改方法                                                                                     |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| 全站每日费用上限                      | 1.6 元（约每月 50 元）                                                                                                                   | Deployment 环境变量 `AI_DAILY_BUDGET`                                                        |
-| 每个访客每天次数                      | 问答 20、识别 5、分派 20、纪要 3、查数据 20                                                                                              | `AI_QUOTA_ASK`、`AI_QUOTA_EXTRACT`、`AI_QUOTA_TRIAGE`、`AI_QUOTA_MINUTES`、`AI_QUOTA_CHATBI` |
-| 模型                                  | 问答 qwen-plus-2025-12-01（失败依次降级 qwen-plus-latest、qwen-flash），识别 qwen3-vl-plus，向量 text-embedding-v3，语音 qwen3-asr-flash | `AI_CHAT_MODELS`、`AI_VISION_MODELS`、`AI_EMBED_MODEL`、`AI_ASR_MODEL`                       |
-| 单价（估算，元 / 千 token；语音按秒） | 见 `ai/app/config.py`                                                                                                                    | `AI_PRICES`                                                                                  |
+| 项目                                  | 默认值                                                                                                                                      | 修改方法                                                                        |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| 全站每日费用上限                      | 5 元，包括值班台、自愈、评测，防程序出错一直调用                                                                                            | Deployment 环境变量 `AI_DAILY_BUDGET`                                           |
+| 访客每日费用上限                      | 1 元，网站访客能用的功能合计；用完只停访客的功能，值班台、自愈、评测照常                                                                    | `AI_PUBLIC_BUDGET`（访客功能的列表在 `ai/app/gateway.py` 的 `PUBLIC_FEATURES`） |
+| 每个访客（按 IP）每天次数             | 所有功能合计 30；单个功能：问答 30、识别 5、分派 20、纪要 3、查数据 20、运维 Agent 10 等                                                    | `AI_QUOTA_TOTAL`、`AI_QUOTA_ASK`、`AI_QUOTA_CHATBI` 等（见 `ai/app/config.py`） |
+| 模型                                  | 问答只用 qwen-plus-2025-12-01（固定版本，失败时提示暂时不可用，不换模型），识别 qwen3-vl-plus，向量 text-embedding-v3，语音 qwen3-asr-flash | `AI_CHAT_MODELS`、`AI_VISION_MODELS`、`AI_EMBED_MODEL`、`AI_ASR_MODEL`          |
+| 单价（估算，元 / 千 token；语音按秒） | 见 `ai/app/config.py`                                                                                                                       | `AI_PRICES`                                                                     |
 
 费用是按 token 估算的，以百炼控制台的账单为准；控制台里另设一个月度费用预警作为第二道保险。达到每日上限时触发 `AIDailyBudgetReached` 告警，模型连续出错时触发 `AIModelErrors`。
 
@@ -477,7 +478,7 @@ kubectl -n ops-desk rollout restart deployment ai-api
 - **页面提示「AI 功能还没有启用」**：Secret 不存在或没有重启。`kubectl -n ops-desk get secret ai-api`
 - **提示「知识库还在准备中」**：索引失败会每 10 分钟重试，`kubectl -n ops-desk logs deploy/ai-api` 看原因（多半是密钥或地址不对）
 - **某个功能提示「暂时不可用」**：`kubectl -n ops-desk logs deploy/ai-api --tail=50` 会记录失败的模型和百炼返回的原因。常见是该模型在百炼「免费额度」里没有额度、又开了「用完即停」或余额为 0（返回 403），换一个有额度的模型（改对应的环境变量）或充值
-- **用到的模型**：qwen-plus-2025-12-01、qwen-plus-latest、qwen-flash、qwen3-vl-plus、text-embedding-v3、qwen3-asr-flash。免费额度按模型名分开算（别名和每个带日期的版本各 100 万 token），在百炼「免费额度」页按模型 Code 逐个确认。主模型额度用完又开着「用完即停」时会返回 403，网关自动降级到下一个，回答照常但效果变差：日志里搜「调用 … 失败」，或者看评测汇总里实际用到的模型。长期办法是充值并关掉主模型的「用完即停」，每天的费用上限（`AI_DAILY_BUDGET`）兜底
+- **用到的模型**：qwen-plus-2025-12-01、qwen3-vl-plus、text-embedding-v3、qwen3-asr-flash。免费额度按模型名分开算（别名和每个带日期的版本各 100 万 token），在百炼「免费额度」页按模型 Code 确认。qwen-plus-2025-12-01 已关掉「用完即停」，免费额度用完从余额扣，每天的费用上限兜底。其他模型开着「用完即停」时，额度用完会返回 403，日志里搜「调用 … 失败」。`AI_CHAT_MODELS` 可以配多个（逗号分隔），失败时依次换下一个；现在只配一个，避免悄悄换成别的模型
 - **ChatBI 的数据**：查的是本站真实运行数据的快照 `/data/chatbi/ops.db`，有人提问时如果超过 10 分钟没更新就重新生成：从 ai.db 复制费用账本（不含私人助理）、自愈记录、评测记录，从 Prometheus 取最近 7 天每天的访问量和 5xx，从 `/status.json` 取最近发布。访客留言和访客标识不复制，SQL 怎么写都查不到。Prometheus 或 `/status.json` 查不到时那张表为空，其他照常。快照不备份，删了会自动重建
 - **换密钥**：删除重建 Secret 后 `rollout restart`
 - **清空账本和缓存**：删除 PVC `ai-data` 前先缩容 `ai-api` 到 0；它设置了 `Prune=false`，Argo CD 不会自动删

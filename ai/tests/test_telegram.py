@@ -92,7 +92,10 @@ def test_duty_texts(tmp_path):
     ledger.add_lead("1.2.3.4", "王女士", "wx: wang<1>", "某公司", "想约面试", "")
     text = dutybot.leads_text(ledger)
     assert "王女士 · 某公司" in text and "wang&lt;1&gt;" in text and "想约面试" in text
-    assert "还剩 ¥1.50" in dutybot.usage_text(ledger, 1.5)
+    ledger.record("ask", "qwen-plus-2025-12-01", 1000, 100, 0.2)
+    ledger.record("dutybot", "qwen-plus-2025-12-01", 1000, 100, 0.3)
+    text = dutybot.usage_text(ledger, 5, 1)
+    assert "其中访客 ¥0.200，访客每日上限 ¥1.00" in text and "还剩 ¥4.50" in text
     store = autoheal.IncidentStore(ledger._db, ledger._lock)
     assert "没有需要处理的故障" in dutybot.heal_text(store)
     assert "查不到" in asyncio.run(dutybot.status_text(ops.Cluster("http://prom", sa_dir=tmp_path / "none")))

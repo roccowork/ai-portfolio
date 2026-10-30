@@ -2,38 +2,45 @@
 import Base from '../../layouts/Base.astro';
 import OpsAgentBox from '../../components/OpsAgentBox.vue';
 import HealLog from '../../components/HealLog.vue';
+import OpsWall from '../../components/ops/OpsWall.vue';
 import { BRAND } from '../../lib/site';
 ---
 
 <Base
   title={`运维 Agent 值班台 · ${BRAND.name}`}
-  description="在线体验 AI 运维 Agent：它会自己调用工具查询本站真实运行的服务器，告诉你健康状况、告警和原因。"
+  description="运维值班大屏：本站服务器的实时状态，加上会自己调用工具排查的 AI 运维 Agent，每一步实时显示。"
 >
-  <section class="bg-slate-950 py-16 text-white">
-    <div class="mx-auto max-w-4xl px-5">
-      <p class="text-sm font-semibold tracking-widest text-amber-300">在线体验 · 运维 Agent</p>
-      <h1 class="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">问它，这台服务器怎么样了</h1>
-      <p class="mt-4 max-w-2xl leading-relaxed text-slate-300">
-        这不是录好的演示：Agent 会自己决定查什么，调用工具读取本站
-        <b class="text-white">真实运行的服务器</b>
-        的告警、资源和服务状态，再给出结论和依据。
+  <section class="bg-slate-950 pt-12 pb-16 text-white">
+    <div class="mx-auto max-w-6xl px-5">
+      <p class="text-sm font-semibold tracking-widest text-amber-300">
+        在线体验 · 运维 Agent 值班台
       </p>
+      <h1 class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">这台服务器，此刻的样子</h1>
+      <p class="mt-3 max-w-3xl leading-relaxed text-slate-300">
+        上面是本站服务器的实时状态，直接来自 Prometheus 和 K8s，每 15 秒刷新。下面可以问运维
+        Agent：它会自己决定查什么，调用工具读取<b class="text-white">真实运行的服务器</b>
+        ，每一步都实时显示，最后给出结论和依据。
+      </p>
+      <div class="mt-8">
+        <OpsWall client:load />
+      </div>
+      <div class="mt-4">
+        <OpsAgentBox client:load />
+      </div>
+      <ul class="mt-4 grid gap-3 text-sm text-slate-400 sm:grid-cols-3">
+        <li class="rounded-xl bg-white/[0.03] p-4 ring-1 ring-white/10">
+          <b class="text-slate-200">只读</b>：只能查，不能重启、删除或修改任何东西
+        </li>
+        <li class="rounded-xl bg-white/[0.03] p-4 ring-1 ring-white/10">
+          <b class="text-slate-200">程序核对</b>
+          ：回答里提到的工具必须真的调用过，数字必须在查询结果里找得到，否则退回重答
+        </li>
+        <li class="rounded-xl bg-white/[0.03] p-4 ring-1 ring-white/10">
+          <b class="text-slate-200">每人每天 10 次</b>
+          ：每次排查都会真实调用大模型；上面的大屏不调用模型
+        </li>
+      </ul>
     </div>
-  </section>
-
-  <section class="mx-auto max-w-4xl px-5 py-12">
-    <OpsAgentBox client:load />
-    <ul class="mt-8 grid gap-4 text-sm text-slate-600 sm:grid-cols-3">
-      <li class="rounded-xl bg-slate-50 p-4">
-        <b class="text-slate-900">只读</b>：只能查，不能重启、删除或修改任何东西
-      </li>
-      <li class="rounded-xl bg-slate-50 p-4">
-        <b class="text-slate-900">不看日志和配置</b>：公开演示只查指标和状态，敏感信息不出服务器
-      </li>
-      <li class="rounded-xl bg-slate-50 p-4">
-        <b class="text-slate-900">每人每天 10 次</b>：每次排查都会真实调用大模型
-      </li>
-    </ul>
   </section>
 
   <section class="bg-slate-50 py-16">

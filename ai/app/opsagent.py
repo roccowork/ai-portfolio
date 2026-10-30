@@ -260,10 +260,12 @@ async def investigate(
     extra: dict | None = None,
     feature: str = "opsagent",
     runner: Callable[[str, dict], Awaitable[object]] | None = None,
+    on_event: Callable[[dict], Awaitable[None]] | None = None,
 ) -> tuple[str, list[dict], list[ChatResult]]:
     """public=True：官网访客用，不能查日志。
     extra：额外的工具 {名字: (工具定义, async 处理函数(args) -> 结果)}，自愈用它让模型提议操作
-    runner：代替 run_tool 执行只读工具，故障演练评测（evals/agent.py）用它在真实数据上注入故障"""
+    runner：代替 run_tool 执行只读工具，故障演练评测（evals/agent.py）用它在真实数据上注入故障
+    on_event：每一步的实时进度（思考、调用工具、工具完成、程序核对），网页上的值班大屏用它边查边显示"""
     extra = extra or {}
     runner = runner or (lambda name, args: run_tool(c, name, args))
     tools = (PUBLIC_TOOLS if public else TOOLS) + [d for d, _ in extra.values()]
@@ -273,8 +275,14 @@ async def investigate(
     calls: list[ChatResult] = []
     names = {t["function"]["name"] for t in tools}
     checked = numbers_checked = False
+
+    async def emit(event: dict) -> None:
+        if on_event:
+            await on_event(event)
+
     evidence = [msgs[0]["content"], question]  # 工具结果会一条条加进来，数字核对用
-    for _ in range(MAX_ROUNDS):
+    for rnd in range(MAX_ROUNDS):
+        await emit({"type": "thinking", "round": rnd + 1})
         r = await gw.chat(feature, msgs, tools=tools, max_tokens=900)
         calls.append(r)
         if not r.tool_calls:
@@ -283,6 +291,7 @@ async def investigate(
             unused = sorted(n for n in names if n in r.text and n not in {s["tool"] for s in steps})
             if unused and not checked:
                 checked = True
+                await emit({"type": "check", "detail": f"回答提到了 {'、'.join(unused)}，但这次没有调用，退回重答"})
                 msgs += [
                     {"role": "assistant", "content": r.text},
                     {"role": "user", "content": f"程序核对：你的回答提到了 {'、'.join(unused)}，但这次并没有调用，引用的结果不存在。"
@@ -294,6 +303,7 @@ async def investigate(
             made_up = unsupported_numbers(r.text, "\n".join(evidence))
             if len(made_up) >= 2 and not numbers_checked:
                 numbers_checked = True
+                await emit({"type": "check", "detail": f"回答里的数字 {'、'.join(made_up[:5])} 在查询结果里找不到，退回重答"})
                 msgs += [
                     {"role": "assistant", "content": r.text},
                     {"role": "user", "content": f"程序核对：回答里这些数字在工具结果里找不到：{'、'.join(made_up[:8])}。"
@@ -311,6 +321,7 @@ async def investigate(
                 args = json.loads(tc["function"].get("arguments") or "{}")
             except json.JSONDecodeError:
                 args = {}
+            await emit({"type": "tool", "index": len(steps), "tool": name, "args": args, "status": "running"})
             try:
                 if name not in {t["function"]["name"] for t in tools}:
                     raise PermissionError(f"这里不能使用 {name}")
@@ -321,6 +332,7 @@ async def investigate(
             except (httpx.HTTPError, ValueError, KeyError) as e:
                 result, summary = {"error": str(e)[:300]}, f"出错：{str(e)[:80]}"
             steps.append({"tool": name, "args": args, "summary": summary})
+            await emit({"type": "tool", "index": len(steps) - 1, "tool": name, "args": args, "status": "done", "summary": summary})
             # 统一再脱敏一次：指标标签里也可能带节点 IP
             content = redact(result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, default=str))
             msgs.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": content[:6000]})

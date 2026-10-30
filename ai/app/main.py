@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import html
+import json
 import logging
 import re
 import secrets
@@ -12,7 +13,7 @@ from typing import Literal
 import httpx
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
 from pydantic import BaseModel, Field
 
@@ -31,6 +32,7 @@ from . import extract as ex
 from . import minutes as mn
 from .telegram import OpsBot, Telegram
 from . import opsagent as ops
+from . import opswall
 from . import triage as tr
 from .config import Settings
 from .gateway import PUBLIC_FEATURES, AIUnavailable, ChatResult, Gateway
@@ -527,6 +529,67 @@ def create_app(
     @app.get("/api/ai/heal/recent")
     def heal_recent():
         return {"items": autoheal.public_records(healer.store)}
+
+    async def status_json() -> dict:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(s.status_url)
+            r.raise_for_status()
+            return r.json()
+
+    def wall_extras() -> dict:
+        """大屏底部：三套评测最近一次的分数、自愈统计（都在账本 ai.db 里）"""
+        evals = {}
+        for kind in ("rag", "ops-rag", "agent"):
+            run = ledger.latest_eval(kind)
+            sm = (run or {}).get("summary") or {}
+            evals[kind] = {k: sm.get(k) for k in ("ts", "cases", "hit_at_1", "judge_correct", "pass_rate", "refusal_acc")} | {"ts": (run or {}).get("ts")} if run else None
+        with ledger._lock:
+            total, fixed = ledger._db.execute("SELECT COUNT(*), COALESCE(SUM(status = 'fixed'), 0) FROM incidents").fetchone()
+        return {"evals": evals, "heal": {"total": total, "fixed": fixed}}
+
+    wall = opswall.OpsWall(k8s, status_json, wall_extras)
+
+    @app.get("/api/ai/ops/overview")
+    async def ops_overview():
+        return await wall.overview()
+
+    @app.get("/api/ai/ops/trend")
+    async def ops_trend():
+        return await wall.trend()
+
+    @app.post("/api/ai/opsagent/stream")
+    async def ops_agent_stream(body: OpsIn, req: Request):
+        """和 /api/ai/opsagent 一样，但每一步实时推给网页（Server-Sent Events）：思考、调用工具、程序核对、结论"""
+        if not k8s.enabled:
+            raise HTTPException(503, "运维 Agent 只能在集群里运行（没有 ServiceAccount）")
+        gw.check_budget("opsagent")
+        guard(req, "opsagent")
+        queue: asyncio.Queue = asyncio.Queue()
+
+        async def run() -> None:
+            try:
+                answer, steps, calls = await ops.investigate(gw, k8s, body.question.strip(), public=True, extra=runbook, on_event=queue.put)
+                ledger.add_saved("opsagent", SAVED_MIN["opsagent"])
+                await queue.put({"type": "answer", "answer": answer, "steps": steps, "meta": meta_sum(calls)})
+            except AIUnavailable as e:
+                await queue.put({"type": "error", "detail": str(e)})
+            except Exception as e:  # noqa: BLE001
+                log.warning("运维 Agent 出错：%s", e)
+                await queue.put({"type": "error", "detail": "排查出错了，请稍后再试"})
+            finally:
+                await queue.put(None)
+
+        task = asyncio.create_task(run())
+
+        async def events():
+            try:
+                while (item := await queue.get()) is not None:
+                    yield f"data: {json.dumps(item, ensure_ascii=False, default=str)}\n\n"
+            finally:
+                if not task.done():
+                    task.cancel()  # 访客关掉页面就不再继续花钱
+
+        return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @app.post("/api/ai/opsagent")
     async def ops_agent(body: OpsIn, req: Request):

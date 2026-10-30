@@ -9,7 +9,7 @@ from pathlib import Path
 
 import httpx
 
-from .gateway import ChatResult, Gateway
+from .gateway import AIUnavailable, ChatResult, Gateway
 from .ledger import TZ
 
 MAX_ROUNDS = 8
@@ -316,7 +316,13 @@ async def investigate(
         await emit({"type": "thinking", "round": rnd + 1})
         choice = {"type": "function", "function": {"name": force}} if force else None
         force = None
-        r = await gw.chat(feature, msgs, tools=tools, max_tokens=900, tool_choice=choice)
+        try:
+            r = await gw.chat(feature, msgs, tools=tools, max_tokens=900, tool_choice=choice)
+        except AIUnavailable:
+            if not choice:
+                raise
+            # 模型服务不支持指定工具时，退回普通调用，不让整次排查失败
+            r = await gw.chat(feature, msgs, tools=tools, max_tokens=900)
         calls.append(r)
         if not r.tool_calls:
             # 程序核对：回答里提到的工具这次真的调用过吗？2026-10-30 评测里模型一次没查就写「list_pods 显示重启 127 次」，

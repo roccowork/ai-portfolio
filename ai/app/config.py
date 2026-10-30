@@ -13,7 +13,7 @@ def _prices() -> dict[str, tuple[float, float]]:
     """每千 token 的估算价格（元）：输入, 输出。格式 model=in/out;model=in/out，可在 Deployment 里覆盖。"""
     raw = os.environ.get(
         "AI_PRICES",
-        "qwen-plus=0.0008/0.002;qwen-flash=0.00015/0.0015;qwen3-vl-plus=0.001/0.01;text-embedding-v3=0.0005/0;"
+        "qwen-plus=0.0008/0.002;qwen-plus-2025-12-01=0.0008/0.002;qwen-plus-latest=0.0008/0.002;qwen3.7-plus=0.002/0.008;qwen-flash=0.00015/0.0015;qwen3-vl-plus=0.001/0.01;text-embedding-v3=0.0005/0;"
         "mistralai/mistral-medium-3.1=0.00288/0.0144;mistralai/mistral-small-3.2-24b-instruct=0.00043/0.0013",
     )
     out: dict[str, tuple[float, float]] = {}
@@ -33,8 +33,10 @@ class Settings:
     base_url: str = field(
         default_factory=lambda: os.environ.get("DASHSCOPE_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1")
     )
-    # 模型按用途分组，前面的优先，失败时依次降级
-    chat_models: list[str] = field(default_factory=lambda: _list("AI_CHAT_MODELS", "qwen-plus,qwen-flash"))
+    # 模型按用途分组，前面的优先，失败时依次降级。百炼的免费额度按模型名分开算（别名和带日期的版本各 100 万 token），
+    # 2026-10-30 别名 qwen-plus 的额度用完、开着「用完即停」，全站降级到 qwen-flash。改用固定日期的版本：
+    # 价格和 qwen-plus 一样，行为不会随别名更新而变，评测结果前后可比
+    chat_models: list[str] = field(default_factory=lambda: _list("AI_CHAT_MODELS", "qwen-plus-2025-12-01,qwen-plus-latest,qwen-flash"))
     vision_models: list[str] = field(default_factory=lambda: _list("AI_VISION_MODELS", "qwen3-vl-plus"))
     embed_model: str = field(default_factory=lambda: os.environ.get("AI_EMBED_MODEL", "text-embedding-v3"))
     # 语音识别按音频秒数计费，单独配置

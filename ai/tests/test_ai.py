@@ -128,7 +128,7 @@ def test_check_finds_amount_mismatch():
 
 @pytest.mark.anyio
 async def test_fallback_and_budget(tmp_path):
-    s = Settings(api_key="k", data_dir=tmp_path, cases_dir=CASES, daily_budget=0.0002)
+    s = Settings(api_key="k", data_dir=tmp_path, cases_dir=CASES, daily_budget=0.0002, chat_models=["qwen-plus", "qwen-flash"])
     log: list = []
     gw = Gateway(s, Ledger(tmp_path / "ai.db"), transport=fake_transport(log, fail_models={"qwen-plus"}))
     r = await gw.chat("ask", [{"role": "user", "content": "hi"}])

@@ -41,7 +41,7 @@ def fake_llm(plan, judged: list | None = None) -> httpx.MockTransport:
 def setup(tmp_path, plan, judged=None):
     s = Settings(api_key="test", data_dir=tmp_path, cases_dir=tmp_path, samples_dir=tmp_path, daily_budget=5.0)
     gw = Gateway(s, Ledger(tmp_path / "ai.db"), transport=fake_llm(plan, judged))
-    c = ops.Cluster("http://prom", sa_dir=tmp_path / "none")  # 没有 token：离线模式，不会访问任何集群
+    c = ev.load_snapshot_offline()  # 内置的离线快照，不访问任何集群
     return gw, c
 
 
@@ -50,8 +50,8 @@ def case(cid: str) -> dict:
 
 
 def test_faults_inject_on_top_of_base(tmp_path):
-    c = ops.Cluster("http://prom", sa_dir=tmp_path / "none")
-    inj = asyncio.run(ev.resolve(c, case("a3")))["inject"]
+    c = ev.load_snapshot_offline()
+    inj = ev.resolve(c, case("a3"))["inject"]
     pod = inj["pods"][0]["pod"]
     assert pod == ev.fake_pod("ops-desk") and pod.startswith("ops-desk-")
     f = ev.Faults(c, inj)
@@ -87,7 +87,7 @@ def test_heal_case_records_proposal_without_executing(tmp_path):
 
 
 def test_guard_blocks_self_heal_and_counts_it(tmp_path):
-    c0 = asyncio.run(ev.resolve(ops.Cluster("http://prom", sa_dir=tmp_path / "none"), case("h7")))
+    c0 = ev.resolve(ev.load_snapshot_offline(), case("h7"))
     pod = c0["inject"]["pods"][0]["pod"]
     steps = [call("list_pods", {"namespace": "ops-desk"}), call("propose_action", {"action": "delete_pod", "namespace": "ops-desk", "name": pod, "reason": "重建"})]
     gw, c = setup(tmp_path, lambda n: steps[n] if n < len(steps) else "ai-api 内存超限 OOMKilled，不能处理自己，建议调大 limit。")
@@ -103,12 +103,10 @@ def test_wrong_action_and_missing_tools_fail(tmp_path):
     assert row["action_ok"] is False and row["tools_ok"] is False and not ev.passed(row)  # 内存不够不该重启，也没查 Pod 就动手
 
 
-def test_requires_healthy_skips_when_cluster_has_alerts(tmp_path, monkeypatch):
+def test_requires_healthy_skips_when_snapshot_has_alerts(tmp_path):
     gw, c = setup(tmp_path, lambda n: "正常")
-    monkeypatch.setitem(ev.OFFLINE, "list_alerts", [{"name": "NodeDiskHigh"}])
-    row = asyncio.run(ev.run_case(gw, gw, c, case("a1"), {}))
+    row = asyncio.run(ev.run_case(gw, gw, c | {"alerts": [{"name": "NodeDiskHigh"}]}, case("a1"), {}))
     assert "NodeDiskHigh" in row["skipped"]
-    monkeypatch.setitem(ev.OFFLINE, "list_alerts", [])
     steps = [call("cluster_overview", {})]
     gw, c = setup(tmp_path, lambda n: steps[n] if n < len(steps) else "整体正常：CPU 9.5%，内存 52%，磁盘 46%。")
     row = asyncio.run(ev.run_case(gw, gw, c, case("a1"), {}))
@@ -129,9 +127,9 @@ def test_run_summary_and_message(tmp_path):
 def test_real_cases_are_well_formed(tmp_path):
     cases = ev.load_cases()
     assert len(cases) >= 20 and len({c["id"] for c in cases}) == len(cases)
-    c = ops.Cluster("http://prom", sa_dir=tmp_path / "none")
+    c = ev.load_snapshot_offline()
     for raw in cases:
-        x = asyncio.run(ev.resolve(c, raw))
+        x = ev.resolve(c, raw)
         assert "{pod:" not in json.dumps(x, ensure_ascii=False), x["id"]
         assert x["mode"] in ("heal", "ask"), x["id"]
         assert x.get("truth") or x.get("requires_healthy"), x["id"]
@@ -188,7 +186,7 @@ def test_grounding_check_rejects_unused_tool_claims(tmp_path):
     s = Settings(api_key="test", data_dir=tmp_path, cases_dir=tmp_path, samples_dir=tmp_path, daily_budget=5.0)
     gw = Gateway(s, Ledger(tmp_path / "ai.db"), transport=httpx.MockTransport(handler))
     c = ops.Cluster("http://prom", sa_dir=tmp_path / "none")
-    f = ev.Faults(c, {})
+    f = ev.Faults(ev.load_snapshot_offline(), {})
     answer, steps_, _ = asyncio.run(ops.investigate(gw, c, "Uptime Kuma 打不开了", runner=f.run))
     assert answer.startswith("Uptime Kuma 没有就绪") and [x["tool"] for x in steps_] == ["list_pods"]
     assert "程序核对：你的回答提到了 list_pods，但这次并没有调用" in seen[1]["messages"][-1]["content"]
@@ -219,7 +217,7 @@ def test_agent_retries_when_numbers_are_made_up(tmp_path):
     s = Settings(api_key="test", data_dir=tmp_path, cases_dir=tmp_path, samples_dir=tmp_path, daily_budget=5.0)
     gw = Gateway(s, Ledger(tmp_path / "ai.db"), transport=httpx.MockTransport(handler))
     c = ops.Cluster("http://prom", sa_dir=tmp_path / "none")
-    answer, _, _ = asyncio.run(ops.investigate(gw, c, "服务器内存高吗", runner=ev.Faults(c, {}).run))
+    answer, _, _ = asyncio.run(ops.investigate(gw, c, "服务器内存高吗", runner=ev.Faults(ev.load_snapshot_offline(), {}).run))
     assert answer == "内存使用率 52%，正常。"
     assert "回答里这些数字在工具结果里找不到：82、2.1" in seen[-1]["messages"][-1]["content"]
 
@@ -259,3 +257,75 @@ def test_logs_by_job_name_find_the_pod(tmp_path):
     assert "按名字前缀找到 backup-ai-api-29360710-x8k2q" in out and "wrong password" in out
     with pytest.raises(httpx.HTTPStatusError):
         asyncio.run(ops.run_tool(c, "pod_logs", {"namespace": "ops-desk", "pod": "no-such"}))
+
+
+def test_every_case_world_is_consistent():
+    """快照 + 注入后，每道题的「世界」自洽：注入的 Pod 查得到，注入的日志按 Pod 名或 Job 名都查得到，
+    自愈题的标准答案在模拟集群里存在（第 4 次评测前的教训：真实数据和注入的故障互相矛盾）"""
+    snap = ev.load_snapshot_offline()
+    for raw in ev.load_cases():
+        x = ev.resolve(snap, raw)
+        inj = x.get("inject", {})
+        f = ev.Faults(snap, inj)
+        for p in inj.get("pods", []):
+            names = [q["pod"] for q in asyncio.run(f.run("list_pods", {"namespace": p["namespace"]}))]
+            assert p["pod"] in names, (x["id"], p["pod"])
+        for log in inj.get("logs", []):
+            for name in {log["pod"], log["pod"].rsplit("-", 1)[0]}:  # Pod 名、去掉最后一段的 Job / Deployment 名都能查到
+                out = asyncio.run(f.run("pod_logs", {"namespace": log["namespace"], "pod": name, "previous": log.get("previous", False)}))
+                assert log["text"].split("\n")[-1][:20] in out or "<IP>" in out, (x["id"], name)
+        exp = x.get("expect", {}).get("action")
+        for o in exp if isinstance(exp, list) else [exp] if exp else []:
+            assert asyncio.run(f.exists(o["action"], o["namespace"], o["name"])), (x["id"], o)
+
+
+def test_simulated_cluster_answers_like_the_real_one():
+    snap = ev.load_snapshot_offline()
+    f = ev.Faults(snap, {})
+    mem = asyncio.run(f.run("promql", {"query": 'container_memory_working_set_bytes{namespace="monitoring", pod=~"prometheus.*"}'}))
+    assert len(mem) == 1 and round(int(mem[0]["value"]) / 2**20, 1) == 712.4
+    assert asyncio.run(f.run("promql", {"query": "histogram_quantile(0.9, foo)"})) == []  # 快照里没有的指标：空结果
+    assert "count" and asyncio.run(f.run("promql", {"query": 'count({__name__=~".+"})'}))[0]["value"] == "132000"
+    healthy = snap["pods"]["ops-desk"][0]["pod"]
+    assert "没有报错" in asyncio.run(f.run("pod_logs", {"namespace": "ops-desk", "pod": healthy}))
+    with pytest.raises(ValueError, match="404"):
+        asyncio.run(f.run("pod_logs", {"namespace": "ops-desk", "pod": "backup-ai-api-27894310"}))  # 第 4 次评测里模型编的 Job 名
+    assert asyncio.run(f.exists("restart_deployment", "ops-desk", "ai-api")) and not asyncio.run(f.exists("restart_deployment", "ops-desk", "nope"))
+    assert asyncio.run(f.exists("rerun_cronjob", "ops-desk", "backup-ai-api"))
+
+
+def test_snapshot_is_captured_once_and_reused(tmp_path):
+    sa = tmp_path / "sa"
+    sa.mkdir()
+    (sa / "token").write_text("t")
+    hits: list = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        hits.append(req.url.path)
+        if req.url.path == "/api/v1/alerts":
+            return httpx.Response(200, json={"data": {"alerts": []}})
+        if req.url.path == "/api/v1/query":
+            return httpx.Response(200, json={"status": "success", "data": {"result": [{"metric": {"namespace": "ops-desk", "pod": "ai-api-694c7776-wqz6x"}, "value": [0, "42"]}]}})
+        if req.url.path.endswith("/pods"):
+            return httpx.Response(200, json={"items": [
+                {"metadata": {"name": "ai-api-694c7776-wqz6x", "creationTimestamp": "2026-10-20T00:00:00Z"},
+                 "spec": {"containers": [{"name": "api", "resources": {"limits": {"memory": "384Mi"}}}]},
+                 "status": {"phase": "Running", "containerStatuses": [{"name": "api", "ready": True, "restartCount": 0, "state": {"running": {}}}]}},
+                {"metadata": {"name": "backup-ai-api-29360710-x8k2q", "creationTimestamp": "2026-10-30T00:00:00Z"},
+                 "spec": {"containers": [{"name": "restic"}]}, "status": {"phase": "Succeeded", "containerStatuses": []}},
+            ]})
+        return httpx.Response(404)
+
+    c = ops.Cluster("http://prom", "http://kube", sa_dir=sa, transport=httpx.MockTransport(handler))
+    path = tmp_path / "snap.json"
+    snap = asyncio.run(ev.load_snapshot(c, path))
+    assert path.is_file() and snap["pods"]["ops-desk"][0]["pod"] == "ai-api-694c7776-wqz6x"
+    assert len(snap["pods"]["ops-desk"]) == 1  # 跑完的 Job 不进快照
+    assert snap["cronjobs"]["ops-desk"] == ["backup-ai-api"]  # 从 Job 的 Pod 名推出 CronJob
+    n = len(hits)
+    asyncio.run(ev.load_snapshot(c, path))
+    assert len(hits) == n  # 30 天内直接用存着的快照，不再访问集群
+    old = json.loads(path.read_text()) | {"taken_at": "2026-01-01T00:00:00+00:00"}
+    path.write_text(json.dumps(old))
+    asyncio.run(ev.load_snapshot(c, path))
+    assert len(hits) > n  # 过期了重拍

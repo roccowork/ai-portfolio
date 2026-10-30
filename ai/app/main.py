@@ -166,7 +166,8 @@ def create_app(
 
         async def job() -> None:
             try:
-                out = await agent_eval.run(gw, k8s, cases, extra_tools=runbook if docs.ready else None)
+                snapshot = await agent_eval.load_snapshot(k8s, s.data_dir / "agent-eval-snapshot.json")
+                out = await agent_eval.run(gw, snapshot, cases, extra_tools=runbook if docs.ready else None)
                 ledger.add_eval("agent", out)
                 text = agent_eval.summary_text(out)
             except Exception as e:  # noqa: BLE001
@@ -178,7 +179,7 @@ def create_app(
         state = evals.submit("Agent 评测", job)
         if state == "dup":
             return "Agent 评测已经在跑或在排队了，跑完会把结果发给你"
-        live = "真实集群数据" if k8s.enabled else "没有集群权限，只用注入的数据"
+        live = "真实集群的快照，30 天重拍一次" if k8s.enabled else "没有集群权限，用内置的离线快照"
         verb, note = EVAL_START[state]
         return f"🧪 {verb}运维 Agent 评测：{len(cases)} 道故障演练题（{live}），大约 3～5 分钟，花几毛钱。只读，不会动集群{note}"
 

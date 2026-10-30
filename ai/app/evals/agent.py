@@ -138,8 +138,9 @@ class Faults:
         if name == "pod_logs":
             pod = str(args.get("pod") or "")
             for log in inj.get("logs", []):
-                # 写了 previous 的只对应「上一次崩溃前」的日志；没写的（比如已经结束的 Job）两种都返回它
-                if log["namespace"] == ns and log["pod"] == pod and ("previous" not in log or bool(log["previous"]) == bool(args.get("previous"))):
+                # 写了 previous 的只对应「上一次崩溃前」的日志；没写的（比如已经结束的 Job）两种都返回它。
+                # 和真实工具一样，给的是 Job 名时按前缀找到 Pod
+                if log["namespace"] == ns and (log["pod"] == pod or log["pod"].startswith(pod + "-")) and ("previous" not in log or bool(log["previous"]) == bool(args.get("previous"))):
                     return ops.redact(log["text"])
             if any(x["namespace"] == ns and x["pod"] == pod for x in inj.get("logs", [])):
                 return "（当前这个容器还没有输出日志；上一次崩溃前的日志用 previous=true 查看）"
@@ -209,7 +210,8 @@ async def judge(gw: Gateway, question: str, truth: str, seen: list[dict], answer
         r = await gw.chat(
             "eval",
             [{"role": "system", "content": JUDGE},
-             {"role": "user", "content": f"【问题或告警】{question}\n\n【真实情况】{truth}\n\n【Agent 调用工具看到的结果】\n{evidence(seen)}\n\n【Agent 的回答】{answer}{prop}"}],
+             {"role": "user", "content": f"【问题或告警】{question}\n\n【真实情况】{truth}\n\n【Agent 已知的背景（系统提示里写的，不算编造）】\n{ops.CLUSTER_MAP}\n\n"
+              f"【Agent 调用工具看到的结果】\n{evidence(seen)}\n\n【Agent 的回答】{answer}{prop}"}],
             json_mode=True,
             max_tokens=200,
         )
@@ -234,7 +236,15 @@ async def run_case(gw: Gateway, judge_gw: Gateway, c: ops.Cluster, case: dict, e
     faults = Faults(c, case.get("inject", {}))
     proposal: dict = {}
     blocked: list[str] = []
-    extra = dict(extra_tools)
+    extra: dict = {}
+    for name, (spec, handler) in extra_tools.items():  # 查运维手册这类额外工具的结果也交给裁判，不然裁判会以为手册内容是编的
+
+        async def recorded(args: dict, _h=handler, _n=name):
+            result = await _h(args)
+            faults.seen.append({"tool": _n, "args": args, "result": result})
+            return result
+
+        extra[name] = (spec, recorded)
     if case["mode"] == "heal":
         alert = copy.deepcopy(case["alert"])
         alert["startsAt"] = faults._ago_utc(alert.pop("since_min", 15))

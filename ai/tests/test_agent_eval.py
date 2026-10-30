@@ -83,6 +83,7 @@ def test_heal_case_records_proposal_without_executing(tmp_path):
     assert row["verdict"] == "correct" and ev.passed(row) and row["blocked"] == []
     # 裁判拿到了真实情况、Agent 看到的日志和提议
     assert "i/o timeout" in judged[0] and "补跑一次 CronJob backup-ai-api" in judged[0] and "rerun_cronjob" in judged[0]
+    assert "Agent 已知的背景" in judged[0] and "wecom-relay" in judged[0]  # 系统提示里的背景也交给裁判，不算编造
 
 
 def test_guard_blocks_self_heal_and_counts_it(tmp_path):
@@ -191,6 +192,8 @@ def test_grounding_check_rejects_unused_tool_claims(tmp_path):
     answer, steps_, _ = asyncio.run(ops.investigate(gw, c, "Uptime Kuma 打不开了", runner=f.run))
     assert answer.startswith("Uptime Kuma 没有就绪") and [x["tool"] for x in steps_] == ["list_pods"]
     assert "程序核对：你的回答提到了 list_pods，但这次并没有调用" in seen[1]["messages"][-1]["content"]
+    assert seen[1]["tool_choice"] == {"type": "function", "function": {"name": "list_pods"}}  # 重答那一轮强制调用
+    assert "tool_choice" not in seen[0] and "tool_choice" not in seen[2]
     assert "wecom-relay" in seen[0]["messages"][0]["content"]  # 系统提示里有组件和命名空间的对照
 
 
@@ -219,3 +222,40 @@ def test_agent_retries_when_numbers_are_made_up(tmp_path):
     answer, _, _ = asyncio.run(ops.investigate(gw, c, "服务器内存高吗", runner=ev.Faults(c, {}).run))
     assert answer == "内存使用率 52%，正常。"
     assert "回答里这些数字在工具结果里找不到：82、2.1" in seen[-1]["messages"][-1]["content"]
+
+
+def test_extra_tool_results_reach_the_judge(tmp_path):
+    """查运维手册的结果也要交给裁判（第 3 次评测：裁判没看到手册，把 Agent 引用手册判成编造）"""
+    judged: list = []
+    steps = [call("search_runbook", {"query": "备份失败"})]
+    gw, c = setup(tmp_path, lambda n: steps[n] if n < len(steps) else "按手册补跑。", judged)
+
+    async def lookup(args):
+        return [{"出处": "运维手册 › 备份", "内容": "备份失败时运维 Agent 会补跑一次"}]
+
+    runbook = {"search_runbook": ({"type": "function", "function": {"name": "search_runbook", "parameters": {"type": "object", "properties": {}}}}, lookup)}
+    asyncio.run(ev.run_case(gw, gw, c, case("a7"), runbook))
+    assert "备份失败时运维 Agent 会补跑一次" in judged[0]
+
+
+def test_logs_by_job_name_find_the_pod(tmp_path):
+    """告警给的是 Job 名，K8s 要 Pod 名：404 时按前缀找到最新的 Pod 再查"""
+    sa = tmp_path / "sa"
+    sa.mkdir()
+    (sa / "token").write_text("t")
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/pods"):
+            return httpx.Response(200, json={"items": [
+                {"metadata": {"name": "backup-ai-api-29360710-old11", "creationTimestamp": "2026-10-29T00:00:00Z"}},
+                {"metadata": {"name": "backup-ai-api-29360710-x8k2q", "creationTimestamp": "2026-10-30T00:00:00Z"}},
+            ]})
+        if req.url.path.endswith("backup-ai-api-29360710-x8k2q/log"):
+            return httpx.Response(200, text="Fatal: wrong password")
+        return httpx.Response(404, json={})
+
+    c = ops.Cluster("http://prom", "http://kube", sa_dir=sa, transport=httpx.MockTransport(handler))
+    out = asyncio.run(ops.run_tool(c, "pod_logs", {"namespace": "ops-desk", "pod": "backup-ai-api-29360710"}))
+    assert "按名字前缀找到 backup-ai-api-29360710-x8k2q" in out and "wrong password" in out
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(ops.run_tool(c, "pod_logs", {"namespace": "ops-desk", "pod": "no-such"}))

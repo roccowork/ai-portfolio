@@ -98,9 +98,17 @@ class Gateway:
         raise RuntimeError("unreachable")
 
     async def chat(
-        self, feature: str, messages: list[dict], kind: str = "chat", json_mode: bool = False, max_tokens: int = 800, tools: list[dict] | None = None
+        self,
+        feature: str,
+        messages: list[dict],
+        kind: str = "chat",
+        json_mode: bool = False,
+        max_tokens: int = 800,
+        tools: list[dict] | None = None,
+        tool_choice: str | dict | None = None,
     ) -> ChatResult:
-        """按 kind（chat / vision）依次尝试模型，第一个成功的返回。"""
+        """按 kind（chat / vision）依次尝试模型，第一个成功的返回。
+        tool_choice：指定必须调用的工具，如 {"type": "function", "function": {"name": "list_pods"}}"""
         self.check_budget(feature)
         models = self.s.vision_models if kind == "vision" else self.s.chat_models
         last: Exception | None = None
@@ -110,6 +118,8 @@ class Gateway:
                 payload["response_format"] = {"type": "json_object"}
             if tools:
                 payload["tools"] = tools
+                if tool_choice:
+                    payload["tool_choice"] = tool_choice
             t0 = time.perf_counter()
             try:
                 data = await self._post("chat/completions", payload)

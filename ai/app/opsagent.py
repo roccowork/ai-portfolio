@@ -148,6 +148,14 @@ def sg_time(ts: str | None) -> str:
         return ts
 
 
+async def find_pod(c: Cluster, ns: str, prefix: str) -> str | None:
+    """名字以「prefix-」开头的 Pod 里最新的一个（Job、Deployment 的 Pod 都是这样命名的）"""
+    pods = (await c.k8s(f"/api/v1/namespaces/{ns}/pods"))["items"]
+    hits = [p for p in pods if p["metadata"]["name"].startswith(prefix + "-")]
+    hits.sort(key=lambda p: p["metadata"].get("creationTimestamp") or "", reverse=True)
+    return hits[0]["metadata"]["name"] if hits else None
+
+
 def _ns(args: dict) -> str:
     ns = str(args.get("namespace") or "")
     if ns not in NAMESPACES:
@@ -225,7 +233,16 @@ async def run_tool(c: Cluster, name: str, args: dict) -> object:
         params = {"tailLines": max(1, min(int(args.get("lines") or 40), 80)), "previous": "true" if args.get("previous") else "false"}
         if args.get("container"):
             params["container"] = str(args["container"])
-        text = await c.k8s(f"/api/v1/namespaces/{ns}/pods/{pod}/log", params, text=True)
+        path = "/api/v1/namespaces/{ns}/pods/{pod}/log"
+        try:
+            text = await c.k8s(path.format(ns=ns, pod=pod), params, text=True)
+        except httpx.HTTPStatusError as e:
+            # 告警里给的常常是 Job / Deployment 的名字（backup-ai-api-29360710），不是 Pod 名（后面还有一段随机后缀）。
+            # 2026-10-30 评测：模型拿 Job 名查日志 404，根因就查不到了。按名字前缀找最新的那个 Pod 再查一次
+            real = await find_pod(c, ns, pod) if e.response.status_code == 404 else None
+            if not real:
+                raise
+            text = f"（没有叫 {pod} 的 Pod，按名字前缀找到 {real}）\n" + await c.k8s(path.format(ns=ns, pod=real), params, text=True)
         return redact(text)[-6000:]
     if name == "promql":
         res = await c.query(str(args["query"])[:500])
@@ -286,7 +303,9 @@ async def investigate(
     steps: list[dict] = []
     calls: list[ChatResult] = []
     names = {t["function"]["name"] for t in tools}
+    order = [t["function"]["name"] for t in tools]
     checked = numbers_checked = False
+    force: str | None = None  # 下一轮必须调用的工具（回答里提到却没调用的那个）
 
     async def emit(event: dict) -> None:
         if on_event:
@@ -295,7 +314,9 @@ async def investigate(
     evidence = [msgs[0]["content"], question]  # 工具结果会一条条加进来，数字核对用
     for rnd in range(MAX_ROUNDS):
         await emit({"type": "thinking", "round": rnd + 1})
-        r = await gw.chat(feature, msgs, tools=tools, max_tokens=900)
+        choice = {"type": "function", "function": {"name": force}} if force else None
+        force = None
+        r = await gw.chat(feature, msgs, tools=tools, max_tokens=900, tool_choice=choice)
         calls.append(r)
         if not r.tool_calls:
             # 程序核对：回答里提到的工具这次真的调用过吗？2026-10-30 评测里模型一次没查就写「list_pods 显示重启 127 次」，
@@ -303,6 +324,8 @@ async def investigate(
             unused = sorted(n for n in names if n in r.text and n not in {s["tool"] for s in steps})
             if unused and not checked:
                 checked = True
+                # 光让它「重答」不够：2026-10-30 评测里有一次退回重答，它还是一个工具都不调，接着编。所以下一轮用 tool_choice 强制调用
+                force = min(unused, key=order.index)
                 await emit({"type": "check", "detail": f"回答提到了 {'、'.join(unused)}，但这次没有调用，退回重答"})
                 msgs += [
                     {"role": "assistant", "content": r.text},

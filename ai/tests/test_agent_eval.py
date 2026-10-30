@@ -169,3 +169,26 @@ def test_eval_queue_runs_later_jobs_instead_of_dropping():
         await asyncio.gather(*q.tasks)
 
     asyncio.run(main())
+
+
+def test_grounding_check_rejects_unused_tool_claims(tmp_path):
+    """回答里写「list_pods 显示……」却没调用过：程序让它重来一次，这次真的去查"""
+    seen: list = []
+    steps = {0: "list_pods 显示 uptime-kuma 重启 127 次。", 1: call("list_pods", {"namespace": "monitoring"})}
+    answers = iter([steps[0], steps[1], "Uptime Kuma 没有就绪，建议删除 Pod 重建。"])
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.content)
+        seen.append(body)
+        step = next(answers)
+        msg = {"content": step} if isinstance(step, str) else {"content": "", "tool_calls": step}
+        return httpx.Response(200, json={"choices": [{"message": msg}], "usage": {"prompt_tokens": 100, "completion_tokens": 10}})
+
+    s = Settings(api_key="test", data_dir=tmp_path, cases_dir=tmp_path, samples_dir=tmp_path, daily_budget=5.0)
+    gw = Gateway(s, Ledger(tmp_path / "ai.db"), transport=httpx.MockTransport(handler))
+    c = ops.Cluster("http://prom", sa_dir=tmp_path / "none")
+    f = ev.Faults(c, {})
+    answer, steps_, _ = asyncio.run(ops.investigate(gw, c, "Uptime Kuma 打不开了", runner=f.run))
+    assert answer.startswith("Uptime Kuma 没有就绪") and [x["tool"] for x in steps_] == ["list_pods"]
+    assert "程序核对：你的回答提到了 list_pods，但这次并没有调用" in seen[1]["messages"][-1]["content"]
+    assert "wecom-relay" in seen[0]["messages"][0]["content"]  # 系统提示里有组件和命名空间的对照

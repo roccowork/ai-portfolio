@@ -36,7 +36,8 @@ from ..gateway import Gateway
 from .rag import keywords_ok
 
 CASES = Path(__file__).with_name("agent_cases.json")
-EVIDENCE = 9000  # 交给裁判的工具结果最多这么多字
+EVIDENCE = 20000  # 交给裁判的工具结果最多这么多字（2026-10-30 第一次评测只给 9000 字、每个工具 2000 字，截掉的内容让裁判误判了两道题）
+EVIDENCE_EACH = 5000
 
 # 没有集群（CI、本地测试）时各工具的基础结果：一个健康的空集群，只有注入的内容
 OFFLINE = {
@@ -107,6 +108,7 @@ class Faults:
         ns = ops._ns(args)  # 命名空间白名单照样生效
         if name == "list_pods":
             pods = await self.base(name, args)
+            added = []
             for p in inj.get("pods", []):
                 if p["namespace"] != ns:
                     continue
@@ -115,9 +117,11 @@ class Faults:
                     for x in hit:
                         x.update(p["set"])
                 else:
-                    pods.append({"pod": p["pod"], "container": p.get("container", ""), "phase": "Running", "state": "running", "ready": True, "restarts": 0,
+                    added.append({"pod": p["pod"], "container": p.get("container", ""), "phase": "Running", "state": "running", "ready": True, "restarts": 0,
                                  "last_exit": "", "age": "2.1 天", "mem_mib": 0, "mem_limit_mib": None} | p["set"])
-            return pods
+            hit_names = {p["pod"] for p in inj.get("pods", []) if p["namespace"] == ns}
+            # 出故障的排前面：真实集群的 Pod 列表很长，交给裁判时可能被截断
+            return added + [x for x in pods if x["pod"] in hit_names] + [x for x in pods if x["pod"] not in hit_names]
         if name == "pod_events":
             mine = [e for e in inj.get("events", []) if e["namespace"] == ns and (not args.get("pod") or e["pod"] == args["pod"])]
             extra = [{"time": self._ago(e.get("ago_min", 3)), "type": e.get("type", "Warning"), "reason": e["reason"], "object": e.get("object", f"Pod/{e['pod']}"),
@@ -130,7 +134,8 @@ class Faults:
         if name == "pod_logs":
             pod = str(args.get("pod") or "")
             for log in inj.get("logs", []):
-                if log["namespace"] == ns and log["pod"] == pod and bool(log.get("previous")) == bool(args.get("previous")):
+                # 写了 previous 的只对应「上一次崩溃前」的日志；没写的（比如已经结束的 Job）两种都返回它
+                if log["namespace"] == ns and log["pod"] == pod and ("previous" not in log or bool(log["previous"]) == bool(args.get("previous"))):
                     return ops.redact(log["text"])
             if any(x["namespace"] == ns and x["pod"] == pod for x in inj.get("pods", []) + inj.get("logs", [])):
                 return "（这个容器没有输出日志）"
@@ -183,7 +188,7 @@ def evidence(seen: list[dict]) -> str:
     out, total = [], 0
     for s in seen:
         body = s["result"] if isinstance(s["result"], str) else json.dumps(s["result"], ensure_ascii=False, default=str)
-        piece = f"- {s['tool']} {json.dumps(s['args'], ensure_ascii=False)}\n{body[:2000]}"
+        piece = f"- {s['tool']} {json.dumps(s['args'], ensure_ascii=False)}\n{body[:EVIDENCE_EACH]}"
         total += len(piece)
         if total > EVIDENCE:
             out.append("（后面的工具结果太长，省略）")

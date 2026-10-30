@@ -621,6 +621,25 @@
               }
             ]
           }
+        ],
+        "pods": [
+          {
+            "namespace": "monitoring",
+            "pod": "{pod:monitoring/wecom-relay}",
+            "container": "relay",
+            "set": {
+              "restarts": 9,
+              "last_exit": "Error 2026-10-30T01:12:40Z"
+            }
+          },
+          {
+            "namespace": "ops-desk",
+            "pod": "{pod:ops-desk/ops-desk}",
+            "container": "web",
+            "set": {
+              "restarts": 2
+            }
+          }
         ]
       },
       "truth": "最近 24 小时重启最多的是 monitoring 命名空间的 {pod:monitoring/wecom-relay}（wecom-relay），9 次；其次是网站的 {pod:ops-desk/ops-desk}，2 次。",

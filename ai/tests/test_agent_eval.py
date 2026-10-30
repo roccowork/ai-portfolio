@@ -192,3 +192,30 @@ def test_grounding_check_rejects_unused_tool_claims(tmp_path):
     assert answer.startswith("Uptime Kuma 没有就绪") and [x["tool"] for x in steps_] == ["list_pods"]
     assert "程序核对：你的回答提到了 list_pods，但这次并没有调用" in seen[1]["messages"][-1]["content"]
     assert "wecom-relay" in seen[0]["messages"][0]["content"]  # 系统提示里有组件和命名空间的对照
+
+
+def test_numbers_must_come_from_tool_results():
+    """2026-10-30 值班台真实回答：Prometheus 3.1G、ai-api 480MB，可它们的上限只有 1280Mi、384Mi"""
+    evidence = json.dumps([{"pod": "prometheus-0", "mem_mib": 1120.5, "mem_limit_mib": 1280}, {"pod": "ai-api-x", "mem_mib": 210.3, "mem_limit_mib": 384}]) + '{"mem_used_pct": 52.4}'
+    fake = "节点内存使用率 82%，Prometheus 容器占用 3145728000 字节（3.1 GB），ai-api 占用 480MB。"
+    assert ops.unsupported_numbers(fake, evidence) == ["82", "3145728000", "3.1", "480"]
+    good = "内存使用率 52%，正常。Prometheus 占 1.1G（上限 1280Mi），ai-api 210MB，重启 0 次。"
+    assert ops.unsupported_numbers(good, evidence) == []
+
+
+def test_agent_retries_when_numbers_are_made_up(tmp_path):
+    seen: list = []
+    answers = iter([call("cluster_overview", {}), "内存使用率 82%，可用 2.1G，偏高。", "内存使用率 52%，正常。"])
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(req.content))
+        step = next(answers)
+        msg = {"content": step} if isinstance(step, str) else {"content": "", "tool_calls": step}
+        return httpx.Response(200, json={"choices": [{"message": msg}], "usage": {"prompt_tokens": 100, "completion_tokens": 10}})
+
+    s = Settings(api_key="test", data_dir=tmp_path, cases_dir=tmp_path, samples_dir=tmp_path, daily_budget=5.0)
+    gw = Gateway(s, Ledger(tmp_path / "ai.db"), transport=httpx.MockTransport(handler))
+    c = ops.Cluster("http://prom", sa_dir=tmp_path / "none")
+    answer, _, _ = asyncio.run(ops.investigate(gw, c, "服务器内存高吗", runner=ev.Faults(c, {}).run))
+    assert answer == "内存使用率 52%，正常。"
+    assert "回答里这些数字在工具结果里找不到：82、2.1" in seen[-1]["messages"][-1]["content"]

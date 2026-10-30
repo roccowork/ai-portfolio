@@ -221,6 +221,28 @@ async def run_tool(c: Cluster, name: str, args: dict) -> object:
     return {"error": f"未知工具 {name}"}
 
 
+NUM = re.compile(r"(?<![\w.])\d+(?:\.\d+)?")
+
+
+def unsupported_numbers(answer: str, evidence: str) -> list[str]:
+    """回答里的数字，在工具结果（和问题、系统提示）里找不到的。
+    2026-10-30：值班台问内存，模型写「Prometheus 占 3145728000 字节（3.1G）、ai-api 占 480MB」，
+    可它们的内存上限只有 1280Mi 和 384Mi，数字是编的。允许单位换算（字节 → KiB/MiB/GiB 或 KB/MB/GB）、
+    比例换成百分比、四舍五入；10 以内的整数（次数、个数）不查"""
+    have = [float(x) for x in NUM.findall(evidence)]
+    cands = set()
+    for t in have:
+        cands.update({t, t * 100, 100 - t, t / 1024, t / 1024**2, t / 1024**3, t / 1e3, t / 1e6, t / 1e9})
+    out = []
+    for raw in dict.fromkeys(NUM.findall(answer)):
+        a = float(raw)
+        if a <= 10 and a.is_integer():
+            continue
+        if not any(abs(a - c) <= 0.03 * abs(c) or round(c) == a or round(c, 1) == a for c in cands):
+            out.append(raw)
+    return out
+
+
 def _summary(result: object) -> str:
     if isinstance(result, list):
         return f"返回 {len(result)} 条"
@@ -250,7 +272,8 @@ async def investigate(
     steps: list[dict] = []
     calls: list[ChatResult] = []
     names = {t["function"]["name"] for t in tools}
-    checked = False
+    checked = numbers_checked = False
+    evidence = [msgs[0]["content"], question]  # 工具结果会一条条加进来，数字核对用
     for _ in range(MAX_ROUNDS):
         r = await gw.chat(feature, msgs, tools=tools, max_tokens=900)
         calls.append(r)
@@ -266,7 +289,21 @@ async def investigate(
                      "需要数据就真正调用工具再回答；要提议操作就调用 propose_action，不要写在文字里。请重新回答，回答里不要写工具名。"},
                 ]
                 continue
-            return r.text.strip(), steps, calls
+            # 程序核对数字：回答里的数字要在这次的工具结果里找得到（允许换算）。找不到的超过 1 个，退回重答一次；
+            # 重答后还有，就在回答末尾标出来，让人知道哪些数字可能不准
+            made_up = unsupported_numbers(r.text, "\n".join(evidence))
+            if len(made_up) >= 2 and not numbers_checked:
+                numbers_checked = True
+                msgs += [
+                    {"role": "assistant", "content": r.text},
+                    {"role": "user", "content": f"程序核对：回答里这些数字在工具结果里找不到：{'、'.join(made_up[:8])}。"
+                     "只能写工具查到的数字（可以换算单位）；没查到的就去查，查不到就说没查到，不要估计或编造。请重新回答。"},
+                ]
+                continue
+            answer = r.text.strip()
+            if len(made_up) >= 2:
+                answer += f"\n\n⚠️ 程序核对：这些数字没在查询结果里找到，可能不准：{'、'.join(made_up[:8])}"
+            return answer, steps, calls
         msgs.append({"role": "assistant", "content": r.text or "", "tool_calls": r.tool_calls})
         for tc in r.tool_calls:
             name = tc["function"]["name"]
@@ -287,4 +324,5 @@ async def investigate(
             # 统一再脱敏一次：指标标签里也可能带节点 IP
             content = redact(result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, default=str))
             msgs.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": content[:6000]})
+            evidence.append(content[:6000])
     return "排查步骤太多，先停在这里。请把问题问得具体一点再试。", steps, calls

@@ -123,6 +123,25 @@ def build(src: sqlite3.Connection, dest: Path, traffic: list[tuple[str, int, int
     tmp.replace(dest)
 
 
+CATALOG = [
+    ("ai_usage", "AI 调用和费用", "每天每个 AI 功能、每个模型的调用次数、token 和估算费用", "day"),
+    ("incidents", "告警自愈", "每条告警：处理方式、是否恢复、多久恢复", "day"),
+    ("eval_runs", "效果评测", "RAG 和运维 Agent 每次评测的分数", "day"),
+    ("site_traffic", "网站访问", "最近 7 天每天的请求数和 5xx 错误", "day"),
+    ("deploys", "发布记录", "最近几次发布的时间和版本", "day"),
+]
+
+
+def catalog(path: Path) -> list[dict]:
+    """页面上的「数据目录」：有哪几张表、各多少行、从哪天到哪天。不调用模型"""
+    out = []
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as db:
+        for table, name, desc, day in CATALOG:
+            n, lo, hi = db.execute(f"SELECT COUNT(*), MIN({day}), MAX({day}) FROM {table}").fetchone()
+            out.append({"table": table, "name": name, "desc": desc, "rows": n, "from": lo, "to": hi})
+    return out
+
+
 def schema(path: Path, now: datetime | None = None) -> str:
     """给模型的说明（语义层）：表、列的意思、口径，以及「今天」「本周」对应的真实日期"""
     now = (now or datetime.now(timezone.utc)).astimezone(SG)

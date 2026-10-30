@@ -9,7 +9,7 @@ import { BRAND } from '../../lib/site';
   description="用一句中文问本站自己的真实运行数据：AI 调用和费用、告警自愈、评测分数、访问量。AI 写 SQL、程序在只读受限的连接上执行、画图并解读。"
 >
   <section class="bg-slate-950 py-16 text-white">
-    <div class="mx-auto max-w-4xl px-5">
+    <div class="mx-auto max-w-5xl px-5">
       <p class="text-sm font-semibold tracking-widest text-amber-300">在线体验 · ChatBI</p>
       <h1 class="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">用一句话查数据</h1>
       <p class="mt-4 max-w-2xl leading-relaxed text-slate-300">
@@ -20,11 +20,13 @@ import { BRAND } from '../../lib/site';
     </div>
   </section>
 
-  <section class="mx-auto max-w-4xl px-5 py-12">
-    <ChatBiBox client:load />
+  <section class="bg-slate-50 py-12">
+    <div class="mx-auto max-w-5xl px-5">
+      <ChatBiBox client:load />
+    </div>
   </section>
 
-  <section class="bg-slate-50 py-16">
+  <section class="py-16">
     <div class="mx-auto max-w-4xl px-5 text-slate-600">
       <h2 class="text-2xl font-bold tracking-tight text-slate-900">怎么做的</h2>
       <ol class="mt-6 list-inside list-decimal space-y-2 leading-relaxed">

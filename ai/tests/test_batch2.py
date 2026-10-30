@@ -132,6 +132,8 @@ def test_chatbi_snapshot_has_real_stats_only(tmp_path):
     assert tables == {"ai_usage", "incidents", "eval_runs", "site_traffic", "deploys"}
     with pytest.raises(sqlite3.Error):
         chatbi.run_sql(db, "SELECT * FROM leads")
+    cat = {t["table"]: t for t in chatbi.catalog(db)}
+    assert cat["ai_usage"]["rows"] == 2 and cat["site_traffic"]["from"] == "2026-10-27" and cat["incidents"]["name"] == "告警自愈"
     text = chatbi.schema(db, datetime(2026, 10, 29, 4, tzinfo=timezone.utc))
     assert "今天是 2026-10-29（星期四）" in text and "「最近 7 天」= 2026-10-23 到 2026-10-29" in text and "「本周」= 2026-10-26" in text
 
@@ -186,3 +188,5 @@ def test_chatbi_endpoint_retries_bad_sql(env):
         assert body["rows"] == [["作品集问答", 1]]
         assert body["answer"] == "华东最高。"
         assert (s.data_dir / "chatbi" / "ops.db").is_file()
+        tables = client.get("/api/ai/chatbi/catalog").json()["tables"]
+        assert [t["table"] for t in tables][0] == "ai_usage" and tables[0]["rows"] == 1

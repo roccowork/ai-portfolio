@@ -80,7 +80,11 @@ class Faults:
         self.seen: list[dict] = []
 
     def _ago(self, minutes: float) -> str:
-        return (self.now - timedelta(minutes=minutes)).isoformat()[:19]
+        """和真实工具一样，给新加坡时间"""
+        return ops.sg_time((self.now - timedelta(minutes=minutes)).isoformat())
+
+    def _ago_utc(self, minutes: float) -> str:
+        return (self.now - timedelta(minutes=minutes)).isoformat()[:19] + "Z"
 
     async def base(self, name: str, args: dict):
         if self.c.enabled:
@@ -137,7 +141,9 @@ class Faults:
                 # 写了 previous 的只对应「上一次崩溃前」的日志；没写的（比如已经结束的 Job）两种都返回它
                 if log["namespace"] == ns and log["pod"] == pod and ("previous" not in log or bool(log["previous"]) == bool(args.get("previous"))):
                     return ops.redact(log["text"])
-            if any(x["namespace"] == ns and x["pod"] == pod for x in inj.get("pods", []) + inj.get("logs", [])):
+            if any(x["namespace"] == ns and x["pod"] == pod for x in inj.get("logs", [])):
+                return "（当前这个容器还没有输出日志；上一次崩溃前的日志用 previous=true 查看）"
+            if any(x["namespace"] == ns and x["pod"] == pod for x in inj.get("pods", [])):
                 return "（这个容器没有输出日志）"
             return await self.base(name, args)
         return await self.base(name, args)
@@ -231,7 +237,7 @@ async def run_case(gw: Gateway, judge_gw: Gateway, c: ops.Cluster, case: dict, e
     extra = dict(extra_tools)
     if case["mode"] == "heal":
         alert = copy.deepcopy(case["alert"])
-        alert["startsAt"] = faults._ago(alert.pop("since_min", 15)) + "Z"
+        alert["startsAt"] = faults._ago_utc(alert.pop("since_min", 15))
         question, system = autoheal.alert_question(alert), autoheal.SYSTEM
 
         async def propose(args: dict) -> dict:
@@ -260,6 +266,7 @@ async def run_case(gw: Gateway, judge_gw: Gateway, c: ops.Cluster, case: dict, e
     return row | {
         "answer": answer,
         "tools": called,
+        "steps": [{"tool": s["tool"], "args": s["args"], "summary": s["summary"]} for s in steps],  # 明细里能看到每一步传了什么参数
         "proposal": proposal or None,
         "blocked": blocked,
         "tools_ok": all(any(t in called for t in group.split("|")) for group in exp.get("tools", [])),

@@ -456,6 +456,10 @@ def create_app(
     class BiIn(BaseModel):
         question: str = Field(min_length=2, max_length=200)
 
+    @app.get("/api/ai/chatbi/catalog")
+    async def chatbi_catalog():
+        return {"tables": chatbi.catalog(await bi.ensure()), "refresh_minutes": chatbi.REFRESH // 60}
+
     @app.post("/api/ai/chatbi")
     async def chatbi_ask(body: BiIn, req: Request):
         gw.check_budget("chatbi")

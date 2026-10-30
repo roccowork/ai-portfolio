@@ -48,9 +48,10 @@ PUBLIC_TOOLS = [t for t in TOOLS if t["function"]["name"] != "pod_logs"]
 # 集群里有什么。2026-10-30 故障演练评测：模型不知道 wecom-relay 在 monitoring，直接说「不在集群里」；以为 ai.db 是 Dify 的库
 CLUSTER_MAP = """集群里有什么（命名空间 → 组件）：
 - ops-desk：网站 ops-desk（容器 web）；AI 服务 ai-api（容器 api，数据是 SQLite 文件 ai.db：费用账本、自愈记录、评测结果）；私人助理 assistant；备份任务 CronJob backup-ai-api（每天用 restic 把 ai.db 备份到 Cloudflare R2）
-- monitoring：Prometheus、Alertmanager、Grafana（kube-prometheus-stack）；Uptime Kuma（uptime-kuma）；告警转发 wecom-relay（把告警推到 Telegram 和企业微信）；备份任务 backup-uptime-kuma；周报、R2 用量等定时任务
+- monitoring：Prometheus、Alertmanager、Grafana（kube-prometheus-stack）；Uptime Kuma（uptime-kuma）；告警转发 wecom-relay（把告警推到 Telegram，Telegram 机器人的 token 在 Secret telegram-ops；企业微信是备用，key 在 Secret wecom-bot）；备份任务 backup-uptime-kuma；周报、R2 用量等定时任务
 - argocd：Argo CD；kube-system：k3s 自带的 Traefik、CoreDNS 等；证书由 cert-manager 管（它的命名空间查不了，证书问题看 ops-desk 的事件）
 - Dify 用 Docker Compose 跑在同一台服务器上，不在集群里，查不到
+工具结果里的时间都已换成新加坡时间，和上面的「现在」直接比较
 问到某个组件先按上面找命名空间；上面没有的，用 list_pods 把允许的命名空间都看一遍再下结论，不要没查就说不在集群里"""
 
 GROUNDING = """结论里的每个数字和现象都必须来自这次真正调用过的工具结果：没调用过的工具，不能写它「显示」了什么；回答里不要写工具名和调用格式（比如 list_pods(...)）"""
@@ -136,6 +137,17 @@ class Cluster:
         await self.prom.aclose()
 
 
+def sg_time(ts: str | None) -> str:
+    """K8s、Prometheus 给的是 UTC（2026-10-30T16:11:18Z），换成和系统提示一样的新加坡时间。
+    2026-10-30 评测：告警开始时间是 UTC、「现在」是新加坡时间，模型把 9 分钟前算成了 8 小时前"""
+    if not ts:
+        return ""
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(TZ).strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return ts
+
+
 def _ns(args: dict) -> str:
     ns = str(args.get("namespace") or "")
     if ns not in NAMESPACES:
@@ -157,7 +169,7 @@ async def run_tool(c: Cluster, name: str, args: dict) -> object:
         alerts = r.json()["data"]["alerts"]
         return [
             {"name": a["labels"].get("alertname"), "state": a["state"], "severity": a["labels"].get("severity"), "namespace": a["labels"].get("namespace"),
-             "pod": a["labels"].get("pod"), "since": a.get("activeAt", "")[:19], "summary": (a.get("annotations") or {}).get("summary") or (a.get("annotations") or {}).get("description", "")[:200]}
+             "pod": a["labels"].get("pod"), "since": sg_time(a.get("activeAt")), "summary": (a.get("annotations") or {}).get("summary") or (a.get("annotations") or {}).get("description", "")[:200]}
             for a in alerts
             if a["labels"].get("alertname") not in ("Watchdog", "InfoInhibitor")
         ]
@@ -190,7 +202,7 @@ async def run_tool(c: Cluster, name: str, args: dict) -> object:
                 reason = ((cs.get("state") or {}).get(state) or {}).get("reason", "")
                 out.append({
                     "pod": p["metadata"]["name"], "container": cs["name"], "phase": p["status"].get("phase"), "state": f"{state} {reason}".strip(),
-                    "ready": cs.get("ready"), "restarts": cs.get("restartCount"), "last_exit": f"{last.get('reason', '')} {last.get('finishedAt', '')}".strip(),
+                    "ready": cs.get("ready"), "restarts": cs.get("restartCount"), "last_exit": f"{last.get('reason', '')} {sg_time(last.get('finishedAt'))}".strip(),
                     "age": _age(p["metadata"].get("creationTimestamp")), "mem_mib": round(mem.get((p["metadata"]["name"], cs["name"]), 0), 1),
                     "mem_limit_mib": _mib(((spec.get("resources") or {}).get("limits") or {}).get("memory")),
                 })
@@ -201,7 +213,7 @@ async def run_tool(c: Cluster, name: str, args: dict) -> object:
         items = (await c.k8s(f"/api/v1/namespaces/{ns}/events", params))["items"]
         items.sort(key=lambda e: e.get("lastTimestamp") or e.get("eventTime") or "", reverse=True)
         return [
-            {"time": (e.get("lastTimestamp") or e.get("eventTime") or "")[:19], "type": e.get("type"), "reason": e.get("reason"),
+            {"time": sg_time(e.get("lastTimestamp") or e.get("eventTime")), "type": e.get("type"), "reason": e.get("reason"),
              "object": f"{e['involvedObject'].get('kind')}/{e['involvedObject'].get('name')}", "count": e.get("count"), "message": redact(e.get("message", ""))[:300]}
             for e in items[:20]
         ]

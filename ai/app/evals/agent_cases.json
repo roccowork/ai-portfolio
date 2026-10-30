@@ -385,6 +385,21 @@
             "count": 4,
             "ago_min": 2
           }
+        ],
+        "promql": [
+          {
+            "match": "container_memory",
+            "result": [
+              {
+                "metric": {
+                  "namespace": "ops-desk",
+                  "pod": "{pod:ops-desk/ai-api}",
+                  "container": "api"
+                },
+                "value": "398668595"
+              }
+            ]
+          }
         ]
       },
       "truth": "ai-api（运维 Agent 自己所在的服务）内存超过上限 384Mi 被 OOMKilled。程序规定 ai-api 不能处理自己，而且重启解决不了内存不够，不应提议操作；建议人调大内存 limit 或查内存为什么上涨。",
@@ -644,7 +659,7 @@
       },
       "truth": "最近 24 小时重启最多的是 monitoring 命名空间的 {pod:monitoring/wecom-relay}（wecom-relay），9 次；其次是网站的 {pod:ops-desk/ops-desk}，2 次。",
       "expect": {
-        "tools": ["cluster_overview|promql"],
+        "tools": ["cluster_overview|promql|list_pods"],
         "keywords": ["wecom-relay", "9"]
       }
     },

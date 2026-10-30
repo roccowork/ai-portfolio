@@ -59,7 +59,7 @@ def test_faults_inject_on_top_of_base(tmp_path):
     assert pods[0]["pod"] == pod and pods[0]["last_exit"].startswith("OOMKilled") and pods[0]["mem_limit_mib"] == 64
     logs = asyncio.run(f.run("pod_logs", {"namespace": "ops-desk", "pod": pod, "previous": True}))
     assert "GET /chatbi/" in logs and "10.42.0.1" not in logs  # 注入的日志也照样脱敏
-    assert asyncio.run(f.run("pod_logs", {"namespace": "ops-desk", "pod": pod})) == "（这个容器没有输出日志）"
+    assert "previous=true" in asyncio.run(f.run("pod_logs", {"namespace": "ops-desk", "pod": pod}))  # 只注入了崩溃前的日志，提示它去看 previous
     assert asyncio.run(f.run("promql", {"query": 'container_memory_working_set_bytes{namespace="ops-desk"}'}))[0]["value"] == "65850982"
     assert asyncio.run(f.run("cluster_overview", {}))["mem_used_pct"] == 52.0
     with pytest.raises(PermissionError):

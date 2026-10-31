@@ -185,6 +185,7 @@ def create_app(
 
     menu = [
         ("🖥 服务器状态", "status", "CPU、内存、磁盘和不正常的 Pod", lambda: dutybot.status_text(k8s)),
+        ("📦 Pod 资源", "pods", "内存、CPU 占用前 5 的 Pod，重启过的，数据盘", lambda: dutybot.pods_text(k8s)),
         ("🚨 当前告警", "alerts", "正在触发的告警", lambda: dutybot.alerts_text(k8s)),
         ("🩹 自愈记录", "heal", "运维 Agent 最近处理的故障", lambda: asyncio.to_thread(dutybot.heal_text, healer.store)),
         ("📊 平台实况", "live", "最近发布、可用率、备份、证书", platform),

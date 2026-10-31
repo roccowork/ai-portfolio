@@ -20,7 +20,8 @@ TOOL_ZH = {"search_runbook": "运维手册", "list_alerts": "告警", "cluster_o
 
 HELP = """<b>我是 OPS 值班台</b>，负责网站和服务器这边的事：
 
-🖥 <b>服务器状态</b>：CPU、内存、磁盘，哪些 Pod 不正常
+🖥 <b>服务器状态</b>：CPU、内存、磁盘，哪些 Pod 不正常，系统盘几天写满，Prometheus 序列数和内存
+📦 <b>Pod 资源</b>：内存、CPU 占用前 5 的 Pod（快到上限的标红），24 小时内重启过的，数据盘用量
 🚨 <b>当前告警</b>：正在触发和等待中的告警
 🩹 <b>自愈记录</b>：运维 Agent 最近处理的故障
 📊 <b>平台实况</b>：最近发布、7 天可用率、备份、证书、7 天告警（和网页值班大屏同一份数据）
@@ -47,6 +48,104 @@ async def status_text(k8s: ops.Cluster) -> str:
     ]
     bad = st.get("unhealthy_pods_by_namespace") or {}  # type: ignore[union-attr]
     lines.append("不正常的 Pod：" + "、".join(f"{e(k)} {v} 个" for k, v in bad.items()) if bad else "Pod 全部正常")
+    for line in (await _disk_forecast(k8s), await _prom_line(k8s)):
+        if line:
+            lines.append(line)
+    lines.append("<i>细看每个 Pod：点「📦 Pod 资源」</i>")
+    return "\n".join(lines)
+
+
+async def _q(k8s: ops.Cluster, q: str) -> list[dict]:
+    """查询失败（指标不存在、Prometheus 暂时不可用）就当没有数据，按钮照样能出结果"""
+    try:
+        return await k8s.query(q)
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _v(r: dict) -> float:
+    return float(r["value"][1])
+
+
+def _mib(b: float) -> str:
+    return f"{b / 1024**3:.1f} GiB" if b >= 1024**3 else f"{b / 1024**2:.0f} MiB"
+
+
+async def _disk_forecast(k8s: ops.Cluster) -> str | None:
+    """系统盘：剩余多少，按最近 6 小时的速度几天写满"""
+    root = '{mountpoint="/", fstype!~"tmpfs|overlay"}'
+    avail = await _q(k8s, f"max(node_filesystem_avail_bytes{root})")
+    if not avail:
+        return None
+    left = _v(avail[0])
+    slope = await _q(k8s, f"max(deriv(node_filesystem_avail_bytes{root}[6h]))")  # 每秒变化的字节数，负数表示在减少
+    if slope and _v(slope[0]) < 0:
+        days = left / -_v(slope[0]) / 86400
+        when = f"按最近 6 小时的速度约 {days:.0f} 天写满" if days < 365 else "增长很慢，一年内写不满"
+    else:
+        when = "最近 6 小时没有增长"
+    return f"系统盘剩余 {_mib(left)}，{when}"
+
+
+async def _prom_line(k8s: ops.Cluster) -> str | None:
+    series = await _q(k8s, "max(prometheus_tsdb_head_series)")
+    mem = await _q(k8s, 'max(container_memory_working_set_bytes{namespace="monitoring", pod=~"prometheus-.*", container="prometheus"})')
+    lim = await _q(k8s, 'max(kube_pod_container_resource_limits{namespace="monitoring", pod=~"prometheus-.*", container="prometheus", resource="memory"})')
+    if not series:
+        return None
+    line = f"Prometheus：{_v(series[0]) / 1e4:.1f} 万条序列"
+    if mem:
+        line += f"，内存 {_mib(_v(mem[0]))}" + (f" / {_mib(_v(lim[0]))}" if lim else "")
+    return line
+
+
+def _who(r: dict) -> str:
+    m = r["metric"]
+    return f"{m.get('namespace', '?')}/{m.get('pod', '?')}"
+
+
+async def pods_text(k8s: ops.Cluster) -> str:
+    """Pod 资源：内存前 5（快到上限的标红）、CPU 前 5、24 小时内重启过的，加上各数据盘用量"""
+    if not k8s.enabled:
+        return "这里查不到 Pod（没有集群权限）"
+    sel = '{container!="", image!=""}'
+    by = "sum by (namespace, pod)"
+    mem = await _q(k8s, f"topk(5, {by} (container_memory_working_set_bytes{sel}))")
+    mem_lim = {_who(r): _v(r) for r in await _q(k8s, f'{by} (kube_pod_container_resource_limits{{resource="memory"}})')}
+    cpu = await _q(k8s, f"topk(5, {by} (rate(container_cpu_usage_seconds_total{sel}[5m])))")
+    cpu_lim = {_who(r): _v(r) for r in await _q(k8s, f'{by} (kube_pod_container_resource_limits{{resource="cpu"}})')}
+    near = await _q(k8s, f'{by} (container_memory_working_set_bytes{sel}) / {by} (kube_pod_container_resource_limits{{resource="memory"}}) > 0.8')
+    restarts = await _q(k8s, f"{by} (increase(kube_pod_container_status_restarts_total[24h])) >= 1")
+    reasons = {_who(r): r["metric"].get("reason", "") for r in await _q(k8s, "kube_pod_container_status_last_terminated_reason == 1")}
+    vols = await _q(k8s, "kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes")
+    vol_used = {(r["metric"].get("namespace"), r["metric"].get("persistentvolumeclaim")): _v(r) for r in await _q(k8s, "kubelet_volume_stats_used_bytes")}
+
+    lines = ["<b>📦 Pod 资源</b>", "", "<b>内存前 5</b>（用量 / 上限）"]
+    for r in mem:
+        who, used = _who(r), _v(r)
+        lim = mem_lim.get(who)
+        pct = f"（{used / lim * 100:.0f}%）" if lim else "（没设上限）"
+        warn = "🔴 " if lim and used / lim > 0.8 else ""
+        lines.append(f"{warn}{e(who)}  {_mib(used)}" + (f" / {_mib(lim)}" if lim else "") + pct)
+    if not mem:
+        lines.append("查不到")
+    lines += ["", "<b>CPU 前 5</b>（核，最近 5 分钟平均）"]
+    for r in cpu:
+        who, used = _who(r), _v(r)
+        lim = cpu_lim.get(who)
+        lines.append(f"{e(who)}  {used:.2f}" + (f" / {lim:g}" if lim else " / 没设上限"))
+    if not cpu:
+        lines.append("查不到")
+    lines += ["", "<b>快到内存上限的</b>（超过 80%，容易被 OOM 杀掉）"]
+    lines += [f"🔴 {e(_who(r))}  {_v(r) * 100:.0f}%" for r in near] or ["没有 ✅"]
+    lines += ["", "<b>24 小时内重启过的</b>"]
+    lines += [f"{e(_who(r))}  {_v(r):.0f} 次" + (f"，上次退出原因 {e(reasons[_who(r)])}" if reasons.get(_who(r)) else "") for r in sorted(restarts, key=_v, reverse=True)[:8]] or ["没有 ✅"]
+    if vols:
+        lines += ["", "<b>数据盘</b>"]
+        for r in sorted(vols, key=_v, reverse=True)[:6]:
+            m = r["metric"]
+            used = vol_used.get((m.get("namespace"), m.get("persistentvolumeclaim")))
+            lines.append(f"{e(m.get('namespace', '?'))}/{e(m.get('persistentvolumeclaim', '?'))}  {_v(r) * 100:.0f}%" + (f"（{_mib(used)}）" if used else ""))
     return "\n".join(lines)
 
 

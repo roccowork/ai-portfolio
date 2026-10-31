@@ -155,3 +155,44 @@ def test_jobs_text_groups_cronjobs(tmp_path):
     text = asyncio.run(dutybot.jobs_text(c))
     assert "📮 会发消息的" in text and "📈 网站周报 · 每周一 09:00" in text and "上次 ✅" in text
     assert "🔧 后台维护" in text and "💾 备份网站 AI 服务数据" in text and "上次 ❌ 失败" in text
+
+
+def test_pods_and_status_details(tmp_path):
+    """📦 Pod 资源：内存前 5 带上限和占比、快到上限的标红、重启带原因；服务器状态多了系统盘预测和 Prometheus。查询失败的项跳过"""
+    (tmp_path / "token").write_text("t")
+
+    def vec(*rows):
+        return [{"metric": m, "value": [0, str(v)]} for m, v in rows]
+
+    def pod(ns, name, **kw):
+        return {"namespace": ns, "pod": name, **kw}
+    answers = {  # 按顺序匹配，「快到上限」的查询里也含 limits，放最前
+        "> 0.8": vec((pod("ops-desk", "ai-api-x"), 0.86),),
+        "topk(5, sum by (namespace, pod) (container_memory": vec((pod("monitoring", "prometheus-kps-prometheus-0"), 430 * 2**20), (pod("ops-desk", "ai-api-x"), 330 * 2**20)),
+        'kube_pod_container_resource_limits{resource="memory"}': vec((pod("monitoring", "prometheus-kps-prometheus-0"), 1280 * 2**20), (pod("ops-desk", "ai-api-x"), 384 * 2**20)),
+        "topk(5, sum by (namespace, pod) (rate(container_cpu": vec((pod("ops-desk", "ai-api-x"), 0.12),),
+        'kube_pod_container_resource_limits{resource="cpu"}': vec((pod("ops-desk", "ai-api-x"), 1),),
+        "increase(kube_pod_container_status_restarts_total": vec((pod("ops-desk", "wecom-relay-y"), 3),),
+        "last_terminated_reason": vec((pod("ops-desk", "wecom-relay-y", reason="OOMKilled"), 1),),
+        "max(node_filesystem_avail_bytes": vec(({}, 20 * 2**30),),
+        "deriv(": vec(({}, -2 * 2**30 / 86400),),
+        "prometheus_tsdb_head_series": vec(({}, 56000),),
+    }
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        q = req.url.params.get("query", "")
+        if req.url.path == "/api/v1/query":
+            for k, v in answers.items():
+                if k in q:
+                    return httpx.Response(200, json={"status": "success", "data": {"result": v}})
+            return httpx.Response(200, json={"status": "success", "data": {"result": []}})
+        return httpx.Response(404)
+
+    c = ops.Cluster("http://prom", sa_dir=tmp_path, transport=httpx.MockTransport(handler))
+    text = asyncio.run(dutybot.pods_text(c))
+    assert "monitoring/prometheus-kps-prometheus-0  430 MiB / 1.2 GiB（34%）" in text
+    assert "🔴 ops-desk/ai-api-x  330 MiB / 384 MiB（86%）" in text
+    assert "ops-desk/ai-api-x  0.12 / 1" in text and "wecom-relay-y  3 次，上次退出原因 OOMKilled" in text
+    assert "快到内存上限的</b>（超过 80%，容易被 OOM 杀掉）\n🔴 ops-desk/ai-api-x  86%" in text
+    assert "数据盘" not in text  # 没有卷指标就不显示这一块
+    assert "约 10 天写满" in asyncio.run(dutybot._disk_forecast(c)) and "5.6 万条序列" in asyncio.run(dutybot._prom_line(c))

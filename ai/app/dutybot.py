@@ -5,6 +5,7 @@
 """
 
 import html
+import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
@@ -20,24 +21,22 @@ TOOL_ZH = {"search_runbook": "运维手册", "list_alerts": "告警", "cluster_o
 
 HELP = """<b>我是 OPS 值班台</b>，负责网站和服务器这边的事：
 
-🖥 <b>服务器状态</b>：CPU、内存、磁盘，哪些 Pod 不正常，系统盘几天写满，Prometheus 序列数和内存
+🖥 <b>服务器状态</b>：CPU、内存、磁盘，哪些 Pod 不正常，Argo CD 同步和外部拨测，系统盘几天写满，Prometheus 序列数和内存
 📦 <b>Pod 资源</b>：内存、CPU 占用前 5 的 Pod（快到上限的标红），24 小时内重启过的，数据盘用量
 🚨 <b>当前告警</b>：正在触发和等待中的告警
 🩹 <b>自愈记录</b>：运维 Agent 最近处理的故障
 📊 <b>平台实况</b>：最近发布、7 天可用率、备份、证书、7 天告警（和网页值班大屏同一份数据）
 🗓 <b>定时任务</b>：服务器上的备份、周报等任务，下次几点、上次成没成功
 💬 <b>最近留言</b>：网站访客在 AI 助手里给你的留言
-📏 <b>RAG 评测</b>：用评测集把作品集问答和运维知识库跑一遍（2～3 分钟，花一两毛钱），结果公开在 /api/ai/eval/latest
-🧪 <b>Agent 评测</b>：故障演练，在真实集群数据上注入 OOM、备份失败、拉镜像失败、日志注入等故障，看运维 Agent 诊断和处置对不对（3～5 分钟，约几毛钱；只读，不会动集群）
 💰 <b>今日用量</b>：AI 演示今天的调用次数、费用和剩余预算
 
-除了两个评测，按钮都不调用模型、不花钱。也可以直接打字问，运维 Agent 会自己查（每次花几分钱）：问状态，比如「为什么内存这么高」，它查实时数据；问怎么做，比如「证书快过期怎么办」「怎么回滚」，它查本站的运维手册，按手册回答并写明出处。
+按钮都不调用模型、不花钱。两个评测会花钱，不放在菜单里，要跑就手动输入：/eval（RAG 评测，2～3 分钟，一两毛钱）、/agenteval（Agent 故障演练，3～5 分钟，几毛钱，只读不动集群）。也可以直接打字问，运维 Agent 会自己查（每次花几分钱）：问状态，比如「为什么内存这么高」，它查实时数据；问怎么做，比如「证书快过期怎么办」「怎么回滚」，它查本站的运维手册，按手册回答并写明出处。
 
 会主动推给你的：告警和运维 Agent 的诊断（需要确认的操作带「执行 / 忽略」按钮）、网站周报、R2 用量报告、访客新留言、客服 Agent 演示的预约。
 吃药、提醒、简报在另一个机器人（私人助理）。"""
 
 
-async def status_text(k8s: ops.Cluster) -> str:
+async def status_text(k8s: ops.Cluster, kuma: Callable[[], Awaitable[str | None]] | None = None) -> str:
     if not k8s.enabled:
         return "这里查不到服务器状态（没有集群权限）"
     st = await ops.run_tool(k8s, "cluster_overview", {})
@@ -48,11 +47,48 @@ async def status_text(k8s: ops.Cluster) -> str:
     ]
     bad = st.get("unhealthy_pods_by_namespace") or {}  # type: ignore[union-attr]
     lines.append("不正常的 Pod：" + "、".join(f"{e(k)} {v} 个" for k, v in bad.items()) if bad else "Pod 全部正常")
-    for line in (await _disk_forecast(k8s), await _prom_line(k8s)):
+    for line in (await _argo_line(k8s), await kuma() if kuma else None, await _disk_forecast(k8s), await _prom_line(k8s)):
         if line:
             lines.append(line)
     lines.append("<i>细看每个 Pod：点「📦 Pod 资源」</i>")
     return "\n".join(lines)
+
+
+async def _argo_line(k8s: ops.Cluster) -> str | None:
+    """Argo CD 各应用是否已同步、健康：推送后有没有真正上线、有没有卡住"""
+    try:
+        apps = (await k8s.k8s("/apis/argoproj.io/v1alpha1/namespaces/argocd/applications"))["items"]
+    except Exception:  # noqa: BLE001 —— 没权限或 Argo CD 不在，就不显示这一行
+        return None
+    bad = []
+    for a in apps:
+        st = a.get("status") or {}
+        sync, health = (st.get("sync") or {}).get("status"), (st.get("health") or {}).get("status")
+        op = (st.get("operationState") or {}).get("phase")
+        if sync != "Synced" or health != "Healthy" or op in ("Failed", "Error"):
+            bad.append(f"{e(a['metadata']['name'])}（{SYNC_ZH.get(sync or '', sync or '?')}、{HEALTH_ZH.get(health or '', health or '?')}" + ("、上次同步失败" if op in ("Failed", "Error") else "") + "）")
+    if not bad:
+        return f"Argo CD：{len(apps)} 个应用全部已同步、健康 ✅"
+    return f"⚠️ Argo CD：{len(apps) - len(bad)}/{len(apps)} 正常，" + "、".join(bad)
+
+
+SYNC_ZH = {"Synced": "已同步", "OutOfSync": "没同步", "Unknown": "状态未知"}
+HEALTH_ZH = {"Healthy": "健康", "Progressing": "更新中", "Degraded": "异常", "Missing": "缺失", "Suspended": "已暂停", "Unknown": "未知"}
+
+
+def kuma_line(metrics: str) -> str | None:
+    """Uptime Kuma /metrics 里每个检测的 monitor_status（1 在线、0 掉线、2 等待、3 维护）→ 一行。名字以 VPS 开头的不算"""
+    status = {}
+    for labels, value in re.findall(r'^monitor_status\{([^}]*)\}\s+(\S+)', metrics, re.M):
+        name = dict(re.findall(r'(\w+)="([^"]*)"', labels)).get("monitor_name", "?")
+        if not name.upper().startswith("VPS"):  # 翻墙 VPS 归私人助理管，这里只看本站的服务
+            status[name] = int(float(value))
+    if not status:
+        return None
+    down = [n for n, v in status.items() if v == 0]
+    if not down:
+        return f"外部拨测（Uptime Kuma）：{len(status)}/{len(status)} 在线 ✅"
+    return f"⚠️ 外部拨测（Uptime Kuma）：{len(status) - len(down)}/{len(status)} 在线，掉线：" + "、".join(e(n) for n in down)
 
 
 async def _q(k8s: ops.Cluster, q: str) -> list[dict]:

@@ -183,19 +183,31 @@ def create_app(
         verb, note = EVAL_START[state]
         return f"🧪 {verb}运维 Agent 评测：{len(cases)} 道故障演练题（{live}），大约 3～5 分钟，花几毛钱。只读，不会动集群{note}"
 
+    async def kuma_status() -> str | None:
+        try:
+            async with httpx.AsyncClient(timeout=8) as c:
+                r = await c.get(s.kuma_url.rstrip("/") + "/metrics", auth=("", s.kuma_api_key))
+                r.raise_for_status()
+            return dutybot.kuma_line(r.text)
+        except httpx.HTTPError:
+            return "外部拨测（Uptime Kuma）：查不到"
+
     menu = [
-        ("🖥 服务器状态", "status", "CPU、内存、磁盘和不正常的 Pod", lambda: dutybot.status_text(k8s)),
+        ("🖥 服务器状态", "status", "CPU、内存、磁盘、Argo CD、外部拨测", lambda: dutybot.status_text(k8s, kuma_status if s.kuma_api_key else None)),
         ("📦 Pod 资源", "pods", "内存、CPU 占用前 5 的 Pod，重启过的，数据盘", lambda: dutybot.pods_text(k8s)),
         ("🚨 当前告警", "alerts", "正在触发的告警", lambda: dutybot.alerts_text(k8s)),
         ("🩹 自愈记录", "heal", "运维 Agent 最近处理的故障", lambda: asyncio.to_thread(dutybot.heal_text, healer.store)),
         ("📊 平台实况", "live", "最近发布、可用率、备份、证书", platform),
         ("🗓 定时任务", "jobs", "服务器上的备份、周报等任务", lambda: dutybot.jobs_text(k8s)),
         ("💬 最近留言", "leads", "网站访客的留言", lambda: asyncio.to_thread(dutybot.leads_text, ledger)),
-        ("📏 RAG 评测", "eval", "跑一遍作品集问答和运维知识库的评测集", start_eval),
-        ("🧪 Agent 评测", "agenteval", "故障演练：注入故障，看运维 Agent 的诊断和处置", start_agent_eval),
         ("💰 今日用量", "usage", "AI 演示今天的调用和费用", lambda: asyncio.to_thread(dutybot.usage_text, ledger, s.daily_budget, s.public_budget)),
     ]
-    bot = OpsBot(tg, healer.on_button, menu, dutybot.make_ask(gw, k8s, runbook), dutybot.HELP) if tg else None
+    # 会花钱的评测不放进菜单，只能手动输入命令，避免误点
+    paid = [
+        ("📏 RAG 评测", "eval", "跑一遍作品集问答和运维知识库的评测集", start_eval),
+        ("🧪 Agent 评测", "agenteval", "故障演练：注入故障，看运维 Agent 的诊断和处置", start_agent_eval),
+    ]
+    bot = OpsBot(tg, healer.on_button, menu, dutybot.make_ask(gw, k8s, runbook), dutybot.HELP, hidden=paid) if tg else None
     if tg:
         healer.notify = tg.send  # type: ignore[assignment]
 

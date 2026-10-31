@@ -196,3 +196,35 @@ def test_pods_and_status_details(tmp_path):
     assert "快到内存上限的</b>（超过 80%，容易被 OOM 杀掉）\n🔴 ops-desk/ai-api-x  86%" in text
     assert "数据盘" not in text  # 没有卷指标就不显示这一块
     assert "约 10 天写满" in asyncio.run(dutybot._disk_forecast(c)) and "5.6 万条序列" in asyncio.run(dutybot._prom_line(c))
+
+
+def test_argo_and_kuma_lines(tmp_path):
+    (tmp_path / "token").write_text("t")
+    apps = {"items": [
+        {"metadata": {"name": "ops-desk"}, "status": {"sync": {"status": "Synced"}, "health": {"status": "Healthy"}}},
+        {"metadata": {"name": "personal"}, "status": {"sync": {"status": "OutOfSync"}, "health": {"status": "Progressing"}, "operationState": {"phase": "Failed"}}},
+    ]}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if "applications" in req.url.path:
+            return httpx.Response(200, json=apps)
+        return httpx.Response(200, json={"status": "success", "data": {"result": []}})
+
+    c = ops.Cluster("http://prom", sa_dir=tmp_path, transport=httpx.MockTransport(handler))
+    line = asyncio.run(dutybot._argo_line(c))
+    assert line == "⚠️ Argo CD：1/2 正常，personal（没同步、更新中、上次同步失败）"
+    apps["items"].pop()
+    assert asyncio.run(dutybot._argo_line(c)) == "Argo CD：1 个应用全部已同步、健康 ✅"
+    metrics = 'monitor_status{monitor_name="网站",monitor_type="http"} 1\nmonitor_status{monitor_name="Dify",monitor_type="http"} 0\nmonitor_status{monitor_name="VPS-1",monitor_type="port"} 0\n'
+    assert dutybot.kuma_line(metrics) == "⚠️ 外部拨测（Uptime Kuma）：1/2 在线，掉线：Dify"  # VPS 不算
+    assert dutybot.kuma_line('monitor_status{monitor_name="网站"} 1') == "外部拨测（Uptime Kuma）：1/1 在线 ✅"
+    assert dutybot.kuma_line("") is None
+
+
+def test_paid_evals_are_hidden_but_typeable():
+    async def fn():
+        return "ok"
+
+    bot = OpsBot(Telegram("t", "1"), fn, [("🖥 服务器状态", "status", "x", fn)], hidden=[("🧪 Agent 评测", "agenteval", "x", fn)])
+    labels = [b["text"] for row in bot.keyboard["keyboard"] for b in row]
+    assert "🧪 Agent 评测" not in labels and "/agenteval" in bot.actions

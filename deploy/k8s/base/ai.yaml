@@ -39,6 +39,10 @@ rules:
   - apiGroups: [batch]
     resources: [cronjobs, jobs]
     verbs: [get, list]
+  # 值班台「服务器状态」里的 Argo CD 同步、健康状态（只读；Application 里没有密钥）
+  - apiGroups: [argoproj.io]
+    resources: [applications]
+    verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

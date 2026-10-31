@@ -77,6 +77,9 @@ class Settings:
     demo_booking_daily: int = field(default_factory=lambda: int(os.environ.get("DEMO_BOOKING_DAILY", "30")))
     # 运维 Agent 查询的 Prometheus（kube-prometheus-stack，集群内地址）
     prom_url: str = field(default_factory=lambda: os.environ.get("PROM_URL", "http://kps-prometheus.monitoring.svc:9090"))
+    # Uptime Kuma 的外部拨测结果（值班台「服务器状态」里一行）。Key 和私人助理共用 Secret ai-api 的 KUMA_API_KEY，没有就不显示
+    kuma_url: str = field(default_factory=lambda: os.environ.get("KUMA_URL", "http://uptime-kuma.monitoring.svc:3001"))
+    kuma_api_key: str = field(default_factory=lambda: os.environ.get("KUMA_API_KEY", ""))
     # 效果评测的裁判模型（ai/app/evals/），没配就和回答用同一组模型
     eval_judge_models: list[str] = field(default_factory=lambda: _list("EVAL_JUDGE_MODELS", ""))
     # 平台实况的数据（站点 nginx 提供的 /status.json，集群内地址），值班台的「📊 平台实况」读它

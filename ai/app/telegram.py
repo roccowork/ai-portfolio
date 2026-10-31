@@ -92,12 +92,17 @@ class OpsBot:
         menu: list[MenuItem] | None = None,
         ask: Callable[[str], Awaitable[str]] | None = None,
         help_text: str = "",
+        hidden: list[MenuItem] | None = None,
     ):
+        """hidden：只能手动输入 /命令 触发、不放进键盘和「/」菜单的项（比如会花钱的评测，避免误点）"""
         self.tg, self.on_button, self.offset = tg, on_button, 0
         self.menu, self.ask, self.help_text = menu or [], ask, help_text
         self.actions: dict[str, Callable[[], Awaitable[str]]] = {}
         for label, cmd, _, fn in self.menu:
             self.actions[label] = self.actions[f"/{cmd}"] = fn
+        for label, cmd, _, fn in hidden or []:
+            self.actions[f"/{cmd}"] = fn
+            self.actions.setdefault(label, fn)  # 旧键盘上的按钮还能点
         rows = [label for label, *_ in self.menu] + ["❓ 帮助"]
         self.keyboard = {
             "keyboard": [[{"text": t} for t in rows[i : i + 2]] for i in range(0, len(rows), 2)],

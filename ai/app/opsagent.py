@@ -13,7 +13,7 @@ from .gateway import AIUnavailable, ChatResult, Gateway
 from .ledger import TZ
 
 MAX_ROUNDS = 8
-NAMESPACES = ["ops-desk", "monitoring", "dify", "argocd", "kube-system"]
+NAMESPACES = ["ops-desk", "monitoring", "dify", "git-backup", "argocd", "kube-system"]
 SA_DIR = Path("/var/run/secrets/kubernetes.io/serviceaccount")
 
 

@@ -360,6 +360,7 @@ k3s kubectl -n argocd delete secret argocd-initial-admin-secret
   | -------------------- | ------------ | ----- | ----------------------------------------------------------- |
   | `backup-uptime-kuma` | `monitoring` | 04:00 | Uptime Kuma 的数据库                                        |
   | `backup-dify`        | `dify`       | 04:10 | Dify 的数据库导出文件和上传的文件（Dify 跑在宿主机 Docker） |
+  | `backup-github`      | `git-backup` | 04:40 | 所有 GitHub 账号的全部仓库（镜像，含私有仓库），见下文      |
   | `backup-ai-api`      | `ops-desk`   | 05:10 | `ai.db`：费用账本、自愈记录、评测结果                       |
   | `backup-assistant`   | `ops-desk`   | 05:30 | 私人助理的数据库（私有仓库）                                |
 
@@ -386,6 +387,34 @@ for pair in ops-desk:ai-api monitoring:uptime-kuma; do
     --from-literal=AWS_SECRET_ACCESS_KEY="$S"
 done
 unset A S R
+```
+
+### GitHub 仓库备份（`deploy/apps/git-backup/`）
+
+防 GitHub 账号被封、仓库被误删或被强推覆盖。每天先用 GitHub API 列出每个账号的全部仓库，镜像到 PVC `git-mirrors`（第一次完整克隆，以后只拉新的提交），再用 restic 加密备份到 R2。GitHub 上删掉的仓库，镜像和备份里都会保留。
+
+每个账号要一个 fine-grained 令牌：GitHub → Settings → Developer settings → Fine-grained tokens，Repository access 选 All repositories，权限只给 Contents: Read-only（Metadata 会自动带上），有效期选最长并记下到期日。创建 Secret（键名随意，一个账号一个）：
+
+```bash
+read -rs -p '第一个账号的令牌: ' T1; echo
+read -rs -p '第二个账号的令牌: ' T2; echo
+k3s kubectl create namespace git-backup --dry-run=client -o yaml | k3s kubectl apply -f -
+k3s kubectl -n git-backup create secret generic github-backup --from-literal=account1="$T1" --from-literal=account2="$T2"
+unset T1 T2
+# R2 密钥从 ops-desk 复制，仓库路径换成 /github
+g() { k3s kubectl -n ops-desk get secret backup-r2 -o jsonpath="{.data.$1}" | base64 -d; }
+k3s kubectl -n git-backup create secret generic backup-r2 \
+  --from-literal=RESTIC_REPOSITORY="$(g RESTIC_REPOSITORY | sed 's#/[^/]*$#/github#')" \
+  --from-literal=RESTIC_PASSWORD="$(g RESTIC_PASSWORD)" \
+  --from-literal=AWS_ACCESS_KEY_ID="$(g AWS_ACCESS_KEY_ID)" \
+  --from-literal=AWS_SECRET_ACCESS_KEY="$(g AWS_SECRET_ACCESS_KEY)"
+```
+
+换令牌：删掉 `github-backup` 重建即可。恢复某个仓库：
+
+```bash
+restic restore latest --host github --include '/data/<账号>/<仓库>.git' --target /tmp/restore
+cd /tmp/restore/data/<账号>/<仓库>.git && git push --mirror <新仓库地址>
 ```
 
 ### 手动备份和查看快照

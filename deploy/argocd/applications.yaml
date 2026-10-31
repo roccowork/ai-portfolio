@@ -173,6 +173,34 @@ spec:
       limit: 10
       backoff: { duration: 30s, factor: 2, maxDuration: 10m }
 ---
+# GitHub 全部仓库的每日加密备份（deploy/apps/git-backup/）：镜像到本机，再用 restic 传到 R2
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: git-backup
+  namespace: argocd
+  labels:
+    layer: app
+    role: github-backup
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/roccowork/ai-portfolio.git
+    targetRevision: main
+    path: deploy/apps/git-backup
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: git-backup
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 10m }
+---
 # LabPager（iOS App）的推送中转服务 https://push.liuxd.dev。代码和清单在 robort6688/labpager-ios 的 relay/，
 # 那个仓库开发期公开，Argo CD 不用凭据就能读；上架前改成私有时，要给它加部署密钥（同 personal 应用）
 apiVersion: argoproj.io/v1alpha1

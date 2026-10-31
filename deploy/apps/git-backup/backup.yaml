@@ -1,0 +1,130 @@
+# 每天把 GitHub 上所有账号的全部仓库加密备份到 Cloudflare R2，防止账号被封或仓库被误删、被强推覆盖。
+#   1. mirror（初始化容器）：用 GitHub API 列出仓库，镜像到 PVC 里（脚本见 mirror.sh），以后每天只拉新的提交
+#   2. restic：把镜像目录加密备份到 R2，保留最近 7 天、4 周、6 个月（和其他应用共用 backup.sh 和告警）
+# 恢复：restic restore 出某个 <仓库>.git 目录，进去执行 git push --mirror <新地址>，所有分支和标签都会还原。
+# 需要的两个 Secret（不进仓库，创建命令见 docs/runbook.md 第 9 节）：
+#   github-backup  每个 GitHub 账号一个只读令牌
+#   backup-r2      R2 密钥，从 ops-desk 命名空间复制，仓库路径换成 /github
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: git-mirrors
+  annotations:
+    # 镜像删了只是下次要重新完整克隆，但没必要让 Argo CD 删它
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-github
+spec:
+  schedule: '40 4 * * *'
+  timeZone: Asia/Singapore
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      # 第一次要完整克隆（最大的仓库约 1.2GB），给足时间；以后每天几分钟
+      activeDeadlineSeconds: 3600
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: mirror
+              image: alpine/git:v2.52.0
+              command: [sh, /scripts/mirror.sh]
+              env:
+                - { name: HOME, value: /tmp }
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 1000m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - { name: mirrors, mountPath: /data }
+                - { name: tokens, mountPath: /tokens, readOnly: true }
+                - { name: mirror-script, mountPath: /scripts }
+                - { name: tmp, mountPath: /tmp }
+          containers:
+            - name: restic
+              image: restic/restic:0.19.1
+              command: [sh, /scripts/backup.sh]
+              env:
+                - name: BACKUP_HOST
+                  value: github
+                - name: AWS_DEFAULT_REGION
+                  value: auto
+                - name: RESTIC_CACHE_DIR
+                  value: /cache
+                - name: TMPDIR
+                  value: /cache
+              envFrom:
+                - secretRef:
+                    name: backup-r2
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 1000m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - { name: mirrors, mountPath: /data, readOnly: true }
+                # backup.sh 固定备份 /data 和 /snapshot，这里没有数据库快照，给个空目录
+                - { name: snapshot, mountPath: /snapshot }
+                - { name: scripts, mountPath: /scripts }
+                - { name: cache, mountPath: /cache }
+          volumes:
+            - name: mirrors
+              persistentVolumeClaim:
+                claimName: git-mirrors
+            - name: tokens
+              secret:
+                secretName: github-backup
+            - name: mirror-script
+              configMap:
+                name: git-mirror-script
+            - name: scripts
+              configMap:
+                name: backup-scripts
+            - name: tmp
+              emptyDir: {}
+            - name: snapshot
+              emptyDir: {}
+            - name: cache
+              emptyDir: {}
+---
+# 备份失败时允许运维 Agent 自动补跑（权限定义见 deploy/k8s/base/ai.yaml 的 ai-api-heal）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-api-heal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ai-api-heal
+subjects:
+  - kind: ServiceAccount
+    name: ai-api
+    namespace: ops-desk

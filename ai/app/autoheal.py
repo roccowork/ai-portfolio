@@ -28,7 +28,7 @@ from .gateway import AIUnavailable, Gateway
 log = logging.getLogger("ai")
 SG = ZoneInfo("Asia/Singapore")
 
-HEAL_NAMESPACES = ["ops-desk", "monitoring", "dify"]
+HEAL_NAMESPACES = ["ops-desk", "monitoring", "dify", "git-backup"]
 # 这些告警 Agent 帮不上忙（或者分析本身就要花钱），直接跳过
 SKIP_ALERTS = {"Watchdog", "InfoInhibitor", "AIDailyBudgetReached", "AIModelErrors"}
 SELF = "ai-api"
@@ -42,7 +42,7 @@ ACTIONS = {
 ACTION_ZH = {"rerun_cronjob": "补跑任务", "delete_pod": "重建 Pod", "restart_deployment": "滚动重启"}
 STATUS_ZH = {
     "analyzing": "🔍 分析中",
-    "no_action": "📝 已分析，需要人处理",
+    "no_action": "📝 已分析，不需要执行操作",
     "waiting": "⏳ 等待确认",
     "running": "▶️ 执行中",
     "fixed": "✅ 已恢复",

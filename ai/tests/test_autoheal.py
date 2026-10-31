@@ -174,7 +174,7 @@ def test_no_action_and_endpoints(env, tmp_path):
             items = client.get("/api/ai/heal/recent").json()["items"]
             if items:
                 break
-        assert items[0]["alert"] == "NodeDiskHigh" and items[0]["action"] == "" and "人处理" in items[0]["status"]
+        assert items[0]["alert"] == "NodeDiskHigh" and items[0]["action"] == "" and "不需要执行操作" in items[0]["status"]
         client.post("/internal/alertmanager", json={"alerts": [{**alert("NodeDiskHigh", "f3"), "status": "resolved", "endsAt": "2026-10-28T02:00:00Z"}]})
     assert not writes
 

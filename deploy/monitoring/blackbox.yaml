@@ -118,10 +118,16 @@ spec:
         - https://status.liuxd.dev/
         - https://grafana.liuxd.dev/
         - https://argocd.liuxd.dev/
+        # LabPager App 的推送中转
+        - https://push.liuxd.dev/healthz
       relabelingConfigs:
         - sourceLabels: [__param_target]
           targetLabel: name
           regex: https://([^/]+)/?
+          replacement: $1
+        - sourceLabels: [__param_target]
+          targetLabel: name
+          regex: https://([^/]+)/healthz
           replacement: $1
 ---
 # 本站依赖的外部服务

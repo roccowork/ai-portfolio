@@ -172,3 +172,32 @@ spec:
     retry:
       limit: 10
       backoff: { duration: 30s, factor: 2, maxDuration: 10m }
+---
+# LabPager（iOS App）的推送中转服务 https://push.liuxd.dev。代码和清单在 robort6688/labpager-ios 的 relay/，
+# 那个仓库开发期公开，Argo CD 不用凭据就能读；上架前改成私有时，要给它加部署密钥（同 personal 应用）
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: labpager
+  namespace: argocd
+  labels:
+    layer: app
+    role: labpager
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/robort6688/labpager-ios.git
+    targetRevision: main
+    path: relay/deploy
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: labpager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 10m }

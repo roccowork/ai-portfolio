@@ -111,7 +111,7 @@ cd ai && python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 
 ## 外部拨测和 DORA 指标
 
-- **外部拨测**（`deploy/monitoring/blackbox.yaml`）：Blackbox Exporter 每分钟从服务器探测 6 个自有网站（含托管在 Cloudflare Pages 的）和 5 个外部依赖（阿里云百炼、GitHub、GHCR、Cloudflare、Telegram），记录通不通、耗时和证书剩余天数。网站打不开、依赖连不上、证书快过期都会告警；值班台「🌐 外部服务」、值班大屏和运维 Agent 都用这些数据，AI 变慢时能分清是自己的问题还是百炼那边的问题
+- **外部拨测**（`deploy/monitoring/blackbox.yaml`）：Blackbox Exporter 每分钟从服务器探测 10 个自有网站（含托管在 Cloudflare Pages 的 5 个和 Grafana、Argo CD 等后台）和 5 个外部依赖（阿里云百炼、GitHub、GHCR、Cloudflare、Telegram），记录通不通、耗时和证书剩余天数。网站打不开、依赖连不上、证书快过期都会告警；值班台「🌐 外部服务」、值班大屏和运维 Agent 都用这些数据，AI 变慢时能分清是自己的问题还是百炼那边的问题
 - **DORA 指标**（`ai/app/dora.py`，`/api/ai/dora`）：部署频率、提交到上线、变更失败率、故障恢复时间，用 GitHub 上的发布提交、集群里新版本的上线时间和自愈记录算出，显示在 `/gitops/` 页面和值班台「📊 平台实况」
 
 ## 平台实况数据（/status.json）

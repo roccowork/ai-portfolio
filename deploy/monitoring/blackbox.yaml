@@ -1,6 +1,6 @@
 # Blackbox Exporter：从服务器向外发 HTTP 请求，记录通不通、多快、证书还剩几天（probe_success、probe_duration_seconds、
 # probe_ssl_earliest_cert_expiry）。探测两类目标，标签 group 区分：
-# - own：自己的网站。ops.liuxd.dev 和 dify 在这台服务器上，其余托管在 Cloudflare Pages，挂了集群内部看不出来
+# - own：自己的网站。ops、dify、status、grafana、argocd 在这台服务器上；liuxd.dev、cv、roadmap、ai-roadmap、it 托管在 Cloudflare Pages，挂了集群内部看不出来
 # - dependency：本站依赖的外部服务。AI 变慢、发不出告警时，用来分清是自己的问题还是对方的问题
 # 探测目标写在下面两个 Probe 里，Prometheus 每分钟探测一次。运维 Agent 用 promql 工具就能查到这些指标
 apiVersion: v1
@@ -113,6 +113,11 @@ spec:
         - https://roadmap.liuxd.dev/
         - https://ai-roadmap.liuxd.dev/
         - https://dify.liuxd.dev/
+        - https://it.liuxd.dev/
+        # 运维后台：Uptime Kuma 状态页、Grafana、Argo CD（登录页能打开就算正常）
+        - https://status.liuxd.dev/
+        - https://grafana.liuxd.dev/
+        - https://argocd.liuxd.dev/
       relabelingConfigs:
         - sourceLabels: [__param_target]
           targetLabel: name

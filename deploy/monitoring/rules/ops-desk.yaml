@@ -147,7 +147,7 @@ spec:
             severity: critical
           annotations:
             summary: '网站 {{ $labels.name }} 打不开'
-            description: '连续 5 分钟访问 {{ $labels.instance }} 失败（连不上、超时或没返回 2xx）。ops.liuxd.dev 和 dify 在本服务器上；其余托管在 Cloudflare Pages，要去 Cloudflare 控制台看。'
+            description: '连续 5 分钟访问 {{ $labels.instance }} 失败（连不上、超时或没返回 2xx）。ops、dify、status、grafana、argocd 在本服务器上；liuxd.dev、cv、roadmap、ai-roadmap、it 托管在 Cloudflare Pages，要去 Cloudflare 控制台看。'
         - alert: DependencyDown
           expr: probe_success{group="dependency"} == 0
           for: 10m

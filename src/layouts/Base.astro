@@ -24,7 +24,8 @@ const year = new Date().getFullYear();
     {noindex && <meta name="robots" content="noindex, nofollow" />}
     <link rel="canonical" href={canonical} />
     <link rel="sitemap" href="/sitemap-index.xml" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- ?v= 改图标时加一，强制浏览器重新下载（浏览器会单独长期缓存图标） -->
+    <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" />
   </head>
   <body class="min-h-screen bg-white font-sans text-slate-800 antialiased">
     <header class="sticky top-0 z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur">

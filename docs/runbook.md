@@ -76,7 +76,7 @@ curl https://ops.liuxd.dev/version.txt      # 确认回到上一个版本
 
 | 步骤 | 操作                                                                                                                                               | 说明                                                       |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| 1    | Cloudflare 把 `*.liuxd.dev` 的 A 记录改成新 IP（仅 DNS）；`liuxd.dev`、`cv`、`roadmap`、`ai-roadmap` 在 Cloudflare Pages 上，不用改                | 证书签发依赖 DNS 指向正确                                  |
+| 1    | Cloudflare 把 `*.liuxd.dev` 的 A 记录改成新 IP（仅 DNS）；`liuxd.dev`、`cv`、`roadmap`、`ai-roadmap`、`it` 在 Cloudflare Pages 上，不用改          | 证书签发依赖 DNS 指向正确                                  |
 | 2    | 本机：`ssh-keyscan -t ed25519 <新IP>`，与 VNC 控制台里 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` 比对后写入 `known_hosts`                 | 防止首次连接被冒充                                         |
 | 3    | 本机：`scp -r deploy root@<新IP>:/root/ops-desk-deploy`                                                                                            | 复制全部脚本和清单                                         |
 | 4    | 服务器：`bash /root/ops-desk-deploy/server/init.sh`，有提示则 `reboot`                                                                             | 系统更新、fail2ban、自动安全更新                           |

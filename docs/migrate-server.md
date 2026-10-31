@@ -116,7 +116,7 @@ bash /root/ops-desk-deploy/server/install-argocd.sh
 
 把打印的公钥加到 GitHub：ops-desk 仓库 → Settings → Deploy keys → Add deploy key，**不勾** Allow write access。旧服务器那把先留着，F 阶段再删。
 
-改 DNS：Cloudflare → liuxd.dev → DNS，把 `*.liuxd.dev`（以及其他指向旧 IP 的 A 记录）改成新 IP，保持「仅 DNS」（灰色云）。`liuxd.dev`、`cv`、`roadmap` 在 Cloudflare Pages 上，不用改。
+改 DNS：Cloudflare → liuxd.dev → DNS，把 `*.liuxd.dev`（以及其他指向旧 IP 的 A 记录）改成新 IP，保持「仅 DNS」（灰色云）。`liuxd.dev`、`cv`、`roadmap`、`ai-roadmap` 在 Cloudflare Pages 上，不用改。
 
 让 Argo CD 从 Git 装好全部组件：
 

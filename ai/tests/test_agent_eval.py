@@ -204,7 +204,14 @@ def test_numbers_must_come_from_tool_results():
     assert ops.unsupported_numbers(good, evidence) == []
 
 
-def test_agent_retries_when_numbers_are_made_up(tmp_path):
+def test_agent_retries_when_numbers_are_made_up(tmp_path, monkeypatch):
+    # 系统提示里有当前时间：时或分是 18 时，82 会被当成 100 - 18 放过，测试时过时不过。固定在新加坡时间 11:07
+    class Fixed(ops.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return ops.datetime(2026, 10, 30, 3, 7, tzinfo=ops.timezone.utc).astimezone(tz)
+
+    monkeypatch.setattr(ops, "datetime", Fixed)
     seen: list = []
     answers = iter([call("cluster_overview", {}), "内存使用率 82%，可用 2.1G，偏高。", "内存使用率 52%，正常。"])
 

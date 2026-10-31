@@ -9,7 +9,8 @@ const SA_DIR = '/var/run/secrets/kubernetes.io/serviceaccount';
 export const CONFIGMAP = 'ops-desk-status';
 
 export const QUERIES = {
-  availability: `avg_over_time((kube_deployment_status_replicas_available{namespace="ops-desk", deployment="ops-desk"} > bool 0)[7d:5m]) * 100`,
+  // 先 max() 合成一条：kube-state-metrics 重建后会有多条序列，取到一条短命的旧序列会算出 83.33% 这种假数字
+  availability: `avg_over_time((max(kube_deployment_status_replicas_available{namespace="ops-desk", deployment="ops-desk"}) > bool 0)[7d:5m]) * 100`,
   p95: `histogram_quantile(0.95, sum by (le) (increase(traefik_service_request_duration_seconds_bucket{service="${SITE}"}[7d])))`,
   requests: `sum(increase(traefik_service_requests_total{service="${SITE}"}[7d]))`,
   backups: 'kube_cronjob_status_last_successful_time{cronjob=~"backup-.*"}',

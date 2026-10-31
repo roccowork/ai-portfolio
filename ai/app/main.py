@@ -275,6 +275,12 @@ def create_app(
         out["budget"] = {"daily": s.daily_budget, "left": round(max(0.0, s.daily_budget - ledger.spent_today()), 3),
                          "public": s.public_budget, "public_left": round(max(0.0, s.public_budget - ledger.spent_today(PUBLIC_FEATURES)), 3)}
         out["enabled"] = s.enabled
+        # 网关页面用：只放模型名、限额和统计数字，不放密钥和访客信息
+        out["models"] = s.chat_models
+        out["quota"] = s.quota
+        out["public_features"] = sorted(PUBLIC_FEATURES)
+        out["daily"] = ledger.daily()
+        out["today_by_feature"] = ledger.today_by_feature()
         return out
 
     class HistMsg(BaseModel):

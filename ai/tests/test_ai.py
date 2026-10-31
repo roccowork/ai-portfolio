@@ -94,6 +94,8 @@ def test_ask_flow_with_citations_and_cache(setup):
         assert sum(1 for p, _ in log if p.endswith("/embeddings")) == embed_calls + 1  # 只多了提问那一次
         stats = client.get("/api/ai/stats").json()
         assert stats["by_feature"]["ask"]["saved_min"] == 5
+        assert stats["today_by_feature"]["ask"]["calls"] >= 1
+        assert stats["daily"][-1]["calls"] >= 1 and stats["models"] and "ask" in stats["quota"]
 
 
 def test_quota_per_visitor(setup):

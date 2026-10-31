@@ -159,10 +159,15 @@ export const OTHER_WORKS: Work[] = [
     id: 'gateway',
     name: '轻量模型网关',
     summary:
-      '所有模型调用都经过它：按用途选模型、失败重试并降级到下一个模型、按 token 估算费用并记账、每日费用上限、Prometheus 指标。',
+      '本站所有模型调用都经过它：按 IP 限次数、全站和访客分开的每日费用上限、失败重试、按 token 记账、Prometheus 指标。',
     status: 'production',
     highlights: [],
-    stack: ['Python', 'httpx', 'Prometheus'],
+    stack: ['Python', 'httpx', 'SQLite', 'Prometheus'],
+    demo: {
+      href: '/gateway/',
+      label: '实时用量和额度',
+      hint: '今天花了多少、还剩多少，读账本不调用模型',
+    },
   },
 ];
 

@@ -1,0 +1,75 @@
+---
+import Base from '../../layouts/Base.astro';
+import GatewayPanel from '../../components/GatewayPanel.vue';
+import { BRAND, PROFILE } from '../../lib/site';
+
+const code = `${PROFILE.github}/blob/main/ai/app`;
+const steps = [
+  { t: '按 IP 限次数', d: '每个访客每天每个功能有次数上限，超了返回 429，不会调用模型' },
+  { t: '查费用上限', d: '全站每天 ¥5、访客合计每天 ¥1；访客用完只停访客的功能，值班台和自愈照常' },
+  { t: '调用模型', d: '网络抖动、限流（429）、服务端错误重试一次；参数错、密钥错直接失败' },
+  { t: '按 token 记账', d: '按模型单价估算费用，写进账本（SQLite），上面的数字就是从这里读的' },
+  {
+    t: '导出指标',
+    d: '调用次数、token、费用、耗时、被拦下的次数，Prometheus 采集，Grafana 看趋势',
+  },
+];
+---
+
+<Base
+  title={`轻量模型网关 · ${BRAND.name}`}
+  description="本站所有 AI 功能的模型调用都经过它：按 IP 限次数、每日费用上限、失败重试、按 token 记账和 Prometheus 指标。下面是实时数据。"
+>
+  <section class="bg-slate-950 py-16 text-white">
+    <div class="mx-auto max-w-5xl px-5">
+      <p class="text-sm font-semibold tracking-widest text-amber-300">作品 · 轻量模型网关</p>
+      <h1 class="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">每一次模型调用都有人管着</h1>
+      <p class="mt-4 max-w-3xl leading-relaxed text-slate-300">
+        网站对外开放 AI 功能，最怕被刷爆账单。本站所有模型调用（问答、ChatBI、运维
+        Agent、评测）都经过同一个网关：先限次数、再查预算，调用后按 token 记账。下面是
+        <b class="text-white">真实的实时数据</b>。
+      </p>
+    </div>
+  </section>
+
+  <section class="bg-slate-50 py-12">
+    <div class="mx-auto max-w-5xl px-5">
+      <GatewayPanel client:load />
+    </div>
+  </section>
+
+  <section class="mx-auto max-w-5xl px-5 py-16">
+    <p class="text-sm font-semibold tracking-widest text-amber-600">一次调用经过什么</p>
+    <ol class="mt-6 grid gap-3 sm:grid-cols-5">
+      {steps.map((s, i) => (
+        <li class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          <div class="font-mono text-xs text-amber-600">0{i + 1}</div>
+          <div class="mt-1 font-semibold text-slate-900">{s.t}</div>
+          <p class="mt-1 text-sm leading-relaxed text-slate-600">{s.d}</p>
+        </li>
+      ))}
+    </ol>
+    <p class="mt-8 max-w-3xl text-sm leading-relaxed text-slate-600">
+      模型列表是可配置的，配多个时第一个失败会自动换下一个。本站现在<b>只配了一个模型</b>
+      ：多个模型轮换时同一个问题的答案和评测分数会跟着变，固定一个才好比较。
+    </p>
+    <div class="mt-6 flex flex-wrap gap-3 text-sm">
+      <a
+        class="rounded-full px-4 py-2 font-semibold text-slate-900 ring-1 ring-slate-300 hover:bg-slate-100"
+        href={`${code}/gateway.py`}
+        target="_blank"
+        rel="noopener"
+      >
+        网关代码 gateway.py ↗
+      </a>
+      <a
+        class="rounded-full px-4 py-2 font-semibold text-slate-900 ring-1 ring-slate-300 hover:bg-slate-100"
+        href={`${code}/ledger.py`}
+        target="_blank"
+        rel="noopener"
+      >
+        账本和限额 ledger.py ↗
+      </a>
+    </div>
+  </section>
+</Base>

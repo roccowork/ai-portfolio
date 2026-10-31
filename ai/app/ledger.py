@@ -95,6 +95,22 @@ class Ledger:
             }
             return {"today": agg("WHERE day=?", (today(),)), "total": agg("", ()), "by_feature": by_feature}
 
+    def daily(self, days: int = 14) -> list[dict]:
+        """最近几天每天的调用次数和费用，最早的在前（网关页面画柱状图）"""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT day, SUM(calls), SUM(cost) FROM usage GROUP BY day ORDER BY day DESC LIMIT ?", (days,)
+            ).fetchall()
+        return [{"day": d, "calls": int(c), "cost": round(float(x), 4)} for d, c, x in reversed(rows)]
+
+    def today_by_feature(self) -> dict[str, dict]:
+        """今天各功能的调用次数和费用"""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT feature, SUM(calls), SUM(cost) FROM usage WHERE day=? GROUP BY feature", (today(),)
+            ).fetchall()
+        return {f: {"calls": int(c), "cost": round(float(x), 4)} for f, c, x in rows}
+
     # ── 访客配额 ──────────────────────────────────────
     @staticmethod
     def visitor_id(ip: str) -> str:

@@ -481,15 +481,15 @@ Odoo 和依赖它的办公 Agent 2026-10-28 下线，Argo CD 应用和清单已�
 
 告警、网站周报、每日英语、R2 用量共用 `deploy/monitoring/wecom-relay/relay.mjs` 里的推送函数：对应的 Telegram Secret 存在就发 Telegram，否则发企业微信（Secret `wecom-bot`）。消息格式自动转换。
 
-值班台的常驻菜单都只读、不调用模型（`ai/app/dutybot.py`）：服务器状态、当前告警、自愈记录、平台实况（读站点的 `/status.json`，和网页值班大屏的发布、证书、备份同一份）、定时任务（所有 CronJob，说明在 `ai/app/schedules.py` 的 `KNOWN`，新增 CronJob 时顺手补一行）、最近留言、今日用量。直接打字提问交给运维 Agent（和网站值班台同一套工具，主人自己用可以查日志，日志先脱敏），每次调用模型。菜单在机器人里发 /start 出现。
+值班台的常驻菜单都只读、不调用模型（`ai/app/dutybot.py`）：服务器状态（含 Argo CD 同步、外部拨测、系统盘几天写满、Prometheus 序列数）、Pod 资源（内存和 CPU 前 5、快到上限的、重启过的）、外部服务（Blackbox 拨测的自有网站和外部依赖）、当前告警、自愈记录、平台实况（读站点的 `/status.json`，和网页值班大屏的发布、证书、备份同一份，后面接 DORA 指标）、定时任务（所有 CronJob，说明在 `ai/app/schedules.py` 的 `KNOWN`，新增 CronJob 时顺手补一行）、最近留言、今日用量。直接打字提问交给运维 Agent（和网站值班台同一套工具，主人自己用可以查日志，日志先脱敏），每次调用模型。菜单在机器人里发 /start 出现。
 
 ### 效果评测（RAG）
 
-值班台点「📏 RAG 评测」：依次用 `ai/app/evals/rag_cases.json`（作品集问答）和 `ops_cases.json`（运维知识库，也就是这份手册）的题目真实调用一遍问答（后台跑，1～2 分钟，约几毛钱以内），结果存进 `ai.db` 的 `eval_runs` 表，汇总发到 Telegram，完整明细公开在 `https://ops.liuxd.dev/api/ai/eval/latest`（运维知识库加 `?kind=ops-rag`）（带最近 10 次的汇总，看改动后指标变好还是变坏）。改了 `ai/knowledge/`、这几篇手册或问答的提示词后跑一次；手册改了导致题目过时，`ai/tests/test_opsdocs.py` 会在 CI 里报出来。裁判模型默认和回答同一个，可用 `EVAL_JUDGE_MODELS` 换。
+值班台输入 `/eval`（RAG 评测；会花钱，不放在菜单里）：依次用 `ai/app/evals/rag_cases.json`（作品集问答）和 `ops_cases.json`（运维知识库，也就是这份手册）的题目真实调用一遍问答（后台跑，1～2 分钟，约几毛钱以内），结果存进 `ai.db` 的 `eval_runs` 表，汇总发到 Telegram，完整明细公开在 `https://ops.liuxd.dev/api/ai/eval/latest`（运维知识库加 `?kind=ops-rag`）（带最近 10 次的汇总，看改动后指标变好还是变坏）。改了 `ai/knowledge/`、这几篇手册或问答的提示词后跑一次；手册改了导致题目过时，`ai/tests/test_opsdocs.py` 会在 CI 里报出来。裁判模型默认和回答同一个，可用 `EVAL_JUDGE_MODELS` 换。
 
 ### 效果评测（运维 Agent 故障演练）
 
-值班台点「🧪 Agent 评测」：`ai/app/evals/agent_cases.json` 的 21 道题，在集群的快照上注入故障（OOMKilled、备份连 R2 超时、备份密码错、进程卡住、拉镜像 401、磁盘满、证书续期失败、日志里夹带指令等），让运维 Agent 按自愈（收到告警、可以提议操作）或值班台（回答问题）的方式排查（`ai/app/evals/agent.py`，后台跑 3～5 分钟，约几毛钱，和网站的 AI 功能共用每天的费用上限）。快照存在 `/data/agent-eval-snapshot.json`：第一次评测时从真实集群拍（Pod、概况、告警，不存日志和事件），30 天后自动重拍，想马上重拍就删掉这个文件。所有工具都只查快照、不碰实时集群，每次评测条件完全一样，分数才能前后比较；自愈题的提议只校验和记录，不执行。打分：该查的工具查了没有、根因关键词、提议的操作对不对（包括不该动手时没有动手）、裁判对照出题人写的真实情况和 Agent 看到的工具结果判对错、安全题（越权、日志注入、处理自己）。结果存 `eval_runs`（kind=agent），明细在 `https://ops.liuxd.dev/api/ai/eval/latest?kind=agent`。「集群整体状况」那道题要求快照是健康的，拍快照时正好有告警就跳过，删掉快照文件等集群正常后重拍。改了运维 Agent 或自愈的提示词、工具后跑一次。
+值班台输入 `/agenteval`（Agent 评测；会花钱，不放在菜单里）：`ai/app/evals/agent_cases.json` 的 21 道题，在集群的快照上注入故障（OOMKilled、备份连 R2 超时、备份密码错、进程卡住、拉镜像 401、磁盘满、证书续期失败、日志里夹带指令等），让运维 Agent 按自愈（收到告警、可以提议操作）或值班台（回答问题）的方式排查（`ai/app/evals/agent.py`，后台跑 3～5 分钟，约几毛钱，和网站的 AI 功能共用每天的费用上限）。快照存在 `/data/agent-eval-snapshot.json`：第一次评测时从真实集群拍（Pod、概况、告警，不存日志和事件），30 天后自动重拍，想马上重拍就删掉这个文件。所有工具都只查快照、不碰实时集群，每次评测条件完全一样，分数才能前后比较；自愈题的提议只校验和记录，不执行。打分：该查的工具查了没有、根因关键词、提议的操作对不对（包括不该动手时没有动手）、裁判对照出题人写的真实情况和 Agent 看到的工具结果判对错、安全题（越权、日志注入、处理自己）。结果存 `eval_runs`（kind=agent），明细在 `https://ops.liuxd.dev/api/ai/eval/latest?kind=agent`。「集群整体状况」那道题要求快照是健康的，拍快照时正好有告警就跳过，删掉快照文件等集群正常后重拍。改了运维 Agent 或自愈的提示词、工具后跑一次。
 
 ### 创建网站的机器人（telegram-ops）
 

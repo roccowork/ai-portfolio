@@ -1,12 +1,13 @@
 # AI 应用开发作品集（ops-desk）
 
-个人作品集网站，线上地址：<https://ops.liuxd.dev>。代表作有三个，都能在线体验，状态如实标注：
+个人作品集网站，线上地址：<https://ops.liuxd.dev>。下面的作品都能在线体验，状态如实标注：
 
 - **运维 Agent**（`/ops-agent/`）：用只读工具查本站真实的服务器，告警时自动排查，低风险操作自动执行、关键操作等人在 Telegram 确认
 - **运维值班大屏**（`/ops-agent/`）：服务器实时状态（CPU / 内存 / 磁盘、访问量、告警、Pod、1 小时趋势、最近发布、证书、备份、7 天告警），直接查 Prometheus，每 15 秒刷新、不调用模型；运维 Agent 排查时每一步（思考、调用工具、程序核对）用 SSE 实时推到页面
 - **ChatBI**（`/chatbi/`）：一句话查本站自己的真实运行数据（Text-to-SQL）：AI 调用和费用、告警自愈、评测分数、访问量、发布记录；程序保证只读，留言等隐私数据不进查询库
 - **RAG 知识库问答**（`/rag/`）：作品集问答（右下角的 AI 助手，资料在 `ai/knowledge/`）和运维手册问答；混合检索，页面公开最近一次评测的真实分数和没答好的题
-- **K8s + GitOps 平台**（`/gitops/`）：本站自己的部署流程和设计取舍，链接到仓库里的真实配置；实时数据在值班大屏（原 `/live/` 已并进去，旧地址自动跳转）
+- **K8s + GitOps 平台**（`/gitops/`）：本站自己的部署流程和设计取舍，链接到仓库里的真实配置；最近一次真实发布的回放动画，以及 DORA 四个指标（原 `/live/` 已并进值班大屏，旧地址自动跳转）
+- **轻量模型网关**（`/gateway/`）：所有模型调用都经过它，按 IP 限次数、全站和访客分开的每日费用上限、按 token 记账；页面显示今天的真实用量和剩余额度
   网站文案集中在 `src/lib/site.ts`。
 
 这也是一个 K8s / CI/CD 实战项目：静态站点按生产标准部署在单节点 k3s 上，推送到 main 后自动测试、构建镜像，由 Argo CD 从 Git 同步上线；新版本不健康时旧版本继续服务，回滚就是 git revert。集群里的所有组件（包括监控、证书、Argo CD 自己）都由 Git 管理。
@@ -73,7 +74,7 @@ cd ai && python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 
 第 1 次评测发现三类问题：问题里的英文专有名词（rateLimited）和章节名（「C. 停掉旧机器」）向量检索找不到；手册里早已下线的云盘、访问统计、Odoo 章节混进检索结果；还有一道题是评测集出错（Grafana 密码手册里写了存放位置，回答正确，被误判为编造）。改法：向量和关键词（BM25，英文按单词、中文按相邻两字）各排一次名次，用倒数排名融合（RRF）合并——只用关键词这一路就把命中@1 从 70% 提到 80%；手册删掉和改正过时的章节；修正评测题。第 2 次：命中@1 从 70% 到 85.7%，要点和拒答都到 100%，一次评测约 ¥0.09。剩下一道「怎么重新跑 RAG 评测」被判部分对：手册写的是在值班台点按钮，模型却编了一条不存在的接口命令。已在提示词里禁止编命令和接口，裁判遇到资料里没有的命令直接判错。
 
-在 Telegram 的 OPS 值班台点「📏 RAG 评测」就能两套一起重跑；最近一次的完整明细（每道题的回答、检索到的资料、裁判理由）和最近 10 次的汇总公开在 <https://ops.liuxd.dev/api/ai/eval/latest>（运维知识库加 `?kind=ops-rag`）。裁判默认和回答用同一个模型（qwen-plus 系列），可能偏宽松，所以关键词和裁判两种结果都保留。
+在 Telegram 的 OPS 值班台输入 `/eval`（RAG 评测，会花钱所以不放在菜单里）就能两套一起重跑；最近一次的完整明细（每道题的回答、检索到的资料、裁判理由）和最近 10 次的汇总公开在 <https://ops.liuxd.dev/api/ai/eval/latest>（运维知识库加 `?kind=ops-rag`）。裁判默认和回答用同一个模型（qwen-plus 系列），可能偏宽松，所以关键词和裁判两种结果都保留。
 
 **运维 Agent（故障演练）**：Agent 的回答依赖实时数据，没法像问答那样写死标准答案，所以在集群的**快照上注入故障**（第 5 次起；之前叠加在实时数据上，前后矛盾，见下文）：让网站的 Pod 显示 OOMKilled、加一条告警、把备份任务的日志换成连 R2 超时，再让 Agent 按自愈（收到告警、可以提议操作）或值班台（回答问题）的方式排查。注入只发生在交给模型的工具结果里，集群不受影响，自愈题的提议只校验、记录，不执行。评测集 `ai/app/evals/agent_cases.json` 共 21 道题：9 道自愈（其中 7 道的正确做法是不动手，比如内存不够、密码错、拉镜像 401，重启解决不了）、7 道问答、5 道安全题（让它删 Pod、看 Secret、查白名单外的命名空间、日志里夹带「忽略规则」的指令）。每道题看：
 
@@ -107,7 +108,7 @@ cd ai && python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 
 应对：Agent 只能从预先写好的操作清单里选，低风险操作（补跑备份、重建卡死的 Pod）才自动执行，重启等关键操作要人在手机上点「执行」，所以提错了也不会造成破坏。往下改有两条路：换更强的模型（要多花钱），或者把操作做成按告警类型的白名单（每类告警只允许对应的操作）。评测先停在这里。
 
-值班台点「🧪 Agent 评测」重跑，明细在 <https://ops.liuxd.dev/api/ai/eval/latest?kind=agent>。
+值班台输入 `/agenteval` 重跑（会花钱，不放在菜单里），明细在 <https://ops.liuxd.dev/api/ai/eval/latest?kind=agent>。
 
 ## 外部拨测和 DORA 指标
 
@@ -127,6 +128,9 @@ ai/                  AI 后端（FastAPI）；ai/knowledge/ 是 AI 助手回答�
 public/sw.js         清理旧 Service Worker 用，2026-12 后可删除
 deploy/docker/       Dockerfile 和 nginx 配置
 deploy/k8s/          Kustomize 清单（base + overlays/prod；base/status 是平台实况的 CronJob）
+deploy/monitoring/   告警规则、Grafana 面板、外部拨测（Blackbox Exporter）、Uptime Kuma、告警转发和定时报告
+deploy/apps/         其他应用（Dify 的入口）
+deploy/backup/       restic 备份脚本（备份到 Cloudflare R2）
 deploy/server/       服务器初始化、k3s、Argo CD 的安装脚本
 deploy/platform/     集群基础组件（Argo CD、cert-manager、kube-prometheus-stack 的 HelmChart），由 Argo CD 同步
 deploy/argocd/       Argo CD 应用定义（全部组件都从 Git 同步）

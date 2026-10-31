@@ -152,6 +152,13 @@ spec:
         analytics:
           reporting_enabled: false
           check_for_updates: false
+          check_for_plugin_updates: false
+        # 省内存（2026-10-31，Grafana 实测 584Mi）：告警由 Prometheus + Alertmanager 负责，Grafana 自己的告警引擎不用；
+        # Grafana 12 默认会预装 Loki / Pyroscope / Traces 等探索插件，我们没有这些数据源，不装
+        unified_alerting:
+          enabled: false
+        plugins:
+          preinstall_disabled: true
       ingress:
         enabled: true
         ingressClassName: traefik

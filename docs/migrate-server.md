@@ -61,7 +61,7 @@ k -n argocd scale sts -l app.kubernetes.io/name=argocd-application-controller --
 k -n monitoring scale deploy wecom-relay --replicas=0
 k get cronjob -A --no-headers | while read ns n _; do k -n "$ns" patch cronjob "$n" -p '{"spec":{"suspend":true}}'; done
 # 3. 停掉有数据的应用，保证拷贝时数据不再变化（个人助理也在这里面，停了就不会和新机器抢 Telegram 消息）
-for ns in ops-desk cloudreve goatcounter n8n odoo; do k -n "$ns" scale deploy,sts --all --replicas=0; done
+for ns in ops-desk cloudreve goatcounter odoo; do k -n "$ns" scale deploy,sts --all --replicas=0; done
 k -n monitoring scale deploy uptime-kuma --replicas=0
 ```
 
@@ -71,7 +71,7 @@ k -n monitoring scale deploy uptime-kuma --replicas=0
 python3 - <<'EOF'
 import json, subprocess
 out = []
-for ns in ["ops-desk", "monitoring", "cloudreve", "goatcounter", "n8n", "odoo"]:
+for ns in ["ops-desk", "monitoring", "cloudreve", "goatcounter", "odoo"]:
     try:
         items = json.loads(subprocess.check_output(["k3s", "kubectl", "-n", ns, "get", "secret", "-o", "json"]))["items"]
     except subprocess.CalledProcessError:
@@ -107,7 +107,7 @@ bash /root/ops-desk-deploy/server/init.sh
 bash /root/ops-desk-deploy/server/install-k3s.sh $NEW
 
 # 3. 导入 Secret
-for ns in ops-desk monitoring cloudreve goatcounter n8n odoo; do k3s kubectl create namespace $ns; done
+for ns in ops-desk monitoring cloudreve goatcounter odoo; do k3s kubectl create namespace $ns; done
 k3s kubectl apply -f /root/migrate-secrets.json
 
 # 4. 装 Argo CD，最后会打印一把公钥
@@ -135,13 +135,13 @@ watch -n 20 k3s kubectl -n argocd get applications     # 10～15 分钟后全部
 OLD=<旧IP>; alias k='k3s kubectl'
 # 1. 停 Argo CD 和有数据的应用
 k -n argocd scale sts -l app.kubernetes.io/name=argocd-application-controller --replicas=0
-for ns in ops-desk cloudreve goatcounter n8n odoo; do k -n "$ns" scale deploy,sts --all --replicas=0; done
+for ns in ops-desk cloudreve goatcounter odoo; do k -n "$ns" scale deploy,sts --all --replicas=0; done
 k -n monitoring scale deploy uptime-kuma --replicas=0
 sleep 30
 
 # 2. 逐个数据卷拷贝（local-path 的目录名是 pvc-xxx_命名空间_卷名）
 S=/var/lib/rancher/k3s/storage
-for p in ops-desk:ai-data monitoring:uptime-kuma-data cloudreve:cloudreve-data goatcounter:goatcounter-data n8n:n8n-data odoo:odoo-data odoo:odoo-db; do
+for p in ops-desk:ai-data monitoring:uptime-kuma-data cloudreve:cloudreve-data goatcounter:goatcounter-data odoo:odoo-data odoo:odoo-db; do
   ns=${p%%:*}; name=${p#*:}
   src=$(ssh -i /root/.ssh/migrate root@$OLD "ls -d $S/*_${ns}_${name}" 2>/dev/null)
   dst=$(ls -d $S/*_${ns}_${name} 2>/dev/null)
@@ -177,7 +177,7 @@ vmstat 1 5                                                  # st 接近 0
 再检查这些：
 
 - Telegram 点「☀️ 今日简报」：提醒都在，服务器状态正常
-- `https://status.liuxd.dev`（Uptime Kuma）、`https://pan.liuxd.dev`（云盘）、Odoo、n8n 能登录，数据都在
+- `https://status.liuxd.dev`（Uptime Kuma）、`https://pan.liuxd.dev`（云盘）、Odoo 能登录，数据都在
 - Argo CD 是新装的：按 [runbook 第 7 节](runbook.md#7-argo-cd)取初始密码登录后改密码
 - 手动跑一次备份，确认能写进 R2：`k3s kubectl -n ops-desk create job backup-ai-api-manual --from=cronjob/backup-ai-api`
 

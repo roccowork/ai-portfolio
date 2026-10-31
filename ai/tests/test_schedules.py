@@ -26,7 +26,7 @@ def test_describe():
 
 def test_summarize_groups_and_status():
     items = [
-        {"metadata": {"name": "backup-n8n"}, "spec": {"schedule": "50 4 * * *", "timeZone": "Asia/Shanghai"}, "status": {}},
+        {"metadata": {"name": "backup-uptime-kuma"}, "spec": {"schedule": "50 4 * * *", "timeZone": "Asia/Shanghai"}, "status": {}},
         {
             "metadata": {"name": "weekly-report"},
             "spec": {"schedule": "0 9 * * *", "timeZone": "America/Los_Angeles"},

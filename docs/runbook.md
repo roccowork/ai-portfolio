@@ -391,47 +391,9 @@ k3s kubectl -n ops-desk logs job/<上一步的 Job 名> --all-containers
 
 GoatCounter 2026-10-28 下线，Argo CD 应用和清单已删除。它当时加的 Traefik `externalTrafficPolicy: Local`（`deploy/platform/traefik-config.yaml`）还在用：AI 接口按访客 IP 限流、算每日次数都靠它拿到真实 IP。
 
-## 11. n8n 工作流平台
+## 11. n8n 工作流平台（已删除）
 
-### 入口和组成
-
-- **已从集群下线**（2026-10-24，节省服务器资源）：Argo CD 应用已删除，连同 PVC 一起清理；清单保留在 `deploy/apps/n8n/` 作为案例。启用：在 `deploy/argocd/applications.yaml` 加回 n8n 应用（可参考 git 历史）、`n8n.yaml` 的 `replicas` 改成 1、删掉 `backup.yaml` 的 `suspend: true`，再按下面「首次上线」做
-- 界面：`https://n8n.liuxd.dev`（命名空间 `n8n`，Argo CD 应用 `n8n`），清单在 `deploy/apps/n8n/`
-- 两层登录：外面是 Traefik 的 HTTP 基本认证（Secret `n8n-basic-auth`），里面是 n8n 自己的账号。`/webhook/`、`/form/` 不加基本认证，表单和外部系统可以直接访问
-- 数据：PVC `n8n-data` 里的 `database.sqlite`（工作流、凭据、执行记录）和 `config`（加密凭据的密钥），每天 04:50 备份到 R2；执行记录只保留 14 天
-- 示例工作流：`deploy/apps/n8n/workflows/`，在 n8n 里「Import from File」导入
-
-### 首次上线
-
-在服务器上执行（Termius）：
-
-```bash
-# 1. 基本认证账号（Secret 不存在时管理界面无法访问）。会提示输入两次密码
-sudo apt-get install -y apache2-utils
-htpasswd -c /tmp/n8n-users admin
-k3s kubectl -n n8n create secret generic n8n-basic-auth --from-file=users=/tmp/n8n-users
-rm /tmp/n8n-users
-
-# 2. 备份用的 Secret：从 ops-desk 命名空间的复制，只把仓库路径换成 /n8n
-g() { k3s kubectl -n ops-desk get secret backup-r2 -o jsonpath="{.data.$1}" | base64 -d; }
-k3s kubectl -n n8n create secret generic backup-r2 \
-  --from-file=RESTIC_REPOSITORY=<(g RESTIC_REPOSITORY | sed 's#/ai-api$#/n8n#') \
-  --from-file=RESTIC_PASSWORD=<(g RESTIC_PASSWORD) \
-  --from-file=AWS_ACCESS_KEY_ID=<(g AWS_ACCESS_KEY_ID) \
-  --from-file=AWS_SECRET_ACCESS_KEY=<(g AWS_SECRET_ACCESS_KEY)
-```
-
-3. 浏览器打开 `https://n8n.liuxd.dev`，先输入上面的基本认证账号，再注册 n8n 管理员账号
-4. 导入 `deploy/apps/n8n/workflows/it-repair-form.json`，把「发到企业微信」节点 URL 里的 `替换成企业微信key` 改成群机器人的 key，点 Publish（激活）
-5. 手动跑一次备份（命名空间 `n8n`、CronJob `backup-n8n`，命令同第 9 节），确认成功
-
-### 常见问题
-
-| 现象                            | 原因                                              | 处理                                                     |
-| ------------------------------- | ------------------------------------------------- | -------------------------------------------------------- |
-| 打开界面返回 401 / 一直弹登录框 | 基本认证账号不对，或 Secret `n8n-basic-auth` 没建 | 按上面第 1 步重建 Secret                                 |
-| Pod OOMKilled                   | 工作流一次处理的数据太多                          | 内存上限 1Gi；拆小批量，或调高 `resources.limits.memory` |
-| 恢复后凭据报解密失败            | 只恢复了数据库，没恢复 `config`                   | 两个文件要从同一个快照一起恢复                           |
+2026-10-24 从集群下线，2026-10-31 删除清单（`deploy/apps/n8n/`）。工作流类的演示用 Dify；以后需要时从 git 历史恢复（删除前最后一次修改：`4329d94`）。
 
 ## 12. AI 服务（作品集的 AI 后端）
 

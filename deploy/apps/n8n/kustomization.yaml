@@ -1,9 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-# 命名空间由 Argo CD 创建（deploy/argocd/applications.yaml 里的 CreateNamespace=true）
-namespace: n8n
-resources:
-  - n8n.yaml
-  - backup.yaml
-components:
-  - ../../backup

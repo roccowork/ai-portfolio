@@ -192,15 +192,19 @@ def card(inc: dict) -> str:
     started = ""
     with contextlib.suppress(ValueError, TypeError):
         started = fmt_time((inc.get("started") or "").replace("Z", "+00:00"))
-    lines.append("告警：" + " · ".join(x for x in (sev, escape(inc.get("summary") or ""), f"{started} 开始" if started else "") if x))
+    lines.append("🚨 告警：" + " · ".join(x for x in (sev, escape(inc.get("summary") or ""), f"{started} 开始" if started else "") if x))
     if where:
-        lines.append(f"对象：{escape(where)}")
+        lines.append(f"📍 对象：{escape(where)}")
+    # 分成「是什么 / 为什么 / 怎么处理」三段，段之间空一行
+    blocks = ["\n".join(lines)]
     if inc["diagnosis"]:
-        lines.append(f"分析：{escape(inc['diagnosis'])}")
+        blocks.append(f"🔍 分析：{escape(inc['diagnosis'])}")
+    tail = []
     if a := inc["action"]:
-        lines.append(f"处理：{ACTION_ZH[a['action']]} {escape(a['target'])}（{'低风险，自动执行' if inc['risk'] == 'auto' else '需要你确认'}）")
-    lines.append(f"状态：{STATUS_ZH.get(inc['status'], inc['status'])}" + (f"，{escape(inc['result'])}" if inc["result"] else ""))
-    return "\n".join(lines)
+        tail.append(f"🔧 处理：{ACTION_ZH[a['action']]} {escape(a['target'])}（{'低风险，自动执行' if inc['risk'] == 'auto' else '需要你确认'}）")
+    tail.append(f"状态：{STATUS_ZH.get(inc['status'], inc['status'])}" + (f"，{escape(inc['result'])}" if inc["result"] else ""))
+    blocks.append("\n".join(tail))
+    return "\n\n".join(blocks)
 
 
 class Healer:

@@ -217,5 +217,6 @@ def test_card_explains_the_alert_first(env):
     text = sent[0][0]
     lines = text.split("\n")
     assert lines[0].startswith("🛠 <b>自愈 #") and "NodeDiskHigh" in lines[0]
-    assert lines[1] == "告警：🟡 警告 · 根分区使用超过 85% · 10-28 09:00 开始"  # 新加坡时间
-    assert lines[2] == "对象：monitoring" and lines[3].startswith("分析：")
+    assert lines[1] == "🚨 告警：🟡 警告 · 根分区使用超过 85% · 10-28 09:00 开始"  # 新加坡时间
+    # 「是什么 / 为什么 / 怎么处理」之间空一行
+    assert lines[2] == "📍 对象：monitoring" and lines[3] == "" and lines[4].startswith("🔍 分析：") and lines[5] == ""

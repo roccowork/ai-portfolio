@@ -217,10 +217,13 @@ def test_argo_and_kuma_lines(tmp_path):
     line = asyncio.run(dutybot._argo_line(c))
     assert line == "⚠️ Argo CD：1/2 正常，personal（没同步、更新中、上次同步失败）"
     apps["items"].pop()
-    assert asyncio.run(dutybot._argo_line(c)) == "Argo CD：1 个应用全部已同步、健康 ✅"
-    metrics = 'monitor_status{monitor_name="网站",monitor_type="http"} 1\nmonitor_status{monitor_name="Dify",monitor_type="http"} 0\nmonitor_status{monitor_name="VPS-1",monitor_type="port"} 0\n'
-    assert dutybot.kuma_line(metrics) == "⚠️ 外部拨测（Uptime Kuma）：1/2 在线，掉线：Dify"  # VPS 不算
-    assert dutybot.kuma_line('monitor_status{monitor_name="网站"} 1') == "外部拨测（Uptime Kuma）：1/1 在线 ✅"
+    assert asyncio.run(dutybot._argo_line(c)) == "🔄 Argo CD：1 个应用全部已同步、健康 ✅"
+    metrics = (
+        'monitor_status{monitor_name="网站",monitor_type="http"} 1\nmonitor_status{monitor_name="Dify",monitor_type="http"} 0\n'
+        'monitor_status{monitor_name="VPS-1",monitor_type="port"} 0\nmonitor_response_time{monitor_name="网站",monitor_type="http"} 123.4\n'
+    )
+    assert dutybot.kuma_line(metrics) == "⚠️ 外部拨测（Uptime Kuma，从服务器外面定时访问）：1/2 在线\n　✅ 网站 · 123 ms\n　❌ Dify"  # VPS 不算
+    assert dutybot.kuma_line('monitor_status{monitor_name="网站"} 1') == "🌐 外部拨测（Uptime Kuma，从服务器外面定时访问）：1/1 在线 ✅\n　✅ 网站"
     assert dutybot.kuma_line("") is None
 
 

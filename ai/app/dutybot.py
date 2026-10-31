@@ -42,17 +42,18 @@ async def status_text(k8s: ops.Cluster, kuma: Callable[[], Awaitable[str | None]
         return "这里查不到服务器状态（没有集群权限）"
     st = await ops.run_tool(k8s, "cluster_overview", {})
     alerts = [a for a in await ops.run_tool(k8s, "list_alerts", {}) if a.get("state") == "firing" and a.get("severity") not in ("info", "none")]  # type: ignore[union-attr]
-    lines = [
-        "<b>🖥 服务器状态</b>" + ("  ✅ 正常" if not alerts else f"  ⚠️ {len(alerts)} 条告警"),
-        f"CPU {st.get('cpu_used_pct')}% · 内存 {st.get('mem_used_pct')}% · 磁盘 {st.get('disk_used_pct')}%",  # type: ignore[union-attr]
-    ]
     bad = st.get("unhealthy_pods_by_namespace") or {}  # type: ignore[union-attr]
-    lines.append("不正常的 Pod：" + "、".join(f"{e(k)} {v} 个" for k, v in bad.items()) if bad else "Pod 全部正常")
-    for line in (await _argo_line(k8s), await kuma() if kuma else None, await _disk_forecast(k8s), await _prom_line(k8s)):
-        if line:
-            lines.append(line)
-    lines.append("<i>细看每个 Pod：点「📦 Pod 资源」</i>")
-    return "\n".join(lines)
+    # 不同类别之间空一行，手机上好读
+    blocks = [
+        "<b>🖥 服务器状态</b>" + ("  ✅ 正常" if not alerts else f"  ⚠️ {len(alerts)} 条告警"),
+        f"⚙️ CPU {st.get('cpu_used_pct')}% · 内存 {st.get('mem_used_pct')}% · 磁盘 {st.get('disk_used_pct')}%\n"  # type: ignore[union-attr]
+        + ("不正常的 Pod：" + "、".join(f"{e(k)} {v} 个" for k, v in bad.items()) if bad else "Pod 全部正常"),
+        await _argo_line(k8s),
+        await kuma() if kuma else None,
+        "\n".join(x for x in (await _disk_forecast(k8s), await _prom_line(k8s)) if x),
+        "<i>细看每个 Pod：点「📦 Pod 资源」</i>",
+    ]
+    return "\n\n".join(b for b in blocks if b)
 
 
 async def _argo_line(k8s: ops.Cluster) -> str | None:
@@ -69,7 +70,7 @@ async def _argo_line(k8s: ops.Cluster) -> str | None:
         if sync != "Synced" or health != "Healthy" or op in ("Failed", "Error"):
             bad.append(f"{e(a['metadata']['name'])}（{SYNC_ZH.get(sync or '', sync or '?')}、{HEALTH_ZH.get(health or '', health or '?')}" + ("、上次同步失败" if op in ("Failed", "Error") else "") + "）")
     if not bad:
-        return f"Argo CD：{len(apps)} 个应用全部已同步、健康 ✅"
+        return f"🔄 Argo CD：{len(apps)} 个应用全部已同步、健康 ✅"
     return f"⚠️ Argo CD：{len(apps) - len(bad)}/{len(apps)} 正常，" + "、".join(bad)
 
 
@@ -78,18 +79,24 @@ HEALTH_ZH = {"Healthy": "健康", "Progressing": "更新中", "Degraded": "异�
 
 
 def kuma_line(metrics: str) -> str | None:
-    """Uptime Kuma /metrics 里每个检测的 monitor_status（1 在线、0 掉线、2 等待、3 维护）→ 一行。名字以 VPS 开头的不算"""
-    status = {}
-    for labels, value in re.findall(r'^monitor_status\{([^}]*)\}\s+(\S+)', metrics, re.M):
+    """Uptime Kuma /metrics 里每个检测的 monitor_status（1 在线、0 掉线、2 等待、3 维护）和 monitor_response_time（毫秒），
+    每个检测一行。名字以 VPS 开头的不算"""
+    status, ms = {}, {}
+    for metric, labels, value in re.findall(r'^(monitor_status|monitor_response_time)\{([^}]*)\}\s+(\S+)', metrics, re.M):
         name = dict(re.findall(r'(\w+)="([^"]*)"', labels)).get("monitor_name", "?")
-        if not name.upper().startswith("VPS"):  # 翻墙 VPS 归私人助理管，这里只看本站的服务
+        if name.upper().startswith("VPS"):  # 翻墙 VPS 归私人助理管，这里只看本站的服务
+            continue
+        if metric == "monitor_status":
             status[name] = int(float(value))
+        else:
+            ms[name] = float(value)
     if not status:
         return None
     down = [n for n, v in status.items() if v == 0]
-    if not down:
-        return f"外部拨测（Uptime Kuma）：{len(status)}/{len(status)} 在线 ✅"
-    return f"⚠️ 外部拨测（Uptime Kuma）：{len(status) - len(down)}/{len(status)} 在线，掉线：" + "、".join(e(n) for n in down)
+    head = f"外部拨测（Uptime Kuma，从服务器外面定时访问）：{len(status) - len(down)}/{len(status)} 在线" + (" ✅" if not down else "")
+    icon = {0: "❌", 1: "✅", 2: "⏳", 3: "🔧"}
+    rows = [f"　{icon.get(v, '?')} {e(n)}" + (f" · {ms[n]:.0f} ms" if v == 1 and ms.get(n, -1) >= 0 else "") for n, v in status.items()]
+    return ("⚠️ " if down else "🌐 ") + head + "\n" + "\n".join(rows)
 
 
 async def _q(k8s: ops.Cluster, q: str) -> list[dict]:
@@ -109,19 +116,20 @@ def _mib(b: float) -> str:
 
 
 async def _disk_forecast(k8s: ops.Cluster) -> str | None:
-    """系统盘：剩余多少，按最近 6 小时的速度几天写满"""
+    """系统盘：剩余多少，按最近 7 天的平均速度几天写满。
+    窗口不能太短：一次性的大写入（比如第一次克隆全部 GitHub 仓库）会被当成持续增长，算出来「几十天写满」"""
     root = '{mountpoint="/", fstype!~"tmpfs|overlay"}'
     avail = await _q(k8s, f"max(node_filesystem_avail_bytes{root})")
     if not avail:
         return None
     left = _v(avail[0])
-    slope = await _q(k8s, f"max(deriv(node_filesystem_avail_bytes{root}[6h]))")  # 每秒变化的字节数，负数表示在减少
+    slope = await _q(k8s, f"max(deriv(node_filesystem_avail_bytes{root}[7d]))")  # 每秒变化的字节数，负数表示在减少
     if slope and _v(slope[0]) < 0:
         days = left / -_v(slope[0]) / 86400
-        when = f"按最近 6 小时的速度约 {days:.0f} 天写满" if days < 365 else "增长很慢，一年内写不满"
+        when = f"按最近 7 天的速度约 {days:.0f} 天写满" if days < 365 else "增长很慢，一年内写不满"
     else:
-        when = "最近 6 小时没有增长"
-    return f"系统盘剩余 {_mib(left)}，{when}"
+        when = "最近 7 天没有增长"
+    return f"💽 系统盘剩余 {_mib(left)}，{when}"
 
 
 async def _prom_line(k8s: ops.Cluster) -> str | None:
@@ -130,7 +138,7 @@ async def _prom_line(k8s: ops.Cluster) -> str | None:
     lim = await _q(k8s, 'max(kube_pod_container_resource_limits{namespace="monitoring", pod=~"prometheus-.*", container="prometheus", resource="memory"})')
     if not series:
         return None
-    line = f"Prometheus：{_v(series[0]) / 1e4:.1f} 万条序列"
+    line = f"📈 Prometheus：{_v(series[0]) / 1e4:.1f} 万条序列"
     if mem:
         line += f"，内存 {_mib(_v(mem[0]))}" + (f" / {_mib(_v(lim[0]))}" if lim else "")
     return line
@@ -191,12 +199,13 @@ async def alerts_text(k8s: ops.Cluster) -> str:
         return "这里查不到告警（没有集群权限）"
     alerts = [a for a in await ops.run_tool(k8s, "list_alerts", {}) if a.get("severity") not in ("none",)]  # type: ignore[union-attr]
     if not alerts:
-        return "<b>🚨 当前告警</b>\n没有告警 ✅"
+        return "<b>🚨 当前告警</b>\n\n没有告警 ✅"
     icon = {"critical": "🔴", "warning": "🟡"}
     lines = ["<b>🚨 当前告警</b>"]
     for a in alerts[:15]:
         where = " / ".join(x for x in (a.get("namespace"), a.get("pod")) if x)
         state = "" if a.get("state") == "firing" else "（等待中）"
+        lines.append("")
         lines.append(f"{icon.get(a.get('severity') or '', '⚪')} <b>{e(str(a.get('name')))}</b>{state}" + (f"  {e(where)}" if where else ""))
         if a.get("summary"):
             lines.append(f"　{e(str(a['summary']))[:120]}")
@@ -206,7 +215,7 @@ async def alerts_text(k8s: ops.Cluster) -> str:
 def heal_text(store: autoheal.IncidentStore, limit: int = 5) -> str:
     items = autoheal.public_records(store, limit)
     if not items:
-        return "<b>🩹 自愈记录</b>\n最近没有需要处理的故障 ✅"
+        return "<b>🩹 自愈记录</b>\n\n最近没有需要处理的故障 ✅"
     lines = ["<b>🩹 自愈记录</b>（最近 5 条）"]
     for r in items:
         lines.append(f"\n{e(r['time'])} <b>{e(r['alert'])}</b>  {e(r['status'])}")
@@ -222,7 +231,7 @@ def heal_text(store: autoheal.IncidentStore, limit: int = 5) -> str:
 def leads_text(ledger: Ledger, limit: int = 5) -> str:
     items = ledger.leads(limit)
     if not items:
-        return "<b>💬 最近留言</b>\n还没有访客留言"
+        return "<b>💬 最近留言</b>\n\n还没有访客留言"
     lines = [f"<b>💬 最近留言</b>（最近 {len(items)} 条）"]
     for x in items:
         who = " · ".join(e(v) for v in (x["name"], x["company"]) if v) or "访客"
@@ -238,9 +247,11 @@ def usage_text(ledger: Ledger, daily_budget: float, public_budget: float) -> str
     return "\n".join(
         [
             "<b>💰 今日用量</b>",
+            "",
             f"今天：{t['calls']} 次调用，约 ¥{t['cost']:.3f}",
             f"其中访客 ¥{public:.3f}，访客每日上限 ¥{public_budget:.2f}" + ("（已用完，访客的功能暂停到明天）" if public >= public_budget else ""),
             f"全站每日上限 ¥{daily_budget:.2f}（含值班台、自愈、评测），还剩 ¥{left:.2f}" + ("（已用完，全部暂停到明天）" if left <= 0 else ""),
+            "",
             f"累计：{total['calls']} 次调用，约 ¥{total['cost']:.2f}",
         ]
     )
@@ -274,25 +285,25 @@ def platform_text(st: dict, now: datetime | None = None) -> str:
     if st.get("requests7d") is not None:
         nums.append(f"请求 {st['requests7d']:,}")
     if nums:
-        lines.append(" · ".join(nums))
+        lines.append("\n" + " · ".join(nums))
     state_zh = {"current": "当前版本", "not-ready": "⚠️ 未就绪（旧版本仍在服务）", "replaced": "已替换"}
     deploys = st.get("deploys")
     lines.append("\n🚀 <b>最近发布</b>" + ("：查询失败" if deploys is None else ("：暂无记录" if not deploys else "")))
     for d in (deploys or [])[:3]:
         lines.append(f"　<code>{e(d['sha'])}</code> {ago(d.get('time'), now)} · {state_zh.get(d['state'], d['state'])}")
     backups = st.get("backups")
-    lines.append("💾 <b>备份</b>" + ("：查询失败" if backups is None else ("：没有备份任务" if not backups else "")))
+    lines.append("\n💾 <b>备份</b>" + ("：查询失败" if backups is None else ("：没有备份任务" if not backups else "")))
     for b in backups or []:
         t = b.get("lastSuccess")
         stale = not t or (now - datetime.fromisoformat(t.replace("Z", "+00:00"))).total_seconds() > 26 * 3600
         lines.append(f"　{'⚠️' if stale else '✅'} {e(b['name'])}：最近成功 {ago(t, now)}")
     certs = st.get("certs")
-    lines.append("🔐 <b>证书</b>" + ("：查询失败" if certs is None else ("：没有证书" if not certs else "")))
+    lines.append("\n🔐 <b>证书</b>" + ("：查询失败" if certs is None else ("：没有证书" if not certs else "")))
     for c in certs or []:
         low = c.get("daysLeft") is not None and c["daysLeft"] < 21
         lines.append(f"　{'⚠️' if low else '✅'} {e(c['name'])}：剩余 {c.get('daysLeft', '?')} 天")
     alerts = st.get("alerts7d")
-    lines.append("🚨 <b>7 天告警</b>" + ("：查询失败" if alerts is None else ("：没有 ✅" if not alerts else "")))
+    lines.append("\n🚨 <b>7 天告警</b>" + ("：查询失败" if alerts is None else ("：没有 ✅" if not alerts else "")))
     for a in alerts or []:
         lines.append(f"　{'🔴' if a.get('severity') == 'critical' else '🟡'} {e(a['name'])}：累计约 {a['minutes']} 分钟")
     lines.append("\n网页版（值班大屏）：https://ops.liuxd.dev/ops-agent/")
@@ -343,6 +354,7 @@ def dora_text(d: dict) -> str:
     fail = "—" if d.get("failure_pct") is None else f"{d['failure_pct']:.0f}%"
     return "\n".join([
         f"<b>📐 DORA 指标</b>（最近 {d['days']:g} 天，{d['deploys']} 次发布）",
+        "",
         f"部署频率：每天 {d['deploys_per_day']:g} 次{tag('deploys_per_day')}",
         f"提交到上线：{_dur(d.get('lead_hours'))}{tag('lead_hours')}",
         f"变更失败率：{fail}{tag('failure_pct')}",

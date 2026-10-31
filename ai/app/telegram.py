@@ -148,12 +148,12 @@ class OpsBot:
 
     async def run(self) -> None:
         """长轮询；出错只记日志、5 秒后重试，不影响 AI 服务。"""
-        if self.menu:
-            try:  # 命令菜单设置失败不影响其他功能
-                cmds = [{"command": cmd, "description": desc} for _, cmd, desc, _ in self.menu] + [{"command": "help", "description": "功能说明和菜单"}]
-                await self.tg.call("setMyCommands", commands=cmds)
-            except Exception as e:  # noqa: BLE001
-                log.warning("设置命令菜单失败：%s", e)
+        # 不设斜杠命令菜单：和底部的按钮键盘重复。删掉以前设过的，输入框左边就不再有「菜单」按钮；
+        # 手动打 /status 这类命令照样能用
+        try:
+            await self.tg.call("deleteMyCommands")
+        except Exception as e:  # noqa: BLE001
+            log.warning("清除命令菜单失败：%s", e)
         while True:
             try:
                 updates = await self.tg.call("getUpdates", offset=self.offset, timeout=50, allowed_updates=["message", "callback_query"])

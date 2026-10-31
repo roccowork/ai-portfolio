@@ -253,6 +253,22 @@ k3s kubectl -n ops-desk get configmap ops-desk-status -o jsonpath='{.data.status
 | 仪表盘 P95 响应时间约 95ms，但实际很快         | Traefik 默认直方图分桶很粗（0.1s、0.3s…），请求都落在 0～0.1s 桶里，只能在桶内估算                                                        | 理解为「P95 小于 100ms」；需要更精确时再调整 Traefik 的分桶                                                        |
 | Prometheus 镜像里没有 `wget` / `curl`          | distroless 精简镜像                                                                                                                       | 通过 API Server 代理访问：`kubectl get --raw /api/v1/namespaces/monitoring/services/kps-prometheus:9090/proxy/...` |
 
+### Prometheus 外网入口（给 LabPager App）
+
+`https://prometheus.liuxd.dev/api/v1/...`（`deploy/monitoring/prometheus-public.yaml`）：只放出查询接口，网页界面不放出来；HTTP 基本认证 + 限流。Prometheus 没开管理接口，这个入口只能读。账号密码在 Secret `prometheus-basic-auth`，不进 Git，第一次在服务器上建：
+
+```bash
+P=$(openssl rand -base64 18)
+k3s kubectl -n monitoring create secret generic prometheus-basic-auth \
+  --from-literal=users="labpager:$(openssl passwd -apr1 "$P")"
+echo "LabPager 里填：地址 https://prometheus.liuxd.dev，Basic Auth，用户名 labpager，密码 $P"
+# 验证：应该返回 "status":"success"；不带密码应该是 401
+curl -s -u "labpager:$P" 'https://prometheus.liuxd.dev/api/v1/query?query=up' | head -c 120; echo
+curl -s -o /dev/null -w '%{http_code}\n' https://prometheus.liuxd.dev/api/v1/query?query=up
+```
+
+换密码：删掉 Secret 重新建（`k3s kubectl -n monitoring delete secret prometheus-basic-auth`）。不用了就从 `deploy/monitoring/kustomization.yaml` 里去掉这个文件。
+
 ## 7. Argo CD
 
 - 界面：<https://argocd.liuxd.dev>，用户名 `admin`。

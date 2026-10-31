@@ -1,0 +1,49 @@
+# Prometheus 的外网入口，给 LabPager（iOS App）用：https://prometheus.liuxd.dev/api/v1/...
+# - 只放出 /api/v1（查询、告警、采集目标），网页界面不放出来
+# - HTTP 基本认证，账号密码在 Secret prometheus-basic-auth（不进 Git，创建方法见 docs/runbook.md「Prometheus 外网入口」）
+# - 限流防暴力猜密码。Prometheus 没开管理接口（--web.enable-admin-api），所以这个入口只能读
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: prometheus-auth
+  namespace: monitoring
+spec:
+  basicAuth:
+    secret: prometheus-basic-auth
+    realm: prometheus
+    removeHeader: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: prometheus-ratelimit
+  namespace: monitoring
+spec:
+  rateLimit:
+    average: 10
+    burst: 30
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prometheus-public
+  namespace: monitoring
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: monitoring-redirect-https@kubernetescrd,monitoring-prometheus-ratelimit@kubernetescrd,monitoring-prometheus-auth@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [prometheus.liuxd.dev]
+      secretName: prometheus-public-tls
+  rules:
+    - host: prometheus.liuxd.dev
+      http:
+        paths:
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: kps-prometheus
+                port:
+                  number: 9090

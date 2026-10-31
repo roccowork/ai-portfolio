@@ -13,6 +13,7 @@ resources:
   - traefik-metrics.yaml
   - ai-metrics.yaml
   - blackbox.yaml
+  - prometheus-public.yaml
   - rules/ops-desk.yaml
 # 备份脚本（ConfigMap backup-scripts），由 uptime-kuma-backup.yaml 使用
 components:

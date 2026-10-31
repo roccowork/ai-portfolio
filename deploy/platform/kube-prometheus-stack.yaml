@@ -26,8 +26,24 @@ spec:
     kubeScheduler: { enabled: false }
     kubeProxy: { enabled: false }
     windowsMonitoring: { enabled: false }
+    # 丢掉 API Server 的耗时、大小分布（_bucket）：2026-10-31 实测这 13 个指标约 8 万条序列，占全部 13.6 万的 59%，
+    # 告警、运维 Agent、值班大屏都没用到。同名的 _count / _sum / _total 保留，请求量和平均耗时照样能算。
+    # 代价：Grafana「Kubernetes / API server」面板的耗时和可用性图变空；依赖它们的 4 组默认规则在下面关掉。
+    # 这里会替换 chart 默认的 metricRelabelings（它只丢部分分桶），所以默认丢的 apiserver_request_slo 也写进来了
+    kubeApiServer:
+      serviceMonitor:
+        metricRelabelings:
+          - sourceLabels: [__name__]
+            action: drop
+            regex: (apiserver_request_duration_seconds|apiserver_request_slo_duration_seconds|apiserver_request_sli_duration_seconds|apiserver_request_body_size_bytes|apiserver_response_sizes|apiserver_watch_list_duration_seconds|apiserver_watch_cache_read_wait_seconds|apiserver_watch_events_sizes|apiserver_admission_controller_admission_duration_seconds|etcd_request_duration_seconds|kine_sql_time_seconds|workqueue_queue_duration_seconds|workqueue_work_duration_seconds|scheduler_plugin_execution_duration_seconds)_bucket
     defaultRules:
       rules:
+        # API 可用性、错误预算告警和耗时预计算规则，靠上面丢掉的 _bucket 计算（chart 92.3.0 里只有这 4 组用到）；
+        # 「API Server 挂了」的告警（kubernetesSystem 里的 KubeAPIDown）不受影响
+        kubeApiserverAvailability: false
+        kubeApiserverBurnrate: false
+        kubeApiserverHistogram: false
+        kubeApiserverSlos: false
         etcd: false
         kubeControllerManager: false
         kubeSchedulerAlerting: false

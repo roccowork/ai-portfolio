@@ -2,7 +2,6 @@
 import Base from '../layouts/Base.astro';
 import {
   BRAND,
-  LEARNING_SITE,
   OTHER_WORKS,
   PROFILE,
   PROJECTS,
@@ -209,18 +208,6 @@ const badge = (s: WorkStatus) =>
           </div>
         ))}
       </div>
-      <a
-        href={LEARNING_SITE}
-        target="_blank"
-        rel="noopener"
-        class="mt-12 inline-flex items-center gap-2 rounded-xl bg-slate-50 px-5 py-4 text-sm ring-1 ring-slate-200 transition hover:ring-slate-400"
-      >
-        <span>
-          <span class="block font-semibold text-slate-900">AI 应用开发学习路线</span>
-          <span class="mt-0.5 block text-slate-600">我整理的学习路线，单独的网站</span>
-        </span>
-        <span class="ml-4 text-slate-500">↗</span>
-      </a>
     </div>
   </section>
 
@@ -233,6 +220,9 @@ const badge = (s: WorkStatus) =>
         在一家制造企业的信息部工作了 10 年：前 7 年以桌面运维为主，后 3 年自学
         Python、数据分析和开发。现在专注 AI
         应用开发：把大模型接进真实的业务和系统里，做到能稳定运行、出了问题能发现、能恢复。
+      </p>
+      <p class="mt-4 leading-relaxed text-slate-300">
+        正在按一份完整的知识清单系统补齐 AI 应用开发的知识体系，项目里用到的每项技术都要能讲清原理。
       </p>
       <div class="mt-8 flex flex-wrap gap-4">
         <a

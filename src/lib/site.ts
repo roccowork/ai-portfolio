@@ -19,9 +19,6 @@ export const PROFILE = {
   resume: '',
 };
 
-/** 学习路线网站（单独的仓库，Cloudflare Pages 部署） */
-export const LEARNING_SITE = 'https://agent-workforce-70y.pages.dev';
-
 /** 顶部导航 */
 export const NAV = [
   { name: '代表作', href: '/#projects' },

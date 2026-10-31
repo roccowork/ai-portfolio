@@ -57,6 +57,24 @@ import { BRAND } from '../../lib/site';
       <div class="mt-8">
         <HealLog client:visible />
       </div>
+      <div class="mt-10 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+        <h3 class="text-lg font-bold text-slate-900">故障演练评测：它哪里还不行</h3>
+        <p class="mt-2 text-sm leading-relaxed text-slate-600">
+          21 道演练题（真实集群快照上注入故障），整体通过 52.4%：工具选对 95%、根因要点
+          90%，但需要提处置的题只对了
+          44%。模型会提不相关的操作（证书续期失败却提议补跑备份），偶尔编造查询结果里没有的数字。
+        </p>
+        <p class="mt-2 text-sm leading-relaxed text-slate-600">
+          所以它只能从预先写好的操作清单里选，关键操作要人点「执行」——提错了也造不成破坏。下一步：按告警类型限定可选操作，或换更强的模型。
+          <a
+            class="text-amber-700 hover:underline"
+            href="https://github.com/roccowork/ai-portfolio#效果评测"
+            target="_blank"
+          >
+            评测方法和五次结果 ↗
+          </a>
+        </p>
+      </div>
     </div>
   </section>
 </Base>

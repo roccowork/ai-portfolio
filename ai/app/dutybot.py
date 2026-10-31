@@ -22,6 +22,7 @@ TOOL_ZH = {"search_runbook": "运维手册", "list_alerts": "告警", "cluster_o
 HELP = """<b>我是 OPS 值班台</b>，负责网站和服务器这边的事：
 
 🖥 <b>服务器状态</b>：CPU、内存、磁盘，哪些 Pod 不正常，Argo CD 同步和外部拨测，系统盘几天写满，Prometheus 序列数和内存
+🌐 <b>外部服务</b>：自己的 6 个网站和 5 个外部依赖（百炼、GitHub、GHCR、Cloudflare、Telegram）通不通、延迟、证书天数
 📦 <b>Pod 资源</b>：内存、CPU 占用前 5 的 Pod（快到上限的标红），24 小时内重启过的，数据盘用量
 🚨 <b>当前告警</b>：正在触发和等待中的告警
 🩹 <b>自愈记录</b>：运维 Agent 最近处理的故障

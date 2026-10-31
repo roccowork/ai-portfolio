@@ -23,6 +23,7 @@ from . import chatbi
 from . import content as ct
 from . import demo_shop
 from . import dutybot
+from . import probes
 from . import opsdocs as od
 from .evals import agent as agent_eval
 from .evals import rag as rag_eval
@@ -183,6 +184,11 @@ def create_app(
         verb, note = EVAL_START[state]
         return f"🧪 {verb}运维 Agent 评测：{len(cases)} 道故障演练题（{live}），大约 3～5 分钟，花几毛钱。只读，不会动集群{note}"
 
+    async def _probes_text() -> str:
+        if not k8s.enabled:
+            return "这里查不到拨测结果（没有集群权限）"
+        return probes.text(await probes.fetch(k8s))
+
     async def kuma_status() -> str | None:
         try:
             async with httpx.AsyncClient(timeout=8) as c:
@@ -195,6 +201,7 @@ def create_app(
     menu = [
         ("🖥 服务器状态", "status", "CPU、内存、磁盘、Argo CD、外部拨测", lambda: dutybot.status_text(k8s, kuma_status if s.kuma_api_key else None)),
         ("📦 Pod 资源", "pods", "内存、CPU 占用前 5 的 Pod，重启过的，数据盘", lambda: dutybot.pods_text(k8s)),
+        ("🌐 外部服务", "probes", "自己的网站和外部依赖通不通、多快", lambda: _probes_text()),
         ("🚨 当前告警", "alerts", "正在触发的告警", lambda: dutybot.alerts_text(k8s)),
         ("🩹 自愈记录", "heal", "运维 Agent 最近处理的故障", lambda: asyncio.to_thread(dutybot.heal_text, healer.store)),
         ("📊 平台实况", "live", "最近发布、可用率、备份、证书", platform),

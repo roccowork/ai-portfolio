@@ -228,3 +228,32 @@ def test_paid_evals_are_hidden_but_typeable():
     bot = OpsBot(Telegram("t", "1"), fn, [("🖥 服务器状态", "status", "x", fn)], hidden=[("🧪 Agent 评测", "agenteval", "x", fn)])
     labels = [b["text"] for row in bot.keyboard["keyboard"] for b in row]
     assert "🧪 Agent 评测" not in labels and "/agenteval" in bot.actions
+
+
+def test_probes_text(tmp_path):
+    """🌐 外部服务：自己的网站在前，带延迟和证书天数；不通的标红"""
+    from app import probes
+
+    (tmp_path / "token").write_text("t")
+
+    def vec(rows):
+        return {"status": "success", "data": {"result": [{"metric": m, "value": [0, str(v)]} for m, v in rows]}}
+
+    site = {"group": "own", "name": "cv.liuxd.dev", "job": "probe-own"}
+    dep = {"group": "dependency", "name": "阿里云百炼", "job": "probe-dependency"}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        q = req.url.params.get("query", "")
+        if q.startswith("probe_success"):
+            return httpx.Response(200, json=vec([(dep, 0), (site, 1)]))
+        if q.startswith("probe_duration"):
+            return httpx.Response(200, json=vec([(site, 0.123), (dep, 10.0)]))
+        return httpx.Response(200, json=vec([(site, 9.4), (dep, 300)]))
+
+    c = ops.Cluster("http://prom", sa_dir=tmp_path, transport=httpx.MockTransport(handler))
+    items = asyncio.run(probes.fetch(c))
+    assert [x["name"] for x in items] == ["cv.liuxd.dev", "阿里云百炼"]
+    text = probes.text(items)
+    assert "⚠️ 1 个不通" in text and "🟢 cv.liuxd.dev  123 ms · 证书 9 天 ⚠️" in text and "🔴 阿里云百炼  10000 ms" in text
+    assert "证书 300" not in text  # 外部依赖不显示证书
+    assert "还没有拨测数据" in probes.text([])

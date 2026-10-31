@@ -137,3 +137,30 @@ spec:
           annotations:
             summary: AI 模型调用连续失败
             description: '15 分钟内失败 {{ $value | printf "%.0f" }} 次。先看 ai-api 日志：密钥失效、欠费或百炼服务故障都会出现这个告警。'
+    # 外部拨测（deploy/monitoring/blackbox.yaml）。从服务器自己往外探测，服务器整机断网时这些也会一起报
+    - name: ops-desk.probes
+      rules:
+        - alert: SiteDown
+          expr: probe_success{group="own"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: '网站 {{ $labels.name }} 打不开'
+            description: '连续 5 分钟访问 {{ $labels.instance }} 失败（连不上、超时或没返回 2xx）。ops.liuxd.dev 和 dify 在本服务器上；其余托管在 Cloudflare Pages，要去 Cloudflare 控制台看。'
+        - alert: DependencyDown
+          expr: probe_success{group="dependency"} == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: '外部服务 {{ $labels.name }} 连不上'
+            description: '连续 10 分钟访问 {{ $labels.instance }} 失败。这是对方或网络的问题，重启本站服务解决不了；影响：百炼 → AI 功能，GitHub / GHCR → 发布，Cloudflare → 备份和 Pages 网站，Telegram → 告警推送。'
+        - alert: SiteCertExpiringSoon
+          expr: (probe_ssl_earliest_cert_expiry{group="own"} - time()) / 86400 < 14
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: '网站 {{ $labels.name }} 的证书 {{ $value | printf "%.0f" }} 天后过期'
+            description: 'Cloudflare Pages 和 cert-manager 都会自动续期，正常情况下不会剩这么少，说明续期出了问题。'

@@ -51,6 +51,7 @@ CLUSTER_MAP = """集群里有什么（命名空间 → 组件）：
 - monitoring：Prometheus、Alertmanager、Grafana（kube-prometheus-stack）；Uptime Kuma（uptime-kuma）；告警转发 wecom-relay（把告警推到 Telegram，Telegram 机器人的 token 在 Secret telegram-ops；企业微信是备用，key 在 Secret wecom-bot）；备份任务 backup-uptime-kuma；周报、R2 用量等定时任务
 - argocd：Argo CD；kube-system：k3s 自带的 Traefik、CoreDNS 等；证书由 cert-manager 管（它的命名空间查不了，证书问题看 ops-desk 的事件）
 - Dify 用 Docker Compose 跑在同一台服务器上，不在集群里，查不到
+- 外部拨测：Blackbox Exporter 每分钟从服务器往外探测，指标 probe_success（1 通、0 不通）、probe_duration_seconds（耗时，秒）、probe_ssl_earliest_cert_expiry（证书到期的时间戳）；标签 group="own" 是自己的网站（ops.liuxd.dev、dify.liuxd.dev 在本服务器，liuxd.dev、cv、roadmap、ai-roadmap 在 Cloudflare Pages），group="dependency" 是外部依赖（阿里云百炼、GitHub、GHCR、Cloudflare、Telegram），标签 name 是名字。问网站能不能打开、外部服务挂没挂、AI 为什么慢（百炼延迟），用 promql 查这些
 工具结果里的时间都已换成新加坡时间，和上面的「现在」直接比较
 问到某个组件先按上面找命名空间；上面没有的，用 list_pods 把允许的命名空间都看一遍再下结论，不要没查就说不在集群里"""
 

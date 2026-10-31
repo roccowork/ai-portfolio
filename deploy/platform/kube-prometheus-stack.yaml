@@ -70,6 +70,8 @@ spec:
         # 采集所有命名空间里的 ServiceMonitor / PrometheusRule，而不只是本 chart 创建的
         serviceMonitorSelectorNilUsesHelmValues: false
         podMonitorSelectorNilUsesHelmValues: false
+        # 外部拨测（deploy/monitoring/blackbox.yaml 里的 Probe）
+        probeSelectorNilUsesHelmValues: false
         ruleSelectorNilUsesHelmValues: false
         resources:
           requests: { cpu: 100m, memory: 512Mi }

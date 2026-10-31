@@ -39,7 +39,20 @@ interface Overview {
   heal: { total: number; fixed: number };
   backups: { name: string; lastSuccess: string }[] | null;
   alerts7d: { name: string; severity: string; minutes: number }[] | null;
+  probes?: Probe[] | null;
 }
+/** 外部拨测（Blackbox Exporter）：自己的网站和外部依赖 */
+interface Probe {
+  name: string;
+  group: 'own' | 'dependency';
+  ok: boolean;
+  ms: number | null;
+  cert_days: number | null;
+}
+const PROBE_GROUPS = [
+  { key: 'own', name: '自己的网站' },
+  { key: 'dependency', name: '外部依赖（百炼、GitHub、Cloudflare、Telegram）' },
+] as const;
 type Series = [number, number][];
 interface Trend {
   enabled: boolean;
@@ -424,6 +437,42 @@ const alerts7d = computed(() => ov.value?.alerts7d ?? []);
           </div>
           <div class="text-xs text-slate-500">
             通过率 · {{ ov?.evals?.agent?.cases ?? '—' }} 题 · {{ ago(ov?.evals?.agent?.ts) }}
+          </div>
+        </div>
+      </div>
+
+      <!-- 第四排：外部拨测 -->
+      <div
+        v-if="ov?.probes?.length"
+        class="mt-3 rounded-2xl bg-white/[0.04] p-4 ring-1 ring-white/10"
+      >
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <div class="text-xs text-slate-400">外部拨测 · 每分钟从服务器往外探测一次</div>
+          <div class="text-xs text-slate-500">
+            {{ ov.probes.filter((p) => p.ok).length }}/{{ ov.probes.length }} 正常
+          </div>
+        </div>
+        <div v-for="g in PROBE_GROUPS" :key="g.key" class="mt-3">
+          <div class="text-xs text-slate-500">{{ g.name }}</div>
+          <div class="mt-1.5 flex flex-wrap gap-2">
+            <span
+              v-for="p in ov.probes.filter((x) => x.group === g.key)"
+              :key="p.name"
+              class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-mono text-xs ring-1"
+              :class="
+                p.ok
+                  ? 'bg-emerald-400/10 text-emerald-200 ring-emerald-400/30'
+                  : 'bg-rose-500/15 text-rose-200 ring-rose-400/50'
+              "
+              :title="p.cert_days != null && g.key === 'own' ? `证书还剩 ${p.cert_days} 天` : ''"
+            >
+              <span
+                class="h-1.5 w-1.5 rounded-full"
+                :class="p.ok ? 'bg-emerald-400' : 'animate-pulse bg-rose-400'"
+              ></span>
+              {{ p.name }}
+              <span class="text-slate-400">{{ p.ms != null ? `${p.ms}ms` : '—' }}</span>
+            </span>
           </div>
         </div>
       </div>

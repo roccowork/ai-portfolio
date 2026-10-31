@@ -12,6 +12,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
 from . import opsagent as ops
+from . import probes
 
 log = logging.getLogger("ai")
 
@@ -81,11 +82,12 @@ class OpsWall:
         if not self.c.enabled:
             return {"enabled": False}
         names = list(SCALARS)
-        node, alerts, pods, status, *vals = await asyncio.gather(
+        node, alerts, pods, status, probe, *vals = await asyncio.gather(
             _try(ops.run_tool(self.c, "cluster_overview", {}), "概况"),
             _try(ops.run_tool(self.c, "list_alerts", {}), "告警"),
             _try(self.pods(), "Pod"),
             _try(self.status(), "平台实况"),
+            _try(probes.fetch(self.c), "外部拨测"),
             *(_try(self.scalar(SCALARS[n]), n) for n in names),
         )
         st = status or {}
@@ -104,6 +106,7 @@ class OpsWall:
             "cert_days_left": min((x["daysLeft"] for x in certs), default=None),
             "backups": st.get("backups"),
             "alerts7d": st.get("alerts7d"),
+            "probes": probe,
             **self.extras(),
         }
 

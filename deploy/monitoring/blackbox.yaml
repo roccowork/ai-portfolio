@@ -1,0 +1,168 @@
+# Blackbox Exporter：从服务器向外发 HTTP 请求，记录通不通、多快、证书还剩几天（probe_success、probe_duration_seconds、
+# probe_ssl_earliest_cert_expiry）。探测两类目标，标签 group 区分：
+# - own：自己的网站。ops.liuxd.dev 和 dify 在这台服务器上，其余托管在 Cloudflare Pages，挂了集群内部看不出来
+# - dependency：本站依赖的外部服务。AI 变慢、发不出告警时，用来分清是自己的问题还是对方的问题
+# 探测目标写在下面两个 Probe 里，Prometheus 每分钟探测一次。运维 Agent 用 promql 工具就能查到这些指标
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+data:
+  blackbox.yml: |
+    modules:
+      # 自己的网站：必须返回 2xx（跟随跳转）
+      http_2xx:
+        prober: http
+        timeout: 10s
+        http:
+          preferred_ip_protocol: ip4
+          follow_redirects: true
+      # 外部依赖：不带密钥访问，返回 401 / 403 / 404 也说明服务在线、网络通；连不上或 5xx 才算失败
+      http_reachable:
+        prober: http
+        timeout: 10s
+        http:
+          preferred_ip_protocol: ip4
+          follow_redirects: true
+          valid_status_codes: [200, 204, 301, 302, 400, 401, 403, 404, 405]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: blackbox-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: blackbox-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: blackbox-exporter
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: blackbox-exporter
+          image: prom/blackbox-exporter:v0.25.0
+          args: ['--config.file=/config/blackbox.yml']
+          ports:
+            - name: http
+              containerPort: 9115
+          readinessProbe:
+            httpGet: { path: /-/healthy, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /-/healthy, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 10m, memory: 24Mi }
+            limits: { cpu: 200m, memory: 64Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          configMap:
+            name: blackbox-exporter
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: blackbox-exporter
+spec:
+  selector:
+    app.kubernetes.io/name: blackbox-exporter
+  ports:
+    - name: http
+      port: 9115
+      targetPort: http
+---
+# 自己的网站。name 标签是给人看的名字，值班台、大屏和告警里显示它
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: own-sites
+  namespace: monitoring
+spec:
+  jobName: probe-own
+  interval: 60s
+  module: http_2xx
+  prober:
+    url: blackbox-exporter.monitoring.svc:9115
+  targets:
+    staticConfig:
+      labels:
+        group: own
+      static:
+        - https://ops.liuxd.dev/
+        - https://liuxd.dev/
+        - https://cv.liuxd.dev/
+        - https://roadmap.liuxd.dev/
+        - https://ai-roadmap.liuxd.dev/
+        - https://dify.liuxd.dev/
+      relabelingConfigs:
+        - sourceLabels: [__param_target]
+          targetLabel: name
+          regex: https://([^/]+)/?
+          replacement: $1
+---
+# 本站依赖的外部服务
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: dependencies
+  namespace: monitoring
+spec:
+  jobName: probe-dependency
+  interval: 60s
+  module: http_reachable
+  prober:
+    url: blackbox-exporter.monitoring.svc:9115
+  targets:
+    staticConfig:
+      labels:
+        group: dependency
+      static:
+        # 阿里云百炼（大模型），不带密钥返回 401
+        - https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models
+        # GitHub（代码、CI）和 GHCR（镜像），GHCR 不带密钥返回 401
+        - https://github.com/
+        - https://ghcr.io/v2/
+        # Cloudflare（R2 备份、Pages 网站、DNS）
+        - https://api.cloudflare.com/client/v4/
+        # Telegram（告警和机器人）
+        - https://api.telegram.org/
+      relabelingConfigs:
+        - sourceLabels: [__param_target]
+          targetLabel: name
+          regex: https://dashscope.*
+          replacement: 阿里云百炼
+        - sourceLabels: [__param_target]
+          targetLabel: name
+          regex: https://github.com/
+          replacement: GitHub
+        - sourceLabels: [__param_target]
+          targetLabel: name
+          regex: https://ghcr.io/.*
+          replacement: GHCR 镜像仓库
+        - sourceLabels: [__param_target]
+          targetLabel: name
+          regex: https://api.cloudflare.com/.*
+          replacement: Cloudflare
+        - sourceLabels: [__param_target]
+          targetLabel: name
+          regex: https://api.telegram.org/
+          replacement: Telegram

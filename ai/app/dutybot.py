@@ -270,7 +270,7 @@ def platform_text(st: dict, now: datetime | None = None) -> str:
     if st.get("availability7d") is not None:
         nums.append(f"7 天可用率 {st['availability7d']}%")
     if st.get("p95Ms") is not None:
-        nums.append("p95 < 100 ms" if st["p95Ms"] <= 100 else f"p95 {st['p95Ms']} ms")  # Traefik 最小的分桶是 0.1s
+        nums.append("p95 &lt; 100 ms" if st["p95Ms"] <= 100 else f"p95 {st['p95Ms']} ms")  # Traefik 最小的分桶是 0.1s
     if st.get("requests7d") is not None:
         nums.append(f"请求 {st['requests7d']:,}")
     if nums:

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 
 import httpx
 
@@ -133,7 +134,9 @@ def test_platform_text_matches_live_page():
         "alerts7d": None,
     }
     text = dutybot.platform_text(st, now)
-    assert "数据更新于 10 分钟前" in text and "7 天可用率 99.97% · p95 < 100 ms · 请求 15,234" in text
+    assert "数据更新于 10 分钟前" in text and "7 天可用率 99.97% · p95 &lt; 100 ms · 请求 15,234" in text
+    # Telegram 的 HTML 模式里裸的 < 会被当成标签，整条消息发送失败
+    assert not re.search(r"<(?![/a-z])", text)
     assert "<code>8bf110c</code> 8 分钟前 · 当前版本" in text
     assert "✅ backup-ai-api：最近成功 8 小时前" in text and "⚠️ backup-old" in text
     assert "⚠️ ops-desk-tls：剩余 12 天" in text and "7 天告警</b>：查询失败" in text

@@ -1,6 +1,7 @@
 ---
 import Base from '../../layouts/Base.astro';
 import DeployReplay from '../../components/DeployReplay.vue';
+import DoraBoard from '../../components/DoraBoard.vue';
 import { BRAND, PROFILE } from '../../lib/site';
 
 // 「怎么搭的」：每一步都链接到仓库里的真实配置。实时数据在 /ops-agent/ 的值班大屏
@@ -107,6 +108,9 @@ const files = [
   <section class="bg-slate-950 pb-16 text-white">
     <div class="mx-auto max-w-5xl px-5">
       <DeployReplay client:visible />
+      <div class="mt-6">
+        <DoraBoard client:visible />
+      </div>
     </div>
   </section>
 

@@ -7,7 +7,7 @@ import json
 import logging
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import httpx
@@ -22,6 +22,7 @@ from . import autoheal
 from . import chatbi
 from . import content as ct
 from . import demo_shop
+from . import dora
 from . import dutybot
 from . import probes
 from . import opsdocs as od
@@ -129,7 +130,12 @@ def create_app(
         async with httpx.AsyncClient(timeout=10) as c:
             r = await c.get(s.status_url)
             r.raise_for_status()
-            return dutybot.platform_text(r.json())
+            text = dutybot.platform_text(r.json())
+        try:
+            text += "\n\n" + dutybot.dora_text(await dora_cache.get(build_dora))
+        except Exception as e:  # noqa: BLE001 —— GitHub 查不到不影响平台实况
+            log.warning("DORA 指标查询失败：%s", e)
+        return text
 
     evals = EvalQueue()
     EVAL_START = {"started": ("开始跑", ""), "queued": ("排队跑", "。前面还有评测在跑，跑完马上接着跑这个")}
@@ -204,7 +210,7 @@ def create_app(
         ("🌐 外部服务", "probes", "自己的网站和外部依赖通不通、多快", lambda: _probes_text()),
         ("🚨 当前告警", "alerts", "正在触发的告警", lambda: dutybot.alerts_text(k8s)),
         ("🩹 自愈记录", "heal", "运维 Agent 最近处理的故障", lambda: asyncio.to_thread(dutybot.heal_text, healer.store)),
-        ("📊 平台实况", "live", "最近发布、可用率、备份、证书", platform),
+        ("📊 平台实况", "live", "最近发布、可用率、备份、证书、DORA 指标", platform),
         ("🗓 定时任务", "jobs", "服务器上的备份、周报等任务", lambda: dutybot.jobs_text(k8s)),
         ("💬 最近留言", "leads", "网站访客的留言", lambda: asyncio.to_thread(dutybot.leads_text, ledger)),
         ("💰 今日用量", "usage", "AI 演示今天的调用和费用", lambda: asyncio.to_thread(dutybot.usage_text, ledger, s.daily_budget, s.public_budget)),
@@ -583,6 +589,27 @@ def create_app(
     @app.get("/api/ai/ops/overview")
     async def ops_overview():
         return await wall.overview()
+
+    dora_cache = opswall.Cache(3600)
+
+    async def build_dora() -> dict:
+        since = datetime.now(timezone.utc) - timedelta(days=30)
+        commits = await dora.fetch_commits(since)
+        try:
+            rollouts = (await status_json()).get("deploys") or []
+        except httpx.HTTPError:
+            rollouts = []
+        return dora.compute(commits, rollouts, healer.store.since(since), 30)
+
+    @app.get("/api/ai/dora")
+    async def dora_metrics():
+        """DORA 四个指标（GitOps 页面、值班台「📊 平台实况」用），缓存 1 小时"""
+        try:
+            return await dora_cache.get(build_dora)
+        except httpx.HTTPError as e:
+            if dora_cache.value is not None:
+                return dora_cache.value  # GitHub 限流或打不开时用上一次的结果
+            raise HTTPException(503, f"GitHub 暂时查不到：{type(e).__name__}") from e
 
     @app.get("/api/ai/ops/trend")
     async def ops_trend():

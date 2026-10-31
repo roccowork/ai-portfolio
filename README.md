@@ -109,6 +109,11 @@ cd ai && python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 
 值班台点「🧪 Agent 评测」重跑，明细在 <https://ops.liuxd.dev/api/ai/eval/latest?kind=agent>。
 
+## 外部拨测和 DORA 指标
+
+- **外部拨测**（`deploy/monitoring/blackbox.yaml`）：Blackbox Exporter 每分钟从服务器探测 6 个自有网站（含托管在 Cloudflare Pages 的）和 5 个外部依赖（阿里云百炼、GitHub、GHCR、Cloudflare、Telegram），记录通不通、耗时和证书剩余天数。网站打不开、依赖连不上、证书快过期都会告警；值班台「🌐 外部服务」、值班大屏和运维 Agent 都用这些数据，AI 变慢时能分清是自己的问题还是百炼那边的问题
+- **DORA 指标**（`ai/app/dora.py`，`/api/ai/dora`）：部署频率、提交到上线、变更失败率、故障恢复时间，用 GitHub 上的发布提交、集群里新版本的上线时间和自愈记录算出，显示在 `/gitops/` 页面和值班台「📊 平台实况」
+
 ## 平台实况数据（/status.json）
 
 `deploy/k8s/base/status/` 下的 CronJob 每 10 分钟查询 K8s API 和 Prometheus，写进 ConfigMap `ops-desk-status`，站点 Pod 挂载后由 nginx 以 `/status.json` 提供。值班大屏（`/ops-agent/`）显示其中的发布、证书、备份、7 天告警，排障见 [docs/runbook.md](docs/runbook.md)「平台实况」。

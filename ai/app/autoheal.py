@@ -164,6 +164,10 @@ class IncidentStore:
         since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         return bool(self._rows("fingerprint=? AND ts>=? AND resolved_ts IS NULL", (fp, since)))
 
+    def since(self, since: datetime) -> list[dict]:
+        """这段时间里的所有故障记录（DORA 的恢复时间、变更失败率用）"""
+        return self._rows("ts>=? ORDER BY id", (since.isoformat(),))
+
     def count_since(self, since: datetime) -> int:
         return len(self._rows("ts>=?", (since.isoformat(),)))
 

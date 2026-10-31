@@ -26,7 +26,7 @@ HELP = """<b>我是 OPS 值班台</b>，负责网站和服务器这边的事：
 📦 <b>Pod 资源</b>：内存、CPU 占用前 5 的 Pod（快到上限的标红），24 小时内重启过的，数据盘用量
 🚨 <b>当前告警</b>：正在触发和等待中的告警
 🩹 <b>自愈记录</b>：运维 Agent 最近处理的故障
-📊 <b>平台实况</b>：最近发布、7 天可用率、备份、证书、7 天告警（和网页值班大屏同一份数据）
+📊 <b>平台实况</b>：最近发布、7 天可用率、备份、证书、7 天告警（和网页值班大屏同一份数据），加上 DORA 四个指标（部署频率、提交到上线、变更失败率、故障恢复）
 🗓 <b>定时任务</b>：服务器上的备份、周报等任务，下次几点、上次成没成功
 💬 <b>最近留言</b>：网站访客在 AI 助手里给你的留言
 💰 <b>今日用量</b>：AI 演示今天的调用次数、费用和剩余预算
@@ -328,3 +328,24 @@ def make_ask(gw: Gateway, k8s: ops.Cluster, extra: dict | None = None) -> Callab
         return to_html(answer) + (f"\n\n<i>查了：{e(used)}</i>" if used else "")
 
     return ask
+
+
+def _dur(hours: float | None) -> str:
+    if hours is None:
+        return "—"
+    return f"{hours * 60:.0f} 分钟" if hours < 1 else f"{hours:.1f} 小时" if hours < 48 else f"{hours / 24:.1f} 天"
+
+
+def dora_text(d: dict) -> str:
+    """DORA 四个指标，接在「📊 平台实况」后面"""
+    lv = d.get("levels") or {}
+    tag = lambda k: f"（{lv[k]}）" if lv.get(k) else ""  # noqa: E731
+    fail = "—" if d.get("failure_pct") is None else f"{d['failure_pct']:.0f}%"
+    return "\n".join([
+        f"<b>📐 DORA 指标</b>（最近 {d['days']:g} 天，{d['deploys']} 次发布）",
+        f"部署频率：每天 {d['deploys_per_day']:g} 次{tag('deploys_per_day')}",
+        f"提交到上线：{_dur(d.get('lead_hours'))}{tag('lead_hours')}",
+        f"变更失败率：{fail}{tag('failure_pct')}",
+        f"故障恢复：{_dur(d.get('restore_hours'))}{tag('restore_hours')}" + ("" if d.get("restore_hours") is not None else "（还没有恢复记录）"),
+    ])
+

@@ -83,6 +83,10 @@ class Settings:
     # 效果评测的裁判模型（ai/app/evals/），没配就和回答用同一组模型
     eval_judge_models: list[str] = field(default_factory=lambda: _list("EVAL_JUDGE_MODELS", ""))
     # 平台实况的数据（站点 nginx 提供的 /status.json，集群内地址），值班台的「📊 平台实况」读它
+    # 总控台读私人助理的运行情况（集群内地址，Ingress 不转发 /internal，外网访问不到）
+    assistant_url: str = field(default_factory=lambda: os.environ.get("ASSISTANT_URL", "http://assistant.ops-desk.svc/internal/summary"))
+    # 总控台（/console/）的私人密钥，和私人助理的打卡网页同一个（Secret ai-api 的 ME_TOKEN）；没配就关闭总控台
+    me_token: str = field(default_factory=lambda: os.environ.get("ME_TOKEN", ""))
     status_url: str = field(default_factory=lambda: os.environ.get("STATUS_URL", "http://ops-desk.ops-desk.svc/status.json"))
     # 网站的 Telegram 机器人（Secret telegram-ops）：自愈审批、访客留言；没配就不启动
     tg_token: str = field(default_factory=lambda: os.environ.get("TELEGRAM_BOT_TOKEN", ""))

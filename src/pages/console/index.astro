@@ -1,0 +1,19 @@
+---
+// 总控台：我所有的项目和资源一张图看全（私人页面，要密钥，不让搜索引擎收录）。不用 Base 布局：全屏深色、没有网站导航
+import '../../styles/global.css';
+import ConsoleBoard from '../../components/console/ConsoleBoard.vue';
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>总控台 · 向晓 AI</title>
+    <link rel="icon" href="/favicon.svg?v=4" type="image/svg+xml" />
+  </head>
+  <body class="min-h-screen bg-[#070b14] bg-[radial-gradient(ellipse_80%_40%_at_50%_0%,rgba(245,158,11,0.10),transparent_70%)] font-sans text-slate-100 antialiased">
+    <ConsoleBoard client:only="vue" />
+  </body>
+</html>

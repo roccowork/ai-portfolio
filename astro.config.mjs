@@ -10,7 +10,7 @@ export default defineConfig({
   trailingSlash: 'always',
   // 2026-10-30：平台实况并进运维 Agent 的值班大屏，旧地址跳过去
   redirects: { '/live': '/ops-agent/' },
-  integrations: [vue(), sitemap()],
+  integrations: [vue(), sitemap({ filter: (page) => !page.includes('/console/') })],
   vite: {
     plugins: [tailwindcss()],
   },

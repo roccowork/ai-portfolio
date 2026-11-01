@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from . import agent as ag
 from . import autoheal
 from . import chatbi
+from . import console
 from . import content as ct
 from . import demo_shop
 from . import dora
@@ -38,7 +39,7 @@ from . import opswall
 from . import triage as tr
 from .config import Settings
 from .gateway import PUBLIC_FEATURES, AIUnavailable, ChatResult, Gateway
-from .ledger import Ledger
+from .ledger import Ledger, today
 from .odoo import Odoo, OdooError
 from .rag import CaseQA, load_chunks
 
@@ -585,6 +586,36 @@ def create_app(
         return {"evals": evals, "heal": {"total": total, "fixed": fixed}}
 
     wall = opswall.OpsWall(k8s, status_json, wall_extras)
+
+    def console_local() -> dict:
+        """总控台要的本地数据：今天的模型调用、自愈记录、知识库（都在 ai.db 和内存里）"""
+        with ledger._lock:
+            rows = ledger._db.execute("SELECT feature, SUM(calls) FROM usage WHERE day=? GROUP BY feature", (today(),)).fetchall()
+            fixed = ledger._db.execute("SELECT COALESCE(SUM(status = 'fixed'), 0) FROM incidents").fetchone()[0]
+        rag = ledger.latest_eval("rag")
+        return {
+            "usage_today": ledger.summary()["today"],
+            "by_feature_today": {f: int(c or 0) for f, c in rows},
+            "heal_24h": healer.store.since(datetime.now(timezone.utc) - timedelta(hours=24)),
+            "heal_fixed": int(fixed),
+            "enabled": s.enabled,
+            "kb": {"ready": qa.ready, "chunks": len(qa.chunks), "hit": ((rag or {}).get("summary") or {}).get("hit_at_1")},
+        }
+
+    board = console.Console(k8s, status_json, console_local, s.assistant_url)
+    board_cache = opswall.Cache(20)
+
+    class KeyIn(BaseModel):
+        k: str = Field(min_length=1, max_length=200)
+
+    @app.post("/api/ai/console")
+    async def console_data(body: KeyIn):
+        """总控台：所有项目和资源的状态和关系。要私人密钥（密钥放请求体，不进访问日志）；不对就当不存在"""
+        if not s.me_token or not secrets.compare_digest(body.k.encode(), s.me_token.encode()):
+            raise HTTPException(404, "Not Found")
+        if not k8s.enabled:
+            raise HTTPException(503, "总控台只能在集群里运行")
+        return await board_cache.get(board.build)
 
     @app.get("/api/ai/ops/overview")
     async def ops_overview():

@@ -102,7 +102,7 @@ const field =
     >
       <div class="flex items-center gap-3 bg-slate-950 px-4 py-3 text-white">
         <img
-          src="/favicon.svg?v=3"
+          src="/favicon.svg?v=4"
           alt=""
           width="32"
           height="32"

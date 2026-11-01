@@ -360,6 +360,7 @@ k3s kubectl -n argocd delete secret argocd-initial-admin-secret
   | -------------------- | ------------ | ----- | ----------------------------------------------------------- |
   | `backup-uptime-kuma` | `monitoring` | 04:00 | Uptime Kuma 的数据库                                        |
   | `backup-dify`        | `dify`       | 04:10 | Dify 的数据库导出文件和上传的文件（Dify 跑在宿主机 Docker） |
+  | `backup-umami`       | `umami`      | 04:20 | 访问统计 Umami 的数据库（`pg_dump` 导出）                   |
   | `backup-github`      | `git-backup` | 04:40 | 所有 GitHub 账号的全部仓库（镜像，含私有仓库），见下文      |
   | `backup-ai-api`      | `ops-desk`   | 05:10 | `ai.db`：费用账本、自愈记录、评测结果                       |
   | `backup-assistant`   | `ops-desk`   | 05:30 | 私人助理的数据库（私有仓库）                                |
@@ -432,9 +433,30 @@ k3s kubectl -n ops-desk logs job/<上一步的 Job 名> --all-containers
 
 思路：停掉应用（缩容到 0）→ 用 restic 把最新快照恢复进 PVC → 用快照里的数据库替换 → 启动应用。恢复演练时把具体命令补在这里。
 
-## 10. 访问统计（已下线）
+## 10. 访问统计（Umami）
 
-GoatCounter 2026-10-28 下线，Argo CD 应用和清单已删除。它当时加的 Traefik `externalTrafficPolicy: Local`（`deploy/platform/traefik-config.yaml`）还在用：AI 接口按访客 IP 限流、算每日次数都靠它拿到真实 IP。
+自建的 [Umami](https://umami.is)（`deploy/apps/umami/`），后台 <https://stats.liuxd.dev>。不用 Cookie、不记录个人信息。2026-11-01 上线，替代 2026-10-28 下线的 GoatCounter。
+
+- 组成：Umami 3（Next.js）+ PostgreSQL 17，命名空间 `umami`；数据库每天 04:20 用 `pg_dump` 导出，restic 加密备份到 R2 的 `/umami`（CronJob `backup-umami`）
+- 统计脚本叫 `insight.js`（环境变量 `TRACKER_SCRIPT_NAME`，换掉默认名字，少被广告拦截插件拦）。网站在 `src/lib/site.ts` 的 `ANALYTICS.websiteId` 填上 ID 才会加载脚本，`noindex` 的私人页面不统计
+- 之前 GoatCounter 加的 Traefik `externalTrafficPolicy: Local`（`deploy/platform/traefik-config.yaml`）还在用：AI 接口按访客 IP 限流、算每日次数都靠它拿到真实 IP
+
+首次安装（Secret 不进仓库）：
+
+```bash
+k3s kubectl create namespace umami --dry-run=client -o yaml | k3s kubectl apply -f -
+k3s kubectl -n umami create secret generic umami \
+  --from-literal=db-password="$(openssl rand -hex 24)" \
+  --from-literal=app-secret="$(openssl rand -hex 32)"
+g() { k3s kubectl -n ops-desk get secret backup-r2 -o jsonpath="{.data.$1}" | base64 -d; }
+k3s kubectl -n umami create secret generic backup-r2 \
+  --from-literal=RESTIC_REPOSITORY="$(g RESTIC_REPOSITORY | sed 's#/[^/]*$#/umami#')" \
+  --from-literal=RESTIC_PASSWORD="$(g RESTIC_PASSWORD)" \
+  --from-literal=AWS_ACCESS_KEY_ID="$(g AWS_ACCESS_KEY_ID)" \
+  --from-literal=AWS_SECRET_ACCESS_KEY="$(g AWS_SECRET_ACCESS_KEY)"
+```
+
+然后打开 <https://stats.liuxd.dev>，用默认账号 `admin` / `umami` 登录，**马上改密码**（右上角头像 → Profile）。设置 → Websites → Add website（域名 `ops.liuxd.dev`），把得到的 Website ID 填进 `src/lib/site.ts`。
 
 ## 11. n8n 工作流平台（已删除）
 

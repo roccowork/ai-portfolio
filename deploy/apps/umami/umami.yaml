@@ -1,0 +1,196 @@
+# Umami：开源、不用 Cookie 的网站访问统计，替代 2026-10-28 下线的 GoatCounter。后台 https://stats.liuxd.dev
+# 两部分：Umami 本体（Next.js）+ 它的 PostgreSQL（Umami 3 只支持 PostgreSQL）。
+# Secret umami 由人在服务器上创建（不进仓库，命令见 docs/runbook.md 第 10 节）：
+#   db-password  数据库密码
+#   app-secret   Umami 给登录会话签名用的随机串
+# 第一次登录的默认账号是 admin / umami，部署后马上改密码。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: umami-db
+  annotations:
+    # local-path 删 PVC 就删数据，Argo CD 清理时跳过它
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: umami-db
+  labels:
+    app.kubernetes.io/name: umami-db
+spec:
+  replicas: 1
+  # 同一份数据目录不能有两个 PostgreSQL 同时打开：先停旧的再起新的
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: umami-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: umami-db
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 70 # 官方 alpine 镜像里的 postgres 用户
+        runAsGroup: 70
+        fsGroup: 70
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:17.10-alpine
+          env:
+            - { name: POSTGRES_USER, value: umami }
+            - { name: POSTGRES_DB, value: umami }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: umami, key: db-password }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, umami, -d, umami]
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: run, mountPath: /var/run/postgresql }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: umami-db
+        - name: run
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: umami-db
+spec:
+  selector:
+    app.kubernetes.io/name: umami-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: umami
+  labels:
+    app.kubernetes.io/name: umami
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: umami
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: umami
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001 # 镜像里的 nextjs 用户
+        runAsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: umami
+          image: umamisoftware/umami:3.4.0
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: umami, key: db-password }
+            - name: DATABASE_URL
+              value: postgresql://umami:$(DB_PASSWORD)@umami-db:5432/umami
+            - name: APP_SECRET
+              valueFrom:
+                secretKeyRef: { name: umami, key: app-secret }
+            # 统计脚本不用默认的 script.js：广告拦截插件按这个名字拦，换个名字少丢数据
+            - { name: TRACKER_SCRIPT_NAME, value: insight.js }
+            - { name: DISABLE_TELEMETRY, value: '1' }
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet: { path: /api/heartbeat, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/heartbeat, port: http }
+            # 第一次启动要建表，给足时间
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 20m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: umami
+spec:
+  selector:
+    app.kubernetes.io/name: umami
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: umami
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: umami-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [stats.liuxd.dev]
+      secretName: umami-tls
+  rules:
+    - host: stats.liuxd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: umami
+                port:
+                  name: http

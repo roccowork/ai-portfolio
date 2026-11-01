@@ -201,6 +201,34 @@ spec:
       limit: 10
       backoff: { duration: 30s, factor: 2, maxDuration: 10m }
 ---
+# 网站访问统计 Umami（deploy/apps/umami/）：https://stats.liuxd.dev
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: umami
+  namespace: argocd
+  labels:
+    layer: app
+    role: analytics
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/roccowork/ai-portfolio.git
+    targetRevision: main
+    path: deploy/apps/umami
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: umami
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 10m }
+---
 # LabPager（iOS App）的推送中转服务 https://push.liuxd.dev。代码和清单在 roccowork/labpager-ios 的 relay/，
 # 那个仓库开发期公开，Argo CD 不用凭据就能读；上架前改成私有时，要给它加部署密钥（同 personal 应用）
 apiVersion: argoproj.io/v1alpha1

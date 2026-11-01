@@ -1,0 +1,101 @@
+# 每天把 Umami 的数据库加密备份到 Cloudflare R2：先 pg_dump 导出到临时目录，再用 restic 备份（和其他应用共用 backup.sh 和告警）。
+# Secret backup-r2 从 ops-desk 命名空间复制，仓库路径换成 /umami（命令见 docs/runbook.md 第 10 节）。
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-umami
+spec:
+  schedule: '20 4 * * *'
+  timeZone: Asia/Singapore
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsUser: 70
+            runAsGroup: 70
+            runAsNonRoot: true
+            fsGroup: 70
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: dump
+              image: postgres:17.10-alpine
+              command:
+                [
+                  sh,
+                  -c,
+                  'pg_dump -h umami-db -U umami -d umami | gzip > /snapshot/umami.sql.gz && ls -l /snapshot',
+                ]
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: umami, key: db-password }
+              resources:
+                requests: { cpu: 20m, memory: 32Mi }
+                limits: { cpu: 500m, memory: 256Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - { name: snapshot, mountPath: /snapshot }
+          containers:
+            - name: restic
+              image: restic/restic:0.19.1
+              command: [sh, /scripts/backup.sh]
+              env:
+                - { name: BACKUP_HOST, value: umami }
+                - { name: AWS_DEFAULT_REGION, value: auto }
+                - { name: RESTIC_CACHE_DIR, value: /cache }
+                - { name: TMPDIR, value: /cache }
+              envFrom:
+                - secretRef:
+                    name: backup-r2
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 1000m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                # backup.sh 固定备份 /data 和 /snapshot；这里只有数据库导出，/data 给个空目录
+                - { name: empty, mountPath: /data, readOnly: true }
+                - { name: snapshot, mountPath: /snapshot, readOnly: true }
+                - { name: scripts, mountPath: /scripts }
+                - { name: cache, mountPath: /cache }
+          volumes:
+            - name: snapshot
+              emptyDir: {}
+            - name: empty
+              emptyDir: {}
+            - name: cache
+              emptyDir: {}
+            - name: scripts
+              configMap:
+                name: backup-scripts
+---
+# 备份失败时允许运维 Agent 自动补跑（权限定义见 deploy/k8s/base/ai.yaml 的 ai-api-heal）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-api-heal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ai-api-heal
+subjects:
+  - kind: ServiceAccount
+    name: ai-api
+    namespace: ops-desk

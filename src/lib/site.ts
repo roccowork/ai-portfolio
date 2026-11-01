@@ -19,6 +19,16 @@ export const PROFILE = {
   resume: '',
 };
 
+/**
+ * 访问统计（自建的 Umami，后台 https://stats.liuxd.dev，部署见 deploy/apps/umami/）。
+ * websiteId 在 Umami 后台「设置 → 网站」里添加 ops.liuxd.dev 后获得；留空时不加统计脚本。
+ * 不用 Cookie、不记录个人信息，所以不需要弹 Cookie 提示。
+ */
+export const ANALYTICS = {
+  src: 'https://stats.liuxd.dev/insight.js',
+  websiteId: '',
+};
+
 /** 顶部导航 */
 export const NAV = [
   { name: '代表作', href: '/#projects' },

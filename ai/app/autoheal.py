@@ -28,7 +28,7 @@ from .gateway import AIUnavailable, Gateway
 log = logging.getLogger("ai")
 SG = ZoneInfo("Asia/Singapore")
 
-HEAL_NAMESPACES = ["ops-desk", "monitoring", "dify", "git-backup"]
+HEAL_NAMESPACES = ["ops-desk", "monitoring", "dify", "git-backup", "umami"]
 # 这些告警 Agent 帮不上忙（或者分析本身就要花钱），直接跳过
 SKIP_ALERTS = {"Watchdog", "InfoInhibitor", "AIDailyBudgetReached", "AIModelErrors"}
 SELF = "ai-api"

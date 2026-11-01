@@ -38,6 +38,7 @@ NODES = [
     {"id": "oncall", "col": "staff", "kind": "staff", "name": "值班员", "role": "运维 Agent", "desc": "告警一响自己查原因，低风险问题自动修复，关键操作推给我确认", "link": "https://ops.liuxd.dev/ops-agent/"},
     {"id": "editor", "col": "staff", "kind": "staff", "name": "编辑", "role": "AI 前沿流水线", "desc": "每天收集 AI 新闻，挑 3 条写口播稿，推给我把关", "link": "https://ops.liuxd.dev/me/pipeline/#k={k}"},
     {"id": "butler", "col": "staff", "kind": "staff", "name": "管家", "role": "私人助理", "desc": "提醒、早安简报、GitHub 趋势、VPS 状态"},
+    {"id": "coach", "col": "staff", "kind": "staff", "name": "求职顾问", "role": "LangGraph 求职助手", "desc": "我转发岗位，它对照简历打分、改简历、写打招呼和面试题，记录投递进度"},
     {"id": "deployer", "col": "staff", "kind": "staff", "name": "发布员", "role": "Argo CD", "desc": "代码推到 GitHub，自动同步上线；有人手动改了集群就改回来", "link": "https://argocd.liuxd.dev/"},
     {"id": "watcher", "col": "staff", "kind": "staff", "name": "监控员", "role": "Prometheus · 拨测", "desc": "采集指标、从外面拨测网站和依赖，出问题发告警", "link": "https://grafana.liuxd.dev/"},
     {"id": "archivist", "col": "staff", "kind": "staff", "name": "档案员", "role": "备份", "desc": "每天凌晨把数据库和全部 GitHub 仓库加密备份到 R2"},
@@ -73,6 +74,9 @@ EDGES = [
     ("oncall", "telegram", "汇报、等我确认", "heal"),
     ("telegram", "me", "消息", "telegram"),
     ("me", "media", "发布视频", None),
+    ("me", "coach", "转发岗位", "career"),
+    ("coach", "gateway", "分析、写材料", "career"),
+    ("coach", "repos", "读简历", "career"),
     ("repos", "deployer", "代码", "deploy"),
     ("deployer", "k3s", "上线", "deploy"),
     ("repos", "cloudflare", "静态网站", None),
@@ -85,7 +89,7 @@ EDGES = [
 
 SITE_PROBES = ["liuxd.dev", "cv.liuxd.dev", "roadmap.liuxd.dev", "ai-roadmap.liuxd.dev", "it.liuxd.dev"]
 # Argo CD 应用 → 它管着的节点
-ARGO_NODES = {"ops-desk": ["xiaoxiao", "oncall", "gateway"], "personal": ["butler", "editor"], "umami": ["analyst"], "git-backup": ["archivist"],
+ARGO_NODES = {"ops-desk": ["xiaoxiao", "oncall", "gateway"], "personal": ["butler", "editor", "coach"], "umami": ["analyst"], "git-backup": ["archivist"],
               "monitoring-extras": ["watcher"], "platform": ["k3s", "watcher"], "dify": ["dify"]}
 
 
@@ -188,6 +192,12 @@ class Console:
                      f"上次 {_ago(fr['ts'], now)}：{fr['picks']} 条选题", f"新闻源 {fr['sources_ok']}/{fr['sources']} 连通")
             else:
                 set_("editor", "idle", "还没有运行过")
+        cr = (asst or {}).get("career")
+        if cr is not None:
+            set_("coach", nodes["coach"]["status"] if nodes["coach"]["status"] != "unknown" else "ok",
+                 f"本周分析 {cr['week']} 个岗位，共 {cr['total']} 个", f"已投 {cr['applied']} · 面试中 {cr['interview']} · offer {cr['offer']}")
+        elif asst is None:
+            set_("coach", "bad", "连不上私人助理")
         apps = argo or []
         bad_apps = [a["name"] for a in apps if not (a["sync"] == "Synced" and a["health"] == "Healthy")]
         deploys = (st or {}).get("deploys") or []
@@ -241,6 +251,7 @@ class Console:
             "heal": bool(heal),
             "model_calls": bool(calls_1h and calls_1h > 0),
             "butler": bool(asst and asst.get("bot")),
+            "career": bool(cr and cr["week"] > 0),
             "alerts": bool(firing or heal),
             "metrics": probe is not None,
             "telegram": bool(asst and asst.get("bot")) or bool(heal),

@@ -73,7 +73,7 @@ def make(tmp_path, assistant: dict | None):
 
 def test_build_from_real_signals(tmp_path):
     fr = {"ts": iso(3), "status": "ok", "candidates": 30, "picks": 3, "sources": 7, "sources_ok": 6}
-    d = asyncio.run(make(tmp_path, {"bot": True, "frontier": fr}).build())
+    d = asyncio.run(make(tmp_path, {"bot": True, "frontier": fr, "career": {"total": 4, "week": 2, "applied": 1, "interview": 1, "offer": 0}}).build())
     n = {x["id"]: x for x in d["nodes"]}
     e = {(x["from"], x["to"]): x["state"] for x in d["edges"]}
     assert n["sites"]["status"] == "bad" and "it.liuxd.dev" in "".join(n["sites"]["lines"])
@@ -84,7 +84,8 @@ def test_build_from_real_signals(tmp_path):
     # 流动：有提问、有模型调用、刚发布过、AI 前沿刚跑过；GitHub 镜像备份过期了不算流动；连到异常节点的线标红
     assert e[("visitors", "xiaoxiao")] == "flow" and e[("gateway", "models")] == "flow" and e[("deployer", "k3s")] == "flow"
     assert e[("news", "editor")] == "flow" and e[("archivist", "repos")] == "idle" and e[("visitors", "analyst")] == "bad"
-    assert d["summary"]["staff"] == 8 and "统计员" in d["summary"]["problems"]
+    assert "本周分析 2 个岗位，共 4 个" in n["coach"]["lines"] and e[("me", "coach")] == "flow"
+    assert d["summary"]["staff"] == 9 and "统计员" in d["summary"]["problems"]
 
 
 def test_assistant_down_does_not_break(tmp_path):

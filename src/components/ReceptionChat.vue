@@ -15,7 +15,7 @@ const msgs = ref<Msg[]>([
   {
     role: 'assistant',
     content:
-      '你好，我是这个作品集的 AI 助手，回答依据本站的作品资料。可以问我做过哪些项目、用了什么技术、某个设计为什么这样做。',
+      '你好，我是小晓，这个作品集的 AI 助手，回答依据本站的作品资料。可以问我做过哪些项目、用了什么技术、某个设计为什么这样做。',
   },
 ]);
 const input = ref('');
@@ -101,12 +101,15 @@ const field =
       class="mb-3 flex h-[min(560px,calc(100vh-7rem))] w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200"
     >
       <div class="flex items-center gap-3 bg-slate-950 px-4 py-3 text-white">
-        <span
-          class="grid size-8 place-items-center rounded-lg bg-amber-400 text-xs font-bold text-slate-950"
-          >AI</span
-        >
+        <img
+          src="/favicon.svg?v=3"
+          alt=""
+          width="32"
+          height="32"
+          class="size-8 ring-1 ring-white/20 rounded-lg"
+        />
         <div class="leading-tight">
-          <p class="text-sm font-semibold">作品集 AI 助手</p>
+          <p class="text-sm font-semibold">小晓 · 作品集 AI 助手</p>
           <p class="flex items-center gap-1.5 text-xs text-slate-400">
             <span class="size-1.5 rounded-full bg-emerald-400"></span>在线 · 通常几秒内回复
           </p>

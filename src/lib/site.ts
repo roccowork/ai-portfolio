@@ -5,8 +5,14 @@
  */
 
 export const BRAND = {
-  name: 'Applied AI Lab',
+  // 「向晓」：朝着天亮走（取自古诗词里的「向晓」）；英文 Dawnward 是同一个意思
+  name: '向晓 AI',
+  nameEn: 'Dawnward AI',
   tagline: 'AI 应用开发作品集',
+  slogan: '向晓而行，终见万丈光芒',
+  sloganEn: 'Toward the dawn, into the full light.',
+  /** 右下角 AI 助手的名字 */
+  assistant: '小晓',
 };
 
 export const PROFILE = {

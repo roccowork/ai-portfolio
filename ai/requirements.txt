@@ -5,3 +5,5 @@ numpy==2.5.4
 prometheus-client==0.26.0
 pillow==13.0.0
 python-multipart==0.0.32
+# 私人助理的求职助手用 LangGraph 编排流程（私人代码在私有仓库，跑在这个镜像上）；实测加载后多占约 32MB 内存
+langgraph==1.2.16

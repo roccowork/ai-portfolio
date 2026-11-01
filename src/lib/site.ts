@@ -26,7 +26,7 @@ export const PROFILE = {
  */
 export const ANALYTICS = {
   src: 'https://stats.liuxd.dev/insight.js',
-  websiteId: '',
+  websiteId: 'a3329527-bc76-4157-bbf2-fab0bcba0492',
 };
 
 /** 顶部导航 */

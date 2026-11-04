@@ -3,6 +3,7 @@
 每个自动化项目是一名「数字员工」（有名字、岗位、今天干了多少活），服务器、知识库、外部平台是「资源」；
 连线表示谁把数据交给谁，最近真有数据在这条线上走过（发布、备份、调用模型、告警……），连线就标成「流动中」。
 所有状态都来自真实数据：外部拨测、Argo CD、平台实况（/status.json）、账本、自愈记录、私人助理的运行记录。
+私人项目的数字员工由私人助理自己报上来（见 private_staff），名字和说明不写在这个公开仓库里。
 只读，不调用模型。页面要私人密钥（ME_TOKEN）：里面有私人项目的状态。
 """
 
@@ -91,6 +92,37 @@ SITE_PROBES = ["liuxd.dev", "cv.liuxd.dev", "roadmap.liuxd.dev", "ai-roadmap.liu
 # Argo CD 应用 → 它管着的节点
 ARGO_NODES = {"ops-desk": ["xiaoxiao", "oncall", "gateway"], "personal": ["butler", "editor", "coach"], "umami": ["analyst"], "git-backup": ["archivist"],
               "monitoring-extras": ["watcher"], "platform": ["k3s", "watcher"], "dify": ["dify"]}
+
+
+# 私人助理自己报的私人数字员工（私人项目的名字和说明只在私有仓库，公开代码里不写）：
+# 助理的 /internal/summary 返回 staff: [{id, name, role, desc, link, status, lines, edges: [{from, to, label, flow}]}]。
+# 节点 id 统一加 p- 前缀，连线只能连到已有节点或别的私人员工；状态只认下面这几种
+PRIVATE_STATUS = {"ok", "warn", "bad", "idle", "unknown", "manual"}
+
+
+def private_staff(asst: dict | None) -> tuple[list[dict], list[tuple[str, str, str, bool]]]:
+    nodes: list[dict] = []
+    edges: list[tuple[str, str, str, bool]] = []
+    raw = (asst or {}).get("staff")
+    if not isinstance(raw, list):
+        return nodes, edges
+    for x in raw[:8]:
+        if not isinstance(x, dict) or not str(x.get("id") or "").strip() or not x.get("name"):
+            continue
+        nid = "p-" + str(x["id"]).strip()[:30]
+        if any(n["id"] == nid for n in nodes):
+            continue
+        link = str(x.get("link") or "")
+        nodes.append({
+            "id": nid, "col": "staff", "kind": "staff", "name": str(x["name"])[:20], "role": str(x.get("role") or "")[:30],
+            "desc": str(x.get("desc") or "")[:120], **({"link": link} if link.startswith("https://") else {}),
+            "status": x.get("status") if x.get("status") in PRIVATE_STATUS else "unknown",
+            "lines": [str(line)[:80] for line in (x.get("lines") or [])[:3] if line],
+        })
+        for e in (x.get("edges") or [])[:6]:
+            if isinstance(e, dict) and e.get("from") and e.get("to"):
+                edges.append((str(e["from"]), str(e["to"]), str(e.get("label") or "")[:20], bool(e.get("flow"))))
+    return nodes, edges
 
 
 def _ago(iso: str | None, now: datetime) -> str:
@@ -243,6 +275,14 @@ class Console:
             nodes["dify"]["status"] = s if s != "unknown" else nodes["dify"]["status"]
         set_("dify", nodes["dify"]["status"], line)
 
+        # 私人助理报上来的私人数字员工：自己带状态和连线；助理所在的 Argo CD 应用不健康时一起标出来
+        extra_nodes, extra_edges = private_staff(asst)
+        personal = next((a for a in argo or [] if a["name"] == "personal"), None)
+        for n in extra_nodes:
+            if personal and not (personal["sync"] == "Synced" and personal["health"] == "Healthy") and n["status"] == "ok":
+                n["status"] = "warn"
+            nodes[n["id"]] = n
+
         # 最近真有数据走过的连线
         flows = {
             "asks": ask > 0,
@@ -263,6 +303,11 @@ class Console:
         for a, b, label, key in EDGES:
             broken = nodes[a]["status"] == "bad" or nodes[b]["status"] == "bad"
             edges.append({"from": a, "to": b, "label": label, "state": "bad" if broken else ("flow" if key and flows.get(key) else "idle")})
+        for a, b, label, flow in extra_edges:
+            # 私人员工的连线：两头都得是已有节点（普通节点写原 id，私人员工写 p-xxx）
+            if a in nodes and b in nodes and (a.startswith("p-") or b.startswith("p-")):
+                broken = nodes[a]["status"] == "bad" or nodes[b]["status"] == "bad"
+                edges.append({"from": a, "to": b, "label": label, "state": "bad" if broken else ("flow" if flow else "idle")})
         staff = [n for n in nodes.values() if n.get("kind") == "staff"]
         return {
             "generated": now.isoformat(),

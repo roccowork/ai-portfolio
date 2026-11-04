@@ -94,6 +94,29 @@ def test_assistant_down_does_not_break(tmp_path):
     assert n["butler"]["status"] == "bad" and n["visitors"]["status"] == "ok"
 
 
+def test_private_staff_from_assistant(tmp_path):
+    # 私人数字员工由私人助理报上来（这里是虚构的示例）；非法的节点、连线、状态都丢掉或纠正
+    staff = [
+        {"id": "demo", "name": "示例员工", "role": "示例岗位", "desc": "说明", "link": "https://ops.liuxd.dev/me/x/#k={k}", "status": "ok",
+         "lines": ["今天干了 3 件事"], "edges": [{"from": "me", "to": "p-demo", "label": "交给它", "flow": True},
+                                           {"from": "p-demo", "to": "butler", "label": "汇报"},
+                                           {"from": "p-demo", "to": "nowhere", "label": "无效"},
+                                           {"from": "me", "to": "butler", "label": "不许改普通节点之间的线"}]},
+        {"id": "demo", "name": "重复的 id"},
+        {"id": "", "name": "没有 id"},
+        {"id": "odd", "name": "怪状态", "status": "hacked", "link": "javascript:alert(1)"},
+        "不是对象",
+    ]
+    d = asyncio.run(make(tmp_path, {"bot": True, "staff": staff}).build())
+    n = {x["id"]: x for x in d["nodes"]}
+    e = {(x["from"], x["to"]): x["state"] for x in d["edges"]}
+    assert n["p-demo"]["col"] == "staff" and n["p-demo"]["status"] == "ok" and n["p-demo"]["lines"] == ["今天干了 3 件事"]
+    assert n["p-demo"]["name"] == "示例员工" and n["p-odd"]["status"] == "unknown" and "link" not in n["p-odd"]
+    assert e[("me", "p-demo")] == "flow" and e[("p-demo", "butler")] == "idle"
+    assert ("p-demo", "nowhere") not in e and ("me", "butler") not in e
+    assert d["summary"]["staff"] == 11
+
+
 def test_endpoint_needs_key(tmp_path):
     s = Settings(api_key="test", data_dir=tmp_path, cases_dir=CASES, samples_dir=tmp_path, me_token="secret-k")
     with TestClient(create_app(s, Gateway(s, Ledger(tmp_path / "ai.db")))) as c:

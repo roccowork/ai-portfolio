@@ -36,9 +36,22 @@ $K -n argocd create secret generic repo-ops-desk \
   --dry-run=client -o yaml | $K apply -f -
 $K -n argocd label secret repo-ops-desk argocd.argoproj.io/secret-type=repository --overwrite
 
+# LabPager（roccowork/labpager-ios，2026-11 起私有）：GitHub 一把部署密钥只能给一个仓库，单独一把
+KEY2=/root/.ssh/argocd-labpager
+[ -f "$KEY2" ] || ssh-keygen -t ed25519 -N '' -C 'argocd-labpager@ops-hk-1' -f "$KEY2" >/dev/null
+$K -n argocd create secret generic repo-labpager \
+  --from-literal=type=git \
+  --from-literal=url=git@github.com:roccowork/labpager-ios.git \
+  --from-file=sshPrivateKey="$KEY2" \
+  --dry-run=client -o yaml | $K apply -f -
+$K -n argocd label secret repo-labpager argocd.argoproj.io/secret-type=repository --overwrite
+
 echo
 $K get pods -n argocd
 echo
-echo "请把下面这行公钥添加到 GitHub：私有仓库 roccowork/ops-desk 的 Settings → Deploy keys → Add deploy key（不要勾选 Allow write access）"
+echo "请把下面两把公钥分别添加到 GitHub 仓库的 Settings → Deploy keys → Add deploy key（都不要勾选 Allow write access）"
 echo
+echo "== roccowork/ops-desk"
 cat "$KEY.pub"
+echo "== roccowork/labpager-ios"
+cat "$KEY2.pub"

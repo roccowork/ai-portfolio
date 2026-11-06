@@ -339,7 +339,7 @@ k3s kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data
 k3s kubectl -n argocd delete secret argocd-initial-admin-secret
 ```
 
-**仓库访问**：本仓库是公开的，Argo CD 直接用 HTTPS 拉取，不需要凭据。只有私人助理（`personal` 应用）在私有仓库 `roccowork/ops-desk`，用 SSH 部署密钥读取。私钥在服务器 `/root/.ssh/argocd-ops-desk` 和 Secret `argocd/repo-ops-desk`，公钥在 GitHub 仓库的 Deploy keys（只读）。查看公钥：`cat /root/.ssh/argocd-ops-desk.pub`。
+**仓库访问**：本仓库是公开的，Argo CD 直接用 HTTPS 拉取，不需要凭据。私人助理（`personal` 应用，私有仓库 `roccowork/ops-desk`）和 LabPager 推送中转（`labpager` 应用，私有仓库 `roccowork/labpager-ios`）用 SSH 部署密钥读取，一个仓库一把（GitHub 规定一把部署密钥只能给一个仓库）：私钥在服务器 `/root/.ssh/argocd-ops-desk`、`/root/.ssh/argocd-labpager` 和 Secret `argocd/repo-ops-desk`、`argocd/repo-labpager`，公钥在各自仓库的 Deploy keys（只读）。查看公钥：`cat /root/.ssh/argocd-*.pub`。
 
 ## 8. 安全相关
 

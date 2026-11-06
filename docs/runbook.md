@@ -480,6 +480,8 @@ k3s kubectl -n umami create secret generic backup-r2 \
 
 处理：k3s 用单独的上游 `/etc/rancher/k3s/resolv.conf`（1.1.1.1、1.0.0.1、9.9.9.9），`config.yaml` 里加 `resolv-conf`（`deploy/server/install-k3s.sh` 已经写好），重启 k3s 和 CoreDNS；之后只改这个文件的话，重启 CoreDNS 就行。**不要用国内的公共 DNS**（阿里 223.5.5.5、腾讯 119.29.29.29）：对 Telegram 等被墙的域名返回假 IP，第一次修的时候加了阿里，值班台机器人随即连不上 Telegram（`All connection attempts failed`）。排查时逐个测上游：`dig +time=2 @1.1.1.1 github.com`、`dig +tcp …`、`dig +tls …`。
 
+**Telegram 连不上**（同一天）：DNS 修好后，两个机器人仍然 `All connection attempts failed`。`api.telegram.org` 解析到的 `149.154.166.110` 从机房 ping 不通，另一个 `149.154.167.220` 正常。`deploy/platform/coredns-custom.yaml` 让集群里把 api.telegram.org 固定解析到能通的那个；以后又连不上，先 `ping` 和 `curl --resolve` 逐个 IP 测，再改这个文件。
+
 ## 12. AI 服务（作品集的 AI 后端）
 
 **2026-10-29 改版为作品集**：首页是代表作（运维 Agent、ChatBI、GitOps 平台）。2026-10-30：加了 RAG 代表作（`/rag/`）；`/live/` 并进运维 Agent 的值班大屏（`/ops-agent/`，旧地址自动跳转），GitOps 代表作改成讲部署流程（`/gitops/`）；ChatBI 在 `/chatbi/`（2026-10-29 起查本站真实运行数据，之前是虚构公司的销售库）；报价和服务套餐下线。

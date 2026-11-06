@@ -9,3 +9,4 @@ resources:
   - cluster-issuers.yaml
   - kube-prometheus-stack.yaml
   - traefik-config.yaml
+  - coredns-custom.yaml

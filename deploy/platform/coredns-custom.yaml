@@ -1,0 +1,21 @@
+# k3s 自带 CoreDNS 的自定义配置：k3s 会把这个 ConfigMap 挂到 /etc/coredns/custom/，*.server 是额外的 server 块。
+#
+# api.telegram.org 固定解析到 149.154.167.220（2026-11-06）：公共 DNS 给的 149.154.166.110 从香港机房 ping 不通（100% 丢包），
+# 值班台和私人助理两个机器人、Kuma 的通知都连不上 Telegram；149.154.167.220 实测正常（--resolve 测试返回 302，0.5 秒）。
+# 只影响集群里的 Pod，服务器本机不受影响。Telegram 换了 IP 或这个也不通时：删掉这个文件（或改 IP），重启 CoreDNS：
+#   k3s kubectl -n kube-system rollout restart deploy/coredns
+# 测某个 IP 能不能用：curl -4 -sm8 -o /dev/null -w "%{http_code}\n" --resolve api.telegram.org:443:<IP> https://api.telegram.org
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  telegram.server: |
+    api.telegram.org:53 {
+        hosts {
+            149.154.167.220 api.telegram.org
+        }
+        log
+        errors
+    }

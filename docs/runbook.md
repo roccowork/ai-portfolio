@@ -478,7 +478,7 @@ k3s kubectl -n umami create secret generic backup-r2 \
 
 原因：CoreDNS 的上游是服务器商默认的 `8.8.8.8` 和 `2001:4860:4860::8888`。机房干扰发往 8.8.8.8 的 53 端口（UDP、TCP 都超时，ping 正常），机器又没有 IPv6。服务器本机的 `127.0.0.53` 有缓存，所以在服务器上直接 `getent hosts` 看不出问题。
 
-处理：k3s 用单独的上游 `/etc/rancher/k3s/resolv.conf`（1.1.1.1、223.5.5.5、1.0.0.1），`config.yaml` 里加 `resolv-conf`（`deploy/server/install-k3s.sh` 已经写好），重启 k3s 和 CoreDNS。排查时逐个测上游：`dig +time=2 @1.1.1.1 github.com`、`dig +tcp …`、`dig +tls …`。
+处理：k3s 用单独的上游 `/etc/rancher/k3s/resolv.conf`（1.1.1.1、1.0.0.1、9.9.9.9），`config.yaml` 里加 `resolv-conf`（`deploy/server/install-k3s.sh` 已经写好），重启 k3s 和 CoreDNS；之后只改这个文件的话，重启 CoreDNS 就行。**不要用国内的公共 DNS**（阿里 223.5.5.5、腾讯 119.29.29.29）：对 Telegram 等被墙的域名返回假 IP，第一次修的时候加了阿里，值班台机器人随即连不上 Telegram（`All connection attempts failed`）。排查时逐个测上游：`dig +time=2 @1.1.1.1 github.com`、`dig +tcp …`、`dig +tls …`。
 
 ## 12. AI 服务（作品集的 AI 后端）
 

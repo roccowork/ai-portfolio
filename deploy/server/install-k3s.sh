@@ -9,11 +9,13 @@ PUBLIC_IP="${1:?用法: bash install-k3s.sh <公网IP>}"
 mkdir -p /etc/rancher/k3s
 # 集群 DNS（CoreDNS）的上游：不用服务器商默认的 8.8.8.8 和 IPv6 地址。
 # 2026-11-06：香港机房干扰发往 8.8.8.8 的 53 端口（UDP、TCP 都超时，ping 正常），这台机器又没有 IPv6，
-# Argo CD 拉不到 GitHub、拨测把 GitHub / Telegram / Cloudflare 同时报成连不上。1.1.1.1 和阿里 223.5.5.5 实测正常
+# Argo CD 拉不到 GitHub、拨测把 GitHub / Telegram / Cloudflare 同时报成连不上。
+# 不能用国内的公共 DNS（阿里 223.5.5.5、腾讯 119.29.29.29）：它们对 Telegram 等被墙的域名返回假 IP，
+# CoreDNS 随机挑上游，挑中就连不上（2026-11-06 换上阿里后值班台机器人连不上 Telegram）
 cat > /etc/rancher/k3s/resolv.conf <<'EOF2'
 nameserver 1.1.1.1
-nameserver 223.5.5.5
 nameserver 1.0.0.1
+nameserver 9.9.9.9
 EOF2
 cat > /etc/rancher/k3s/config.yaml <<EOF
 # 节点名固定：主机名里有大写字母，不符合 K8s 命名规范；换服务器时节点名也保持不变

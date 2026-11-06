@@ -148,6 +148,22 @@ spec:
           annotations:
             summary: '网站 {{ $labels.name }} 打不开'
             description: '连续 5 分钟访问 {{ $labels.instance }} 失败（连不上、超时或没返回 2xx）。ops、dify、status、grafana、argocd 在本服务器上；liuxd.dev、cv、roadmap、ai-roadmap、it 托管在 Cloudflare Pages，要去 Cloudflare 控制台看。'
+        # 服务器自己的国际出口卡了：托管在别处的网站和外部服务同时连不上（2026-11-06 凌晨 GitHub、Telegram、
+        # Cloudflare Pages 上的 roadmap / ai-roadmap / cv、VPS 同时报警，其实它们都好好的，是香港机房晚高峰线路拥堵）。
+        # 3 个以上同时不通就只报这一条，Alertmanager 用它压住单个的 DependencyDown / SiteDown（见 kube-prometheus-stack.yaml 的 inhibit_rules）。
+        # for 比它们短，保证先触发
+        - alert: OutboundDegraded
+          expr: |
+            count(
+              (probe_success{group="dependency"} == 0)
+              or (probe_success{group="own", name=~"liuxd\\.dev|cv\\.liuxd\\.dev|roadmap\\.liuxd\\.dev|ai-roadmap\\.liuxd\\.dev|it\\.liuxd\\.dev"} == 0)
+            ) >= 3
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: '服务器国际出口异常：{{ $value }} 个外部服务同时连不上'
+            description: '托管在别处的网站（Cloudflare Pages）和外部依赖（GitHub、Telegram、Cloudflare、百炼）同时探测失败，说明是本服务器所在机房的国际线路拥堵或断网，不是对方挂了。服务本身没事，一般晚高峰过去会自己恢复；单个服务的告警已被压住。长时间不恢复就联系服务器商。'
         - alert: DependencyDown
           expr: probe_success{group="dependency"} == 0
           for: 10m

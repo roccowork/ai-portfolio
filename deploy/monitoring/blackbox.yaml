@@ -149,8 +149,9 @@ spec:
       static:
         # 阿里云百炼（大模型），不带密钥返回 401
         - https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models
-        # GitHub（代码、CI）和 GHCR（镜像），GHCR 不带密钥返回 401
-        - https://github.com/
+        # GitHub（代码、CI）和 GHCR（镜像），GHCR 不带密钥返回 401。
+        # GitHub 测 api.github.com，不测首页：首页很大，从香港握手 0.05 秒但下载要 5～15 秒，经常撞上 10 秒超时（2026-11-06 误报）；api 0.1～0.5 秒
+        - https://api.github.com/
         - https://ghcr.io/v2/
         # Cloudflare（R2 备份、Pages 网站、DNS）
         - https://api.cloudflare.com/client/v4/
@@ -163,7 +164,7 @@ spec:
           replacement: 阿里云百炼
         - sourceLabels: [__param_target]
           targetLabel: name
-          regex: https://github.com/
+          regex: https://api.github.com/
           replacement: GitHub
         - sourceLabels: [__param_target]
           targetLabel: name

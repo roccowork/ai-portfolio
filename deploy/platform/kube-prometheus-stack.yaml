@@ -134,6 +134,11 @@ spec:
           - source_matchers: ['alertname = "OpsDeskNoReplicas"']
             target_matchers: ['alertname = "DeploymentReplicasLow"']
             equal: [namespace, deployment]
+          # 服务器国际出口异常时，外部服务和 Cloudflare Pages 上网站的单个告警都是它引起的，只报出口这一条
+          - source_matchers: ['alertname = "OutboundDegraded"']
+            target_matchers:
+              - 'alertname =~ "DependencyDown|SiteDown"'
+              - 'name =~ "GitHub|GHCR 镜像仓库|Cloudflare|Telegram|阿里云百炼|liuxd.dev|cv.liuxd.dev|roadmap.liuxd.dev|ai-roadmap.liuxd.dev|it.liuxd.dev"'
 
     grafana:
       # 管理员账号密码从 Secret 读取，Secret 由人在服务器上创建，不进仓库

@@ -159,6 +159,8 @@ spec:
               or (probe_success{group="own", name=~"liuxd\\.dev|cv\\.liuxd\\.dev|roadmap\\.liuxd\\.dev|ai-roadmap\\.liuxd\\.dev|it\\.liuxd\\.dev"} == 0)
             ) >= 3
           for: 3m
+          # 线路拥堵时通时断（2026-11-06 上午 09:37、09:48 各报一次）：触发后至少保持 30 分钟才算恢复，一次拥堵只报一条
+          keep_firing_for: 30m
           labels:
             severity: warning
           annotations:

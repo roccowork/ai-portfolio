@@ -472,6 +472,14 @@ k3s kubectl -n umami create secret generic backup-r2 \
 
 恢复：`cd /opt/dify/docker && docker compose start`，把 `/etc/cron.d/dify-dump` 加回来（内容见 `deploy/server/install-dify.sh`），再把上面几处仓库改动改回来。
 
+### 集群 DNS 解析失败（2026-11-06）
+
+现象：Argo CD 全部「状态未知」（`lookup github.com on 10.43.0.10:53: server misbehaving`），拨测把 GitHub、Telegram、Cloudflare、Pages 网站同时报成连不上，看起来像国际线路拥堵。
+
+原因：CoreDNS 的上游是服务器商默认的 `8.8.8.8` 和 `2001:4860:4860::8888`。机房干扰发往 8.8.8.8 的 53 端口（UDP、TCP 都超时，ping 正常），机器又没有 IPv6。服务器本机的 `127.0.0.53` 有缓存，所以在服务器上直接 `getent hosts` 看不出问题。
+
+处理：k3s 用单独的上游 `/etc/rancher/k3s/resolv.conf`（1.1.1.1、223.5.5.5、1.0.0.1），`config.yaml` 里加 `resolv-conf`（`deploy/server/install-k3s.sh` 已经写好），重启 k3s 和 CoreDNS。排查时逐个测上游：`dig +time=2 @1.1.1.1 github.com`、`dig +tcp …`、`dig +tls …`。
+
 ## 12. AI 服务（作品集的 AI 后端）
 
 **2026-10-29 改版为作品集**：首页是代表作（运维 Agent、ChatBI、GitOps 平台）。2026-10-30：加了 RAG 代表作（`/rag/`）；`/live/` 并进运维 Agent 的值班大屏（`/ops-agent/`，旧地址自动跳转），GitOps 代表作改成讲部署流程（`/gitops/`）；ChatBI 在 `/chatbi/`（2026-10-29 起查本站真实运行数据，之前是虚构公司的销售库）；报价和服务套餐下线。

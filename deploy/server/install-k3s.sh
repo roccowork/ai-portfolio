@@ -7,6 +7,14 @@ K3S_VERSION="v1.36.5+k3s1"
 PUBLIC_IP="${1:?用法: bash install-k3s.sh <公网IP>}"
 
 mkdir -p /etc/rancher/k3s
+# 集群 DNS（CoreDNS）的上游：不用服务器商默认的 8.8.8.8 和 IPv6 地址。
+# 2026-11-06：香港机房干扰发往 8.8.8.8 的 53 端口（UDP、TCP 都超时，ping 正常），这台机器又没有 IPv6，
+# Argo CD 拉不到 GitHub、拨测把 GitHub / Telegram / Cloudflare 同时报成连不上。1.1.1.1 和阿里 223.5.5.5 实测正常
+cat > /etc/rancher/k3s/resolv.conf <<'EOF2'
+nameserver 1.1.1.1
+nameserver 223.5.5.5
+nameserver 1.0.0.1
+EOF2
 cat > /etc/rancher/k3s/config.yaml <<EOF
 # 节点名固定：主机名里有大写字母，不符合 K8s 命名规范；换服务器时节点名也保持不变
 node-name: ops-hk-1
@@ -17,6 +25,8 @@ tls-san:
 write-kubeconfig-mode: "0600"
 # Secret 在 etcd/sqlite 里加密存储
 secrets-encryption: true
+# CoreDNS 和 dnsPolicy: Default 的 Pod 用这个文件当上游 DNS（见上面的 resolv.conf）
+resolv-conf: /etc/rancher/k3s/resolv.conf
 # 每次部署都会留下旧镜像，系统盘只有 40G：磁盘用到 70% 就开始清理不再使用的镜像，清到 60%
 # （默认是 85% / 80%，到那时已经接近磁盘告警线）
 kubelet-arg:

@@ -147,7 +147,7 @@ spec:
             severity: critical
           annotations:
             summary: '网站 {{ $labels.name }} 打不开'
-            description: '连续 5 分钟访问 {{ $labels.instance }} 失败（连不上、超时或没返回 2xx）。ops、dify、status、grafana、argocd 在本服务器上；liuxd.dev、cv、roadmap、ai-roadmap、it 托管在 Cloudflare Pages，要去 Cloudflare 控制台看。'
+            description: '连续 5 分钟访问 {{ $labels.instance }} 失败（连不上、超时或没返回 2xx）。ops、status、grafana、argocd 在本服务器上；liuxd.dev、cv、roadmap、ai-roadmap、it 托管在 Cloudflare Pages，要去 Cloudflare 控制台看。'
         # 服务器自己的国际出口卡了：托管在别处的网站和外部服务同时连不上（2026-11-06 凌晨 GitHub、Telegram、
         # Cloudflare Pages 上的 roadmap / ai-roadmap / cv、VPS 同时报警，其实它们都好好的，是香港机房晚高峰线路拥堵）。
         # 3 个以上同时不通就只报这一条，Alertmanager 用它压住单个的 DependencyDown / SiteDown（见 kube-prometheus-stack.yaml 的 inhibit_rules）。

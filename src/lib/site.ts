@@ -43,11 +43,12 @@ export const NAV = [
   { name: '关于我', href: '/about/' },
 ];
 
-export type WorkStatus = 'production' | 'demo';
+export type WorkStatus = 'production' | 'demo' | 'offline';
 
 export const STATUS_LABEL: Record<WorkStatus, string> = {
   production: '真实环境运行中',
   demo: '演示数据',
+  offline: '演示已下线，可提供录屏',
 };
 
 export interface Work {
@@ -158,15 +159,10 @@ export const OTHER_WORKS: Work[] = [
     id: 'kb-agent',
     name: 'AI 客服 Agent（Dify）',
     summary:
-      '虚构的净水器公司「清源净水」的客服：知识库回答产品问题，调用自定义工具查订单、预约上门，工具接口由本站的 AI 后端提供。',
-    status: 'demo',
+      '虚构的净水器公司「清源净水」的客服：知识库回答产品问题，调用自定义工具查订单、预约上门，工具接口由本站的 AI 后端提供。2026-11 起 Dify 已停用以节省服务器资源，配置和数据都保留，需要时可以恢复。',
+    status: 'offline',
     highlights: [],
     stack: ['Dify', 'RAG', '自定义工具'],
-    demo: {
-      href: 'https://dify.liuxd.dev/chat/X2llFSUsp10ASkzl',
-      label: '在线体验',
-      hint: '可以查订单 QY1001～QY1005，无需注册',
-    },
   },
   {
     id: 'gateway',

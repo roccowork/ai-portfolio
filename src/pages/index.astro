@@ -17,7 +17,9 @@ const external = (href: string) => href.startsWith('http');
 const badge = (s: WorkStatus) =>
   s === 'production'
     ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-    : 'bg-sky-50 text-sky-700 ring-sky-200';
+    : s === 'offline'
+      ? 'bg-slate-100 text-slate-600 ring-slate-200'
+      : 'bg-sky-50 text-sky-700 ring-sky-200';
 ---
 
 <Base

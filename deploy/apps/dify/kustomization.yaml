@@ -4,6 +4,7 @@ kind: Kustomization
 namespace: dify
 resources:
   - dify.yaml
-  - backup.yaml
+  # 2026-11 Dify 停用（docker compose stop），不再每天备份；最后一次备份留在 R2。恢复使用时把下一行加回来
+  # - backup.yaml
 components:
   - ../../backup

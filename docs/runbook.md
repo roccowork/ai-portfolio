@@ -356,14 +356,14 @@ k3s kubectl -n argocd delete secret argocd-initial-admin-secret
 - 有状态的数据每天用 restic 加密备份到 Cloudflare R2，脚本在 `deploy/backup/`（`backup.sh` 备份和清理旧快照，`snapshot.mjs` 先给正在使用的 SQLite 做一致性快照），各应用共用
 - 现在的备份任务（新加坡时间）：
 
-  | CronJob              | 命名空间     | 时间  | 内容                                                        |
-  | -------------------- | ------------ | ----- | ----------------------------------------------------------- |
-  | `backup-uptime-kuma` | `monitoring` | 04:00 | Uptime Kuma 的数据库                                        |
-  | `backup-dify`        | `dify`       | 04:10 | Dify 的数据库导出文件和上传的文件（Dify 跑在宿主机 Docker） |
-  | `backup-umami`       | `umami`      | 04:20 | 访问统计 Umami 的数据库（`pg_dump` 导出）                   |
-  | `backup-github`      | `git-backup` | 04:40 | 所有 GitHub 账号的全部仓库（镜像，含私有仓库），见下文      |
-  | `backup-ai-api`      | `ops-desk`   | 05:10 | `ai.db`：费用账本、自愈记录、评测结果                       |
-  | `backup-assistant`   | `ops-desk`   | 05:30 | 私人助理的数据库（私有仓库）                                |
+  | CronJob              | 命名空间     | 时间  | 内容                                                                                  |
+  | -------------------- | ------------ | ----- | ------------------------------------------------------------------------------------- |
+  | `backup-uptime-kuma` | `monitoring` | 04:00 | Uptime Kuma 的数据库                                                                  |
+  | `backup-dify`        | `dify`       | 04:10 | Dify 的数据库导出文件和上传的文件（2026-11-06 Dify 停用，这个任务已撤下，见第 11 节） |
+  | `backup-umami`       | `umami`      | 04:20 | 访问统计 Umami 的数据库（`pg_dump` 导出）                                             |
+  | `backup-github`      | `git-backup` | 04:40 | 所有 GitHub 账号的全部仓库（镜像，含私有仓库），见下文                                |
+  | `backup-ai-api`      | `ops-desk`   | 05:10 | `ai.db`：费用账本、自愈记录、评测结果                                                 |
+  | `backup-assistant`   | `ops-desk`   | 05:30 | 私人助理的数据库（私有仓库）                                                          |
 
 - 保留策略：最近 7 天、4 周、6 个月各一份
 - 告警：备份任务失败（`BackupJobFailed`），或超过 26 小时没有成功（`BackupStale`）。运维 Agent 收到备份失败的告警会自动补跑一次
@@ -460,7 +460,17 @@ k3s kubectl -n umami create secret generic backup-r2 \
 
 ## 11. n8n 工作流平台（已删除）
 
-2026-10-24 从集群下线，2026-10-31 删除清单（`deploy/apps/n8n/`）。工作流类的演示用 Dify；以后需要时从 git 历史恢复（删除前最后一次修改：`4329d94`）。
+2026-10-24 从集群下线，2026-10-31 删除清单（`deploy/apps/n8n/`）。以后需要时从 git 历史恢复（删除前最后一次修改：`4329d94`）。
+
+### Dify（2026-11-06 停用）
+
+用得少、最占资源（十来个容器），停掉省内存；想体验功能用官网云版。**只停不删**：`/opt/dify` 的配置和数据都在，R2 里留着停用前最后一次备份。停用时做了这些：
+
+- 宿主机：`cd /opt/dify/docker && docker compose stop`，删掉每天导出数据库的 `/etc/cron.d/dify-dump`
+- 仓库：拨测去掉 dify.liuxd.dev，总控台去掉 Dify 节点，`deploy/apps/dify/kustomization.yaml` 里注释掉 `backup.yaml`（不再每天备份），作品集卡片改成「演示已下线」
+- Argo CD 应用 `dify`（Service、Ingress、证书）保留，恢复时不用重新配域名
+
+恢复：`cd /opt/dify/docker && docker compose start`，把 `/etc/cron.d/dify-dump` 加回来（内容见 `deploy/server/install-dify.sh`），再把上面几处仓库改动改回来。
 
 ## 12. AI 服务（作品集的 AI 后端）
 

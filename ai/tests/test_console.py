@@ -26,7 +26,7 @@ def fake(req: httpx.Request) -> httpx.Response:
     p, q = req.url.path, req.url.params.get("query", "")
     if p == "/api/v1/query":
         if q.startswith("probe_success"):
-            res = [{"metric": {"group": "own", "name": n}, "value": [0, "1"]} for n in ["ops.liuxd.dev", "liuxd.dev", "cv.liuxd.dev", "stats.liuxd.dev", "dify.liuxd.dev"]]
+            res = [{"metric": {"group": "own", "name": n}, "value": [0, "1"]} for n in ["ops.liuxd.dev", "liuxd.dev", "cv.liuxd.dev", "stats.liuxd.dev"]]
             res += [{"metric": {"group": "own", "name": "it.liuxd.dev"}, "value": [0, "0"]}]
             res += [{"metric": {"group": "dependency", "name": n}, "value": [0, "1"]} for n in ["阿里云百炼", "GitHub", "Cloudflare", "Telegram"]]
             return httpx.Response(200, json={"status": "success", "data": {"result": res}})

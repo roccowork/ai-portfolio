@@ -45,15 +45,14 @@ NODES = [
     {"id": "archivist", "col": "staff", "kind": "staff", "name": "档案员", "role": "备份", "desc": "每天凌晨把数据库和全部 GitHub 仓库加密备份到 R2"},
     {"id": "analyst", "col": "staff", "kind": "staff", "name": "统计员", "role": "Umami", "desc": "统计网站访问，不用 Cookie", "link": "https://stats.liuxd.dev/"},
     {"id": "gateway", "col": "data", "name": "模型网关", "desc": "所有模型调用都从这里走：选模型、记费用、每日上限", "link": "https://ops.liuxd.dev/gateway/"},
-    {"id": "kb", "col": "data", "name": "知识库", "desc": "作品集资料、运维手册（RAG，带评测）；Dify 里的示例知识库", "link": "https://ops.liuxd.dev/rag/"},
-    {"id": "dbs", "col": "data", "name": "业务数据", "desc": "账本和自愈记录、私人助理、访问统计、Dify"},
+    {"id": "kb", "col": "data", "name": "知识库", "desc": "作品集资料、运维手册（RAG，带评测）", "link": "https://ops.liuxd.dev/rag/"},
+    {"id": "dbs", "col": "data", "name": "业务数据", "desc": "账本和自愈记录、私人助理、访问统计"},
     {"id": "repos", "col": "data", "name": "GitHub 仓库", "desc": "全部项目的代码和文档", "link": "https://github.com/roccowork"},
     {"id": "k3s", "col": "platform", "name": "香港服务器", "desc": "单节点 K3s：网站、AI 服务、监控都跑在这里", "link": "https://ops.liuxd.dev/gitops/"},
     {"id": "models", "col": "platform", "name": "大模型", "desc": "阿里云百炼（默认）、OpenRouter（私人助理）"},
     {"id": "cloudflare", "col": "platform", "name": "Cloudflare", "desc": "DNS、静态网站（Pages）、备份存储（R2）", "link": "https://dash.cloudflare.com/"},
     {"id": "telegram", "col": "platform", "name": "Telegram", "desc": "告警、确认按钮、每日推送"},
     {"id": "news", "col": "platform", "name": "新闻源", "desc": "OpenAI、Google AI、Hugging Face、TechCrunch、The Verge、量子位、Hacker News"},
-    {"id": "dify", "col": "platform", "name": "Dify", "desc": "AI 应用搭建平台，客服 Agent 演示", "link": "https://dify.liuxd.dev/"},
 ]
 
 # 连线：flow 是判断「流动中」用的键，见 build() 里的 flows
@@ -85,13 +84,12 @@ EDGES = [
     ("archivist", "repos", "镜像", "backup_git"),
     ("archivist", "cloudflare", "加密备份到 R2", "backup"),
     ("analyst", "dbs", "写入", "traffic"),
-    ("dify", "dbs", "写入", None),
 ]
 
 SITE_PROBES = ["liuxd.dev", "cv.liuxd.dev", "roadmap.liuxd.dev", "ai-roadmap.liuxd.dev", "it.liuxd.dev"]
 # Argo CD 应用 → 它管着的节点
 ARGO_NODES = {"ops-desk": ["xiaoxiao", "oncall", "gateway"], "personal": ["butler", "editor", "coach"], "umami": ["analyst"], "git-backup": ["archivist"],
-              "monitoring-extras": ["watcher"], "platform": ["k3s", "watcher"], "dify": ["dify"]}
+              "monitoring-extras": ["watcher"], "platform": ["k3s", "watcher"]}
 
 
 # 私人助理自己报的私人数字员工（私人项目的名字和说明只在私有仓库，公开代码里不写）：
@@ -270,10 +268,6 @@ class Console:
         set_("telegram", s, line)
         if fr:
             set_("news", "ok" if fr["sources_ok"] == fr["sources"] else "warn", f"{fr['sources_ok']}/{fr['sources']} 个能读", f"上次 {fr['candidates']} 条候选")
-        s, line = probe_line("dify.liuxd.dev")
-        if nodes["dify"]["status"] in ("unknown", "ok"):
-            nodes["dify"]["status"] = s if s != "unknown" else nodes["dify"]["status"]
-        set_("dify", nodes["dify"]["status"], line)
 
         # 私人助理报上来的私人数字员工：自己带状态和连线；助理所在的 Argo CD 应用不健康时一起标出来
         extra_nodes, extra_edges = private_staff(asst)

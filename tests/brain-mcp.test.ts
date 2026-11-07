@@ -48,7 +48,7 @@ describe('个人知识库 MCP', () => {
     expect((await fetch(`${base}/healthz`)).status).toBe(200);
   });
 
-  it('握手协商协议版本，列出五个工具', async () => {
+  it('握手协商协议版本，列出六个工具', async () => {
     const init = await rpc('initialize', { protocolVersion: '2025-03-26' });
     expect(init.body.result.protocolVersion).toBe('2025-03-26');
     expect(init.body.result.instructions).toContain('wiki/');
@@ -57,6 +57,7 @@ describe('个人知识库 MCP', () => {
       'list_notes',
       'read_note',
       'search_notes',
+      'read_image',
       'write_note',
       'delete_note',
     ]);
@@ -107,5 +108,21 @@ describe('个人知识库 MCP', () => {
     expect(cleanPath('/wiki//a.md/')).toBe('wiki/a.md');
     expect(cleanPath('', { allowRoot: true })).toBe('');
     expect(() => cleanPath('私密')).toThrow();
+  });
+
+  it('看图片：返回 base64 和类型；私密/ 的图和非图片拒绝', async () => {
+    const png = Buffer.from('89504e470d0a1a0a', 'hex');
+    await writeFile(join(root, 'IMG_1.png'), png);
+    await writeFile(join(root, '私密/证件.jpg'), png);
+    const { body } = await rpc('tools/call', {
+      name: 'read_image',
+      arguments: { path: 'IMG_1.png' },
+    });
+    expect(body.result.content).toEqual([
+      { type: 'image', data: png.toString('base64'), mimeType: 'image/png' },
+    ]);
+    expect((await tool('read_image', { path: '私密/证件.jpg' })).error).toBe(true);
+    expect((await tool('read_image', { path: '原始/体检.md' })).error).toBe(true);
+    expect((await tool('read_image', { path: 'nope.png' })).error).toBe(true);
   });
 });

@@ -18,11 +18,20 @@ const BLOCKED = '私密';
 const WRITABLE = 'wiki';
 const MAX_FILE = 1024 * 1024;
 const MAX_BODY = 2 * 1024 * 1024;
+const MAX_IMAGE = 8 * 1024 * 1024;
+export const IMAGE_TYPES = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+};
 
 const INSTRUCTIONS = `这是用户的个人知识库（Obsidian 笔记，按 LLM Wiki 的方式组织）。
 - 原始/：用户随手记的原始资料（日记、体检、想法……），只读，不要改。
 - wiki/：你负责整理的主题页面（如 wiki/健康状况.md、wiki/人生履历.md）。把原始资料里的信息整理进对应页面，写明日期和来源（如「来源：原始/2026-11-07 体检.md」），页面之间用 [[页面名]] 互相链接。
 - 私密/：用户不让 AI 看的内容，访问不到。
+- 笔记里的图片（如 ![[IMG_6830.png]]，体检单、证件、截图）用 read_image 看，整理时把图里的信息写进 wiki，来源写图片所在的原始笔记。图片在仓库里的位置不一定在笔记旁边，找不到就先 list_notes。
 回答用户的问题前先 search_notes / read_note 查相关页面，以笔记里的内容为准，查不到就直说。`;
 
 export class NoteError extends Error {}
@@ -153,6 +162,21 @@ export function tools(root) {
         return out.length ? out.join('\n') : `没找到「${query}」`;
       },
     },
+    read_image: {
+      description:
+        '看一张图片（png、jpg、gif、webp，8MB 以内），比如笔记里 ![[IMG_6830.png]] 引用的体检单、截图。path 用 list_notes 返回的完整路径。',
+      inputSchema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+      async run({ path }) {
+        const rel = cleanPath(path);
+        const mimeType = IMAGE_TYPES[rel.split('.').pop()?.toLowerCase() ?? ''];
+        if (!mimeType) throw new NoteError('只能看 png、jpg、gif、webp 图片');
+        const full = await resolveIn(root, rel);
+        const st = await stat(full);
+        if (!st.isFile()) throw new NoteError(`不是文件：${rel}`);
+        if (st.size > MAX_IMAGE) throw new NoteError(`图片太大（${st.size} 字节）`);
+        return [{ type: 'image', data: (await readFile(full)).toString('base64'), mimeType }];
+      },
+    },
     write_note: {
       description:
         '写一篇 wiki 页面（整篇覆盖，不存在就新建）。只能写 wiki/ 下的 .md 文件。改已有页面前先 read_note，保留原有内容。',
@@ -220,8 +244,8 @@ export async function handle(msg, root) {
     const t = all[params.name];
     if (!t) return fail(-32602, `没有这个工具：${params.name}`);
     try {
-      const text = await t.run(params.arguments ?? {});
-      return ok({ content: [{ type: 'text', text }] });
+      const out = await t.run(params.arguments ?? {});
+      return ok({ content: typeof out === 'string' ? [{ type: 'text', text: out }] : out });
     } catch (e) {
       const text =
         e instanceof NoteError ? e.message : e?.code === 'ENOENT' ? '找不到这个文件' : '操作失败';

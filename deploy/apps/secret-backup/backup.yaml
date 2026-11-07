@@ -1,0 +1,133 @@
+# 每天把集群里人工创建的 Secret（密码、密钥、令牌）加密备份到 Cloudflare R2。
+# 这些不在 Git 里，以前服务器彻底坏了只能按运维手册一个个重新输入；有了这份备份，恢复一个文件、kubectl apply 就回来了。
+#   1. export（初始化容器）：用只读权限列出所有 Secret，挑出人工创建的，写成 /snapshot/secrets.json（脚本见 export.mjs）
+#   2. restic：加密备份到 R2，保留最近 7 天、4 周、6 个月（和其他应用共用 backup.sh 和告警）
+# 导出的文件只在这个 Pod 的临时目录里，任务结束就删掉；R2 上的是 restic 加密后的数据。
+# 恢复要 restic 密码，它本身也在这份备份里，所以 restic 密码必须另外存进密码管理器（runbook 第 9 节已经这样要求）。
+# Secret backup-r2 从 ops-desk 命名空间复制，仓库路径换成 /secrets（命令见 docs/runbook.md 第 17 节）。
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: secret-export
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: secret-export
+rules:
+  # 只读，不能改、不能删
+  - apiGroups: ['']
+    resources: [secrets]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: secret-export
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: secret-export
+subjects:
+  - kind: ServiceAccount
+    name: secret-export
+    namespace: secret-backup
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-secrets
+spec:
+  schedule: '0 5 * * *'
+  timeZone: Asia/Singapore
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: secret-export
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: export
+              image: node:24.21.0-alpine
+              command: [node, /export/export.mjs, /snapshot/secrets.json]
+              env:
+                - name: NODE_EXTRA_CA_CERTS
+                  value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              resources:
+                requests: { cpu: 20m, memory: 64Mi }
+                limits: { cpu: 500m, memory: 256Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - { name: snapshot, mountPath: /snapshot }
+                - { name: export-script, mountPath: /export }
+          containers:
+            - name: restic
+              image: restic/restic:0.19.1
+              command: [sh, /scripts/backup.sh]
+              env:
+                - { name: BACKUP_HOST, value: secrets }
+                - { name: AWS_DEFAULT_REGION, value: auto }
+                - { name: RESTIC_CACHE_DIR, value: /cache }
+                - { name: TMPDIR, value: /cache }
+              envFrom:
+                - secretRef:
+                    name: backup-r2
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 1000m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                # backup.sh 固定备份 /data 和 /snapshot，这里只有 /snapshot 里的导出文件，/data 给个空目录
+                - { name: empty, mountPath: /data, readOnly: true }
+                - { name: snapshot, mountPath: /snapshot, readOnly: true }
+                - { name: scripts, mountPath: /scripts }
+                - { name: cache, mountPath: /cache }
+          volumes:
+            # 放在内存里，不落到服务器磁盘
+            - name: snapshot
+              emptyDir: { medium: Memory, sizeLimit: 16Mi }
+            - name: empty
+              emptyDir: {}
+            - name: cache
+              emptyDir: {}
+            - name: export-script
+              configMap:
+                name: secret-export-script
+            - name: scripts
+              configMap:
+                name: backup-scripts
+---
+# 备份失败时允许运维 Agent 自动补跑（权限定义见 deploy/k8s/base/ai.yaml 的 ai-api-heal）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-api-heal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ai-api-heal
+subjects:
+  - kind: ServiceAccount
+    name: ai-api
+    namespace: ops-desk

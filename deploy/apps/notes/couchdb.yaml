@@ -1,0 +1,135 @@
+# 个人笔记同步：CouchDB，给 Obsidian 的 Self-hosted LiveSync 插件用。电脑和手机上的 Obsidian 都连 https://notes.liuxd.dev，
+# 改动几秒内同步到其他设备。笔记内容只存在这台服务器（和 R2 上的加密备份）里，不进任何仓库。
+# Secret couchdb 由人在服务器上创建（不进仓库，命令见 docs/runbook.md 第 17 节）：
+#   user / password  CouchDB 管理员账号，Obsidian 插件里也填这个
+# 没开匿名访问：除了账号密码，任何请求都返回 401。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: couchdb
+  annotations:
+    # local-path 删 PVC 就删数据，Argo CD 清理时跳过它
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: couchdb
+  labels:
+    app.kubernetes.io/name: couchdb
+spec:
+  replicas: 1
+  # 同一份数据目录不能有两个 CouchDB 同时打开：先停旧的再起新的
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: couchdb
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: couchdb
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 5984 # 官方镜像里的 couchdb 用户
+        runAsGroup: 5984
+        fsGroup: 5984
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: couchdb
+          image: couchdb:3.5.3
+          env:
+            - name: COUCHDB_USER
+              valueFrom:
+                secretKeyRef: { name: couchdb, key: user }
+            - name: COUCHDB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: couchdb, key: password }
+          ports:
+            - name: http
+              containerPort: 5984
+          # 所有地址都要登录，HTTP 探针拿不到 200，只查端口
+          readinessProbe:
+            tcpSocket: { port: http }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 20m, memory: 128Mi }
+            limits: { cpu: 1000m, memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: data, mountPath: /opt/couchdb/data }
+            # 只挂这一个文件：镜像启动时还要往 local.d 里写管理员配置，整个目录不能只读
+            - {
+                name: config,
+                mountPath: /opt/couchdb/etc/local.d/livesync.ini,
+                subPath: livesync.ini,
+                readOnly: true,
+              }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: couchdb
+        - name: config
+          configMap:
+            name: couchdb-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: couchdb
+spec:
+  selector:
+    app.kubernetes.io/name: couchdb
+  ports:
+    - name: http
+      port: 5984
+      targetPort: http
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: couchdb
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: notes-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [notes.liuxd.dev]
+      secretName: notes-tls
+  rules:
+    - host: notes.liuxd.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: couchdb
+                port:
+                  name: http

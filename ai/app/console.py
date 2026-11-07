@@ -42,7 +42,7 @@ NODES = [
     {"id": "coach", "col": "staff", "kind": "staff", "name": "求职顾问", "role": "LangGraph 求职助手", "desc": "我转发岗位，它对照简历打分、改简历、写打招呼和面试题，记录投递进度"},
     {"id": "deployer", "col": "staff", "kind": "staff", "name": "发布员", "role": "Argo CD", "desc": "代码推到 GitHub，自动同步上线；有人手动改了集群就改回来", "link": "https://argocd.liuxd.dev/"},
     {"id": "watcher", "col": "staff", "kind": "staff", "name": "监控员", "role": "Prometheus · 拨测", "desc": "采集指标、从外面拨测网站和依赖，出问题发告警", "link": "https://grafana.liuxd.dev/"},
-    {"id": "archivist", "col": "staff", "kind": "staff", "name": "档案员", "role": "备份", "desc": "每天凌晨把数据库和全部 GitHub 仓库加密备份到 R2"},
+    {"id": "archivist", "col": "staff", "kind": "staff", "name": "档案员", "role": "备份", "desc": "每天凌晨把数据库、笔记、全部 GitHub 仓库和集群密钥加密备份到 R2"},
     {"id": "analyst", "col": "staff", "kind": "staff", "name": "统计员", "role": "Umami", "desc": "统计网站访问，不用 Cookie", "link": "https://stats.liuxd.dev/"},
     {"id": "gateway", "col": "data", "name": "模型网关", "desc": "所有模型调用都从这里走：选模型、记费用、每日上限", "link": "https://ops.liuxd.dev/gateway/"},
     {"id": "kb", "col": "data", "name": "知识库", "desc": "作品集资料、运维手册（RAG，带评测）", "link": "https://ops.liuxd.dev/rag/"},
@@ -86,7 +86,7 @@ EDGES = [
 
 SITE_PROBES = ["liuxd.dev", "cv.liuxd.dev", "roadmap.liuxd.dev", "ai-roadmap.liuxd.dev", "it.liuxd.dev"]
 # Argo CD 应用 → 它管着的节点
-ARGO_NODES = {"ops-desk": ["xiaoxiao", "oncall", "gateway"], "personal": ["butler", "editor", "coach"], "umami": ["analyst"], "git-backup": ["archivist"],
+ARGO_NODES = {"ops-desk": ["xiaoxiao", "oncall", "gateway"], "personal": ["butler", "editor", "coach"], "umami": ["analyst"], "git-backup": ["archivist"], "secret-backup": ["archivist"], "notes": ["archivist"],
               "monitoring-extras": ["watcher"], "platform": ["k3s", "watcher"]}
 
 

@@ -229,6 +229,62 @@ spec:
       limit: 10
       backoff: { duration: 30s, factor: 2, maxDuration: 10m }
 ---
+# 个人笔记同步 CouchDB（deploy/apps/notes/）：https://notes.liuxd.dev，Obsidian 的 LiveSync 插件连它；笔记内容不进仓库
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: notes
+  namespace: argocd
+  labels:
+    layer: app
+    role: notes-sync
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/roccowork/ai-portfolio.git
+    targetRevision: main
+    path: deploy/apps/notes
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: notes
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 10m }
+---
+# 集群里人工创建的 Secret 每日加密备份到 R2（deploy/apps/secret-backup/）
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: secret-backup
+  namespace: argocd
+  labels:
+    layer: app
+    role: secret-backup
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/roccowork/ai-portfolio.git
+    targetRevision: main
+    path: deploy/apps/secret-backup
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: secret-backup
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 10
+      backoff: { duration: 30s, factor: 2, maxDuration: 10m }
+---
 # LabPager（iOS App）的推送中转服务 https://push.liuxd.dev。代码和清单在 roccowork/labpager-ios 的 relay/，
 # 那个仓库 2026-11 改成私有：Argo CD 用只读部署密钥经 SSH 读取（Secret argocd/repo-labpager，见 install-argocd.sh；
 # GitHub 规定一把部署密钥只能给一个仓库，所以和 personal 的分开）

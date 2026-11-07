@@ -1,0 +1,81 @@
+# 每天把笔记（CouchDB 的数据目录）加密备份到 Cloudflare R2，和其他应用共用 backup.sh 和告警。
+# CouchDB 的数据文件只追加不改写，运行中直接复制也是一致的（官方文档的备份方式），不用停服务。
+# Secret backup-r2 从 ops-desk 命名空间复制，仓库路径换成 /notes（命令见 docs/runbook.md 第 17 节）。
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-notes
+spec:
+  schedule: '50 4 * * *'
+  timeZone: Asia/Singapore
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsUser: 5984
+            runAsGroup: 5984
+            runAsNonRoot: true
+            fsGroup: 5984
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: restic
+              image: restic/restic:0.19.1
+              command: [sh, /scripts/backup.sh]
+              env:
+                - { name: BACKUP_HOST, value: notes }
+                - { name: AWS_DEFAULT_REGION, value: auto }
+                - { name: RESTIC_CACHE_DIR, value: /cache }
+                - { name: TMPDIR, value: /cache }
+              envFrom:
+                - secretRef:
+                    name: backup-r2
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 1000m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                # 单节点集群，ReadWriteOnce 的卷可以同时挂给 CouchDB 和备份任务
+                - { name: data, mountPath: /data, readOnly: true }
+                # backup.sh 固定备份 /data 和 /snapshot，这里没有 SQLite 快照，给个空目录
+                - { name: snapshot, mountPath: /snapshot }
+                - { name: scripts, mountPath: /scripts }
+                - { name: cache, mountPath: /cache }
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: couchdb
+            - name: snapshot
+              emptyDir: {}
+            - name: scripts
+              configMap:
+                name: backup-scripts
+            - name: cache
+              emptyDir: {}
+---
+# 备份失败时允许运维 Agent 自动补跑（权限定义见 deploy/k8s/base/ai.yaml 的 ai-api-heal）
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-api-heal
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ai-api-heal
+subjects:
+  - kind: ServiceAccount
+    name: ai-api
+    namespace: ops-desk

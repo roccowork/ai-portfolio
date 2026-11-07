@@ -74,20 +74,20 @@ curl https://ops.liuxd.dev/version.txt      # 确认回到上一个版本
 
 **前提**：在云服务商控制台新建 Ubuntu 24.04 实例，创建时注入电脑的 SSH 公钥；装好后按第 8 节开 ufw（只放行 SSH、80、443 和 K3s 内网两段，6443 不对外开放）。
 
-| 步骤 | 操作                                                                                                                                               | 说明                                                       |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| 1    | Cloudflare 把 `*.liuxd.dev` 的 A 记录改成新 IP（仅 DNS）；`liuxd.dev`、`cv`、`roadmap`、`ai-roadmap`、`it` 在 Cloudflare Pages 上，不用改          | 证书签发依赖 DNS 指向正确                                  |
-| 2    | 本机：`ssh-keyscan -t ed25519 <新IP>`，与 VNC 控制台里 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` 比对后写入 `known_hosts`                 | 防止首次连接被冒充                                         |
-| 3    | 本机：`scp -r deploy root@<新IP>:/root/ops-desk-deploy`                                                                                            | 复制全部脚本和清单                                         |
-| 4    | 服务器：`bash /root/ops-desk-deploy/server/init.sh`，有提示则 `reboot`                                                                             | 系统更新、fail2ban、自动安全更新                           |
-| 5    | 把手机公钥追加到 `/root/.ssh/authorized_keys`，**电脑和手机各登录一次确认**                                                                        | 关闭密码登录前的必要检查                                   |
-| 6    | 保持一个会话不断开，执行 `bash /root/ops-desk-deploy/server/ssh-hardening.sh`；新开会话验证电脑、手机都能登录、密码登录被拒绝                      | 关闭密码登录                                               |
-| 7    | `bash /root/ops-desk-deploy/server/install-k3s.sh <新IP>`                                                                                          | 固定版本的 k3s，含镜像自动清理                             |
-| 8    | 按第 6 节创建 `monitoring` 命名空间和两个 Secret；再按第 9 节在 `ops-desk`、`monitoring` 两个命名空间创建 Secret `backup-r2`（每天的备份任务要用） | 密码和 key 不在仓库里，要在 Argo CD 部署前准备好           |
-| 9    | `bash /root/ops-desk-deploy/server/install-argocd.sh`，把最后打印的公钥添加到 GitHub 仓库的 Deploy keys（不勾写权限），并删掉旧服务器的那把        | 每台服务器生成自己的部署密钥                               |
-| 10   | `k3s kubectl apply -f /root/ops-desk-deploy/argocd/applications.yaml`                                                                              | Argo CD 从 Git 装好其余全部组件，见下方说明，不需要重跑 CI |
-| 11   | **立刻**打开 `https://status.liuxd.dev` 创建 Uptime Kuma 管理员并按第 6 节配置；按第 7 节修改 Argo CD 管理员密码                                   | 初始化页面谁先打开谁就能设管理员                           |
-| 12   | 验证：`curl https://ops.liuxd.dev/version.txt` 与 Git 里的 `newTag` 一致；证书签发者为 Let's Encrypt；Grafana「ops-desk 总览」有数据               |                                                            |
+| 步骤 | 操作                                                                                                                                               | 说明                                                                                     |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 1    | Cloudflare 把 `*.liuxd.dev` 的 A 记录改成新 IP（仅 DNS）；`liuxd.dev`、`cv`、`roadmap`、`ai-roadmap`、`it` 在 Cloudflare Pages 上，不用改          | 证书签发依赖 DNS 指向正确                                                                |
+| 2    | 本机：`ssh-keyscan -t ed25519 <新IP>`，与 VNC 控制台里 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` 比对后写入 `known_hosts`                 | 防止首次连接被冒充                                                                       |
+| 3    | 本机：`scp -r deploy root@<新IP>:/root/ops-desk-deploy`                                                                                            | 复制全部脚本和清单                                                                       |
+| 4    | 服务器：`bash /root/ops-desk-deploy/server/init.sh`，有提示则 `reboot`                                                                             | 系统更新、fail2ban、自动安全更新                                                         |
+| 5    | 把手机公钥追加到 `/root/.ssh/authorized_keys`，**电脑和手机各登录一次确认**                                                                        | 关闭密码登录前的必要检查                                                                 |
+| 6    | 保持一个会话不断开，执行 `bash /root/ops-desk-deploy/server/ssh-hardening.sh`；新开会话验证电脑、手机都能登录、密码登录被拒绝                      | 关闭密码登录                                                                             |
+| 7    | `bash /root/ops-desk-deploy/server/install-k3s.sh <新IP>`                                                                                          | 固定版本的 k3s，含镜像自动清理                                                           |
+| 8    | 按第 6 节创建 `monitoring` 命名空间和两个 Secret；再按第 9 节在 `ops-desk`、`monitoring` 两个命名空间创建 Secret `backup-r2`（每天的备份任务要用） | 密码和 key 不在仓库里，要在 Argo CD 部署前准备好；有 Secret 备份时按第 17 节一次全部恢复 |
+| 9    | `bash /root/ops-desk-deploy/server/install-argocd.sh`，把最后打印的公钥添加到 GitHub 仓库的 Deploy keys（不勾写权限），并删掉旧服务器的那把        | 每台服务器生成自己的部署密钥                                                             |
+| 10   | `k3s kubectl apply -f /root/ops-desk-deploy/argocd/applications.yaml`                                                                              | Argo CD 从 Git 装好其余全部组件，见下方说明，不需要重跑 CI                               |
+| 11   | **立刻**打开 `https://status.liuxd.dev` 创建 Uptime Kuma 管理员并按第 6 节配置；按第 7 节修改 Argo CD 管理员密码                                   | 初始化页面谁先打开谁就能设管理员                                                         |
+| 12   | 验证：`curl https://ops.liuxd.dev/version.txt` 与 Git 里的 `newTag` 一致；证书签发者为 Let's Encrypt；Grafana「ops-desk 总览」有数据               |                                                                                          |
 
 第 10 步之后，Argo CD 按 `deploy/argocd/applications.yaml` 依次安装 cert-manager、kube-prometheus-stack、证书签发者（`platform` 应用），以及站点、监控附加组件、Dify 的 K8s 部分和私人助理。组件之间有依赖（比如告警规则要等 kube-prometheus-stack 装好 CRD），前几分钟部分应用同步失败是正常的，会自动重试；约 10 到 15 分钟后 `k3s kubectl -n argocd get applications` 全部显示 `Synced`、`Healthy`。
 
@@ -356,14 +356,16 @@ k3s kubectl -n argocd delete secret argocd-initial-admin-secret
 - 有状态的数据每天用 restic 加密备份到 Cloudflare R2，脚本在 `deploy/backup/`（`backup.sh` 备份和清理旧快照，`snapshot.mjs` 先给正在使用的 SQLite 做一致性快照），各应用共用
 - 现在的备份任务（新加坡时间）：
 
-  | CronJob              | 命名空间     | 时间  | 内容                                                                                  |
-  | -------------------- | ------------ | ----- | ------------------------------------------------------------------------------------- |
-  | `backup-uptime-kuma` | `monitoring` | 04:00 | Uptime Kuma 的数据库                                                                  |
-  | `backup-dify`        | `dify`       | 04:10 | Dify 的数据库导出文件和上传的文件（2026-11-06 Dify 停用，这个任务已撤下，见第 11 节） |
-  | `backup-umami`       | `umami`      | 04:20 | 访问统计 Umami 的数据库（`pg_dump` 导出）                                             |
-  | `backup-github`      | `git-backup` | 04:40 | 所有 GitHub 账号的全部仓库（镜像，含私有仓库），见下文                                |
-  | `backup-ai-api`      | `ops-desk`   | 05:10 | `ai.db`：费用账本、自愈记录、评测结果                                                 |
-  | `backup-assistant`   | `ops-desk`   | 05:30 | 私人助理的数据库（私有仓库）                                                          |
+  | CronJob              | 命名空间        | 时间  | 内容                                                                                  |
+  | -------------------- | --------------- | ----- | ------------------------------------------------------------------------------------- |
+  | `backup-uptime-kuma` | `monitoring`    | 04:00 | Uptime Kuma 的数据库                                                                  |
+  | `backup-dify`        | `dify`          | 04:10 | Dify 的数据库导出文件和上传的文件（2026-11-06 Dify 停用，这个任务已撤下，见第 11 节） |
+  | `backup-umami`       | `umami`         | 04:20 | 访问统计 Umami 的数据库（`pg_dump` 导出）                                             |
+  | `backup-github`      | `git-backup`    | 04:40 | 所有 GitHub 账号的全部仓库（镜像，含私有仓库），见下文                                |
+  | `backup-notes`       | `notes`         | 04:50 | 个人笔记同步服务 CouchDB 的数据目录，见第 17 节                                       |
+  | `backup-secrets`     | `secret-backup` | 05:00 | 集群里人工创建的全部 Secret（密码、密钥、令牌），见第 17 节                           |
+  | `backup-ai-api`      | `ops-desk`      | 05:10 | `ai.db`：费用账本、自愈记录、评测结果                                                 |
+  | `backup-assistant`   | `ops-desk`      | 05:30 | 私人助理的数据库（私有仓库）                                                          |
 
 - 保留策略：最近 7 天、4 周、6 个月各一份
 - 告警：备份任务失败（`BackupJobFailed`），或超过 26 小时没有成功（`BackupStale`）。运维 Agent 收到备份失败的告警会自动补跑一次
@@ -613,3 +615,61 @@ k3s kubectl -n monitoring create job tg-test --from=cronjob/daily-english   # �
 ```
 
 - 确认 Telegram 正常后可以删掉企业微信：`k3s kubectl -n monitoring delete secret wecom-bot`（不删也行，Telegram 优先）
+
+## 17. 个人笔记同步（CouchDB）和 Secret 备份
+
+### 笔记同步（`deploy/apps/notes/`）
+
+电脑和手机上的 Obsidian 装社区插件 Self-hosted LiveSync，都连 <https://notes.liuxd.dev>，改动几秒内同步到其他设备。2026-11-07 上线。
+
+- 组成：CouchDB 3.5（命名空间 `notes`，PVC `couchdb` 5Gi），配置在 `livesync.ini`（插件文档要求的 CORS、请求大小等）。所有地址都要登录，没有匿名访问
+- 笔记内容只在这台服务器和 R2 的加密备份里，不进任何 Git 仓库
+- 备份：每天 04:50 restic 直接备份数据目录（CouchDB 文件只追加不改写，运行中复制也一致），R2 路径 `/notes`
+
+首次安装（Secret 不进仓库）：
+
+```bash
+k3s kubectl create namespace notes --dry-run=client -o yaml | k3s kubectl apply -f -
+read -rs -p 'CouchDB 管理员密码（Obsidian 里也填这个）: ' P; echo
+k3s kubectl -n notes create secret generic couchdb --from-literal=user=admin --from-literal=password="$P"; unset P
+g() { k3s kubectl -n ops-desk get secret backup-r2 -o jsonpath="{.data.$1}" | base64 -d; }
+k3s kubectl -n notes create secret generic backup-r2 \
+  --from-literal=RESTIC_REPOSITORY="$(g RESTIC_REPOSITORY | sed 's#/[^/]*$#/notes#')" \
+  --from-literal=RESTIC_PASSWORD="$(g RESTIC_PASSWORD)" \
+  --from-literal=AWS_ACCESS_KEY_ID="$(g AWS_ACCESS_KEY_ID)" \
+  --from-literal=AWS_SECRET_ACCESS_KEY="$(g AWS_SECRET_ACCESS_KEY)"
+```
+
+验证：`curl -s -u admin:<密码> https://notes.liuxd.dev/` 返回 `"couchdb":"Welcome"`；不带密码返回 401。
+
+恢复：缩容 `couchdb` 到 0 → `restic restore latest --host notes --target /tmp/restore` → 把 `/tmp/restore/data/` 拷回 PVC 的目录（属主 5984）→ 扩回 1。
+
+### Secret 备份（`deploy/apps/secret-backup/`）
+
+每天 05:00 用只读权限列出全部 Secret，挑出人工创建的（跳过证书、Helm、控制器生成的和 `kube-system`），写成一个 `kubectl apply` 能直接用的文件，restic 加密备份到 R2 的 `/secrets`。导出文件只在 Pod 的内存目录里。
+
+```bash
+k3s kubectl create namespace secret-backup --dry-run=client -o yaml | k3s kubectl apply -f -
+g() { k3s kubectl -n ops-desk get secret backup-r2 -o jsonpath="{.data.$1}" | base64 -d; }
+k3s kubectl -n secret-backup create secret generic backup-r2 \
+  --from-literal=RESTIC_REPOSITORY="$(g RESTIC_REPOSITORY | sed 's#/[^/]*$#/secrets#')" \
+  --from-literal=RESTIC_PASSWORD="$(g RESTIC_PASSWORD)" \
+  --from-literal=AWS_ACCESS_KEY_ID="$(g AWS_ACCESS_KEY_ID)" \
+  --from-literal=AWS_SECRET_ACCESS_KEY="$(g AWS_SECRET_ACCESS_KEY)"
+```
+
+新服务器上恢复（在装 Argo CD 之前）：
+
+```bash
+# R2 账户、存储桶、密钥和 restic 密码从密码管理器里取
+export RESTIC_REPOSITORY='s3:https://<账户 ID>.r2.cloudflarestorage.com/<存储桶>/secrets' AWS_DEFAULT_REGION=auto
+read -rs -p 'Access Key ID: ' AWS_ACCESS_KEY_ID; echo; read -rs -p 'Secret Access Key: ' AWS_SECRET_ACCESS_KEY; echo
+read -rs -p 'restic 密码: ' RESTIC_PASSWORD; echo; export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY RESTIC_PASSWORD
+restic restore latest --host secrets --target /root/restore
+for ns in $(python3 -c "import json;print(' '.join({i['metadata']['namespace'] for i in json.load(open('/root/restore/snapshot/secrets.json'))['items']}))"); do
+  k3s kubectl create namespace "$ns" --dry-run=client -o yaml | k3s kubectl apply -f -
+done
+k3s kubectl apply -f /root/restore/snapshot/secrets.json && rm -rf /root/restore
+```
+
+**restic 密码本身也在这份备份里，解不开自己**：它必须另外存在密码管理器里（第 9 节的要求）。

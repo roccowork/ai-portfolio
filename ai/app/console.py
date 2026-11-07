@@ -33,9 +33,9 @@ COLUMNS = [
 NODES = [
     {"id": "visitors", "col": "entry", "name": "网站访客", "desc": "作品集 ops.liuxd.dev", "link": "https://ops.liuxd.dev/"},
     {"id": "sites", "col": "entry", "name": "其他网站", "desc": "名片、简历、两个路线图、IT 外包官网", "link": "https://liuxd.dev/"},
-    {"id": "me", "col": "entry", "name": "我（Telegram）", "desc": "两个机器人：OPS 值班台、私人助理"},
+    {"id": "me", "col": "entry", "name": "我（Telegram）", "desc": "两个机器人：OPS 值班台、私人助理；告警、确认按钮、每日推送都发到这里"},
     {"id": "media", "col": "entry", "name": "自媒体", "desc": "抖音（手动发布）；B 站、小红书、视频号、YouTube、TikTok、X 待开通"},
-    {"id": "xiaoxiao", "col": "staff", "kind": "staff", "name": "小晓", "role": "作品集接待员", "desc": "在网站右下角回答访客的问题，按作品资料作答，留言转给我", "link": "https://ops.liuxd.dev/rag/"},
+    {"id": "xiaoxiao", "col": "staff", "kind": "staff", "name": "小晓", "role": "作品集接待员", "desc": "在网站右下角回答访客的问题，按作品资料作答，留言转给我"},
     {"id": "oncall", "col": "staff", "kind": "staff", "name": "值班员", "role": "运维 Agent", "desc": "告警一响自己查原因，低风险问题自动修复，关键操作推给我确认", "link": "https://ops.liuxd.dev/ops-agent/"},
     {"id": "editor", "col": "staff", "kind": "staff", "name": "编辑", "role": "AI 前沿流水线", "desc": "每天收集 AI 新闻，挑 3 条写口播稿，推给我把关", "link": "https://ops.liuxd.dev/me/pipeline/#k={k}"},
     {"id": "butler", "col": "staff", "kind": "staff", "name": "管家", "role": "私人助理", "desc": "提醒、早安简报、GitHub 趋势、VPS 状态"},
@@ -51,7 +51,6 @@ NODES = [
     {"id": "k3s", "col": "platform", "name": "香港服务器", "desc": "单节点 K3s：网站、AI 服务、监控都跑在这里", "link": "https://ops.liuxd.dev/gitops/"},
     {"id": "models", "col": "platform", "name": "大模型", "desc": "阿里云百炼（默认）、OpenRouter（私人助理）"},
     {"id": "cloudflare", "col": "platform", "name": "Cloudflare", "desc": "DNS、静态网站（Pages）、备份存储（R2）", "link": "https://dash.cloudflare.com/"},
-    {"id": "telegram", "col": "platform", "name": "Telegram", "desc": "告警、确认按钮、每日推送"},
     {"id": "news", "col": "platform", "name": "新闻源", "desc": "OpenAI、Google AI、Hugging Face、TechCrunch、The Verge、量子位、Hacker News"},
 ]
 
@@ -66,13 +65,12 @@ EDGES = [
     ("gateway", "models", "调用 API", "model_calls"),
     ("news", "editor", "新闻", "frontier"),
     ("editor", "butler", "选题和稿子", "frontier"),
-    ("butler", "telegram", "每日推送", "butler"),
+    ("butler", "me", "每日推送", "butler"),
     ("watcher", "oncall", "告警", "alerts"),
     ("oncall", "k3s", "排查 / 自愈", "heal"),
     ("watcher", "k3s", "采集指标", "metrics"),
     ("watcher", "sites", "外部拨测", "metrics"),
-    ("oncall", "telegram", "汇报、等我确认", "heal"),
-    ("telegram", "me", "消息", "telegram"),
+    ("oncall", "me", "汇报、等我确认", "heal"),
     ("me", "media", "发布视频", None),
     ("me", "coach", "转发岗位", "career"),
     ("coach", "gateway", "分析、写材料", "career"),
@@ -163,7 +161,7 @@ class Console:
 
     async def build(self) -> dict:
         now = datetime.now(timezone.utc)
-        probe, st, argo, asst, req, calls_1h, alerts = await asyncio.gather(
+        probe, st, argo, asst, req, calls_1h, alerts, pods, mem, cpu = await asyncio.gather(
             _try(probes.fetch(self.c), "拨测"),
             _try(self.status(), "平台实况"),
             _try(self.argo(), "Argo CD"),
@@ -171,6 +169,9 @@ class Console:
             _try(self.scalar('sum(rate(traefik_service_requests_total{service="ops-desk-ops-desk-http@kubernetes"}[15m])) * 60'), "访问量"),
             _try(self.scalar("sum(increase(ai_calls_total[1h]))"), "模型调用"),
             _try(ops.run_tool(self.c, "list_alerts", {}), "告警"),
+            _try(self.scalar('sum(kube_pod_status_phase{phase="Running"})'), "Pod 数"),
+            _try(self.scalar("(1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)) * 100"), "内存"),
+            _try(self.scalar('(1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100'), "CPU"),
         )
         loc = self.local()
         pr = {p["name"]: p for p in probe or []}
@@ -189,14 +190,14 @@ class Console:
                 return "bad", f"{name} 打不开"
             return "ok", f"{name} 正常" + (f"，{p['ms']} ms" if p["ms"] is not None else "")
 
-        # 入口
+        # 入口：拨测的数字只在监控员卡片上显示；这里按拨测结果定状态，打不开时才写出来
         s, line = probe_line("ops.liuxd.dev")
-        set_("visitors", s, line, f"最近 15 分钟 {req:.1f} 次请求 / 分钟" if req is not None else "")
-        sites = [probe_line(n) for n in SITE_PROBES if n in pr]
+        set_("visitors", s, line if s == "bad" else "", f"最近 15 分钟 {req:.1f} 次请求 / 分钟" if req is not None else "")
         bad_sites = [n for n in SITE_PROBES if n in pr and not pr[n]["ok"]]
-        if sites:
-            set_("sites", "bad" if bad_sites else "ok", f"{len(sites) - len(bad_sites)}/{len(sites)} 个能打开", "打不开：" + "、".join(bad_sites) if bad_sites else "")
-        set_("me", "ok" if pr.get("Telegram", {}).get("ok", True) else "warn", f"现在 {len(firing)} 条告警" if alerts is not None else "")
+        if any(n in pr for n in SITE_PROBES):
+            set_("sites", "bad" if bad_sites else "ok", "打不开：" + "、".join(bad_sites) if bad_sites else "")
+        s, line = probe_line("Telegram")
+        set_("me", s, line)
         set_("media", "manual", "抖音手动发布，其他平台待开通")
 
         # 数字员工：先按 Argo CD 应用的健康状况定在岗 / 异常，再补上今天的工作量
@@ -235,13 +236,14 @@ class Console:
         if argo is not None:
             set_("deployer", "warn" if bad_apps else "ok", f"{len(apps) - len(bad_apps)}/{len(apps)} 个应用已同步、健康", "有问题：" + "、".join(bad_apps) if bad_apps else "",
                  f"上次发布 {_ago(last_deploy, now)}" if last_deploy else "")
-        own = [p for p in probe or [] if p["group"] == "own"]
         if probe is not None:
-            set_("watcher", "warn" if firing else "ok", f"拨测 {sum(p['ok'] for p in probe)}/{len(probe)} 正常", f"现在 {len(firing)} 条告警" + ("：" + "、".join(str(a.get("name")) for a in firing[:3]) if firing else ""))
+            set_("watcher", "warn" if firing else "ok", f"拨测 {sum(p['ok'] for p in probe)}/{len(probe)} 正常", f"现在 {len(firing)} 条告警" + ("：" + "、".join(str(a.get("name")) for a in firing[:3]) if firing else ""),
+                 f"7 天可用率 {st['availability7d']}%" if st and st.get("availability7d") is not None else "")
         backups = (st or {}).get("backups") or []
         stale = [b["name"] for b in backups if not _recent(b.get("lastSuccess"), now)]
         if backups:
-            set_("archivist", "warn" if stale else "ok", f"{len(backups) - len(stale)}/{len(backups)} 个备份 26 小时内成功", "过期：" + "、".join(stale) if stale else "")
+            set_("archivist", "warn" if stale else "ok", f"{len(backups) - len(stale)}/{len(backups)} 个备份 26 小时内成功", "过期：" + "、".join(stale) if stale else "",
+                 f"最近一次 {_ago(max(b.get('lastSuccess') or '' for b in backups) or None, now)}")
         s, line = probe_line("stats.liuxd.dev")
         if nodes["analyst"]["status"] == "unknown" and s != "unknown":
             nodes["analyst"]["status"] = s
@@ -251,21 +253,21 @@ class Console:
         kb = loc["kb"]
         set_("kb", "ok" if kb["ready"] else "warn", f"作品集资料 {kb['chunks']} 段" + ("" if kb["ready"] else "（索引准备中）"),
              f"问答评测：命中率 {kb['hit']}%" if kb.get("hit") is not None else "")
-        db_backups = [b for b in backups if b["name"] != "backup-github"]
-        if db_backups:
-            set_("dbs", "warn" if any(b["name"] in stale for b in db_backups) else "ok", f"{len(db_backups)} 个数据库每天备份", f"最近一次 {_ago(max(b.get('lastSuccess') or '' for b in db_backups) or None, now)}")
+        # 业务数据、GitHub 仓库只显示自身情况；备份情况在档案员卡片上
+        db = loc.get("db") or {}
+        if db:
+            set_("dbs", "ok", f"AI 账本 {db['mb']:.1f} MB", f"自愈记录 {db['incidents']} 条，评测 {db['evals']} 次")
         gh = next((b for b in backups if b["name"] == "backup-github"), None)
-        s, _ = probe_line("GitHub")
-        set_("repos", s if s != "unknown" else "ok", f"镜像备份 {_ago(gh.get('lastSuccess'), now)}" if gh else "")
+        s, line = probe_line("GitHub")
+        set_("repos", s if s != "unknown" else "ok", line)
 
         # 平台和外部
-        set_("k3s", "warn" if firing else "ok", f"{len(own)} 个网站和后台在拨测" if own else "", f"7 天可用率 {st['availability7d']}%" if st and st.get("availability7d") is not None else "")
+        set_("k3s", "warn" if firing else "ok", f"{pods:.0f} 个 Pod 运行中" if pods is not None else "",
+             " · ".join(x for x in (f"内存 {mem:.0f}%" if mem is not None else "", f"CPU {cpu:.0f}%" if cpu is not None else "") if x))
         s, line = probe_line("阿里云百炼")
         set_("models", s, line)
         s, line = probe_line("Cloudflare")
         set_("cloudflare", s, line)
-        s, line = probe_line("Telegram")
-        set_("telegram", s, line)
         if fr:
             set_("news", "ok" if fr["sources_ok"] == fr["sources"] else "warn", f"{fr['sources_ok']}/{fr['sources']} 个能读", f"上次 {fr['candidates']} 条候选")
 
@@ -288,7 +290,6 @@ class Console:
             "career": bool(cr and cr["week"] > 0),
             "alerts": bool(firing or heal),
             "metrics": probe is not None,
-            "telegram": bool(asst and asst.get("bot")) or bool(heal),
             "deploy": _recent(last_deploy, now),
             "backup": bool(backups) and not stale,
             "backup_git": bool(gh and _recent(gh.get("lastSuccess"), now)),

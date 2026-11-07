@@ -32,6 +32,8 @@ def fake(req: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"status": "success", "data": {"result": res}})
         if "traefik" in q:
             return httpx.Response(200, json={"status": "success", "data": {"result": [{"metric": {}, "value": [0, "3.5"]}]}})
+        if "kube_pod_status_phase" in q:
+            return httpx.Response(200, json={"status": "success", "data": {"result": [{"metric": {}, "value": [0, "42"]}]}})
         if "ai_calls_total" in q:
             return httpx.Response(200, json={"status": "success", "data": {"result": [{"metric": {}, "value": [0, "12"]}]}})
         return httpx.Response(200, json={"status": "success", "data": {"result": []}})
@@ -58,7 +60,7 @@ def make(tmp_path, assistant: dict | None):
 
     def local():
         return {"usage_today": {"calls": 8, "cost": 0.12, "saved_min": 0}, "by_feature_today": {"ask": 5}, "heal_24h": [{"status": "fixed"}],
-                "heal_fixed": 3, "enabled": True, "kb": {"ready": True, "chunks": 120, "hit": 92.5}}
+                "heal_fixed": 3, "enabled": True, "db": {"mb": 2.4, "incidents": 7, "evals": 5}, "kb": {"ready": True, "chunks": 120, "hit": 92.5}}
 
     b = console.Console(c, status, local, "http://assistant/internal/summary")
 
@@ -86,6 +88,12 @@ def test_build_from_real_signals(tmp_path):
     assert e[("news", "editor")] == "flow" and e[("archivist", "repos")] == "idle" and e[("visitors", "analyst")] == "bad"
     assert "本周分析 2 个岗位，共 4 个" in n["coach"]["lines"] and e[("me", "coach")] == "flow"
     assert d["summary"]["staff"] == 9 and "统计员" in d["summary"]["problems"]
+    # 每个数字只在负责它的卡片上：拨测 → 监控员，备份 → 档案员；Telegram 只剩「我」一张卡片
+    assert n["sites"]["lines"] == ["打不开：it.liuxd.dev"] and n["visitors"]["lines"] == ["最近 15 分钟 3.5 次请求 / 分钟"]
+    assert "7 天可用率 99.9%" in n["watcher"]["lines"] and "最近一次 5 小时前" in n["archivist"]["lines"]
+    assert n["dbs"]["lines"] == ["AI 账本 2.4 MB", "自愈记录 7 条，评测 5 次"] and n["repos"]["lines"][0].startswith("GitHub 正常")
+    assert n["k3s"]["lines"][0] == "42 个 Pod 运行中" and "telegram" not in n and n["me"]["lines"][0].startswith("Telegram 正常")
+    assert e[("oncall", "me")] == "flow" and e[("butler", "me")] == "flow"
 
 
 def test_assistant_down_does_not_break(tmp_path):

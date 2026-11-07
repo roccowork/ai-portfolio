@@ -592,6 +592,9 @@ def create_app(
         with ledger._lock:
             rows = ledger._db.execute("SELECT feature, SUM(calls) FROM usage WHERE day=? GROUP BY feature", (today(),)).fetchall()
             fixed = ledger._db.execute("SELECT COALESCE(SUM(status = 'fixed'), 0) FROM incidents").fetchone()[0]
+            incidents = ledger._db.execute("SELECT COUNT(*) FROM incidents").fetchone()[0]
+            evals = ledger._db.execute("SELECT COUNT(*) FROM eval_runs").fetchone()[0]
+            size = ledger._db.execute("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()").fetchone()[0]
         rag = ledger.latest_eval("rag")
         return {
             "usage_today": ledger.summary()["today"],
@@ -599,6 +602,7 @@ def create_app(
             "heal_24h": healer.store.since(datetime.now(timezone.utc) - timedelta(hours=24)),
             "heal_fixed": int(fixed),
             "enabled": s.enabled,
+            "db": {"mb": size / 1e6, "incidents": int(incidents), "evals": int(evals)},
             "kb": {"ready": qa.ready, "chunks": len(qa.chunks), "hit": ((rag or {}).get("summary") or {}).get("hit_at_1")},
         }
 

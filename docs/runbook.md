@@ -620,7 +620,7 @@ k3s kubectl -n monitoring create job tg-test --from=cronjob/daily-english   # �
 
 ### 笔记同步（`deploy/apps/notes/`）
 
-电脑和手机上的 Obsidian 装社区插件 Self-hosted LiveSync，都连 <https://notes.liuxd.dev>，改动几秒内同步到其他设备。2026-11-07 上线。
+电脑和手机上的 Obsidian 装社区插件 Self-hosted LiveSync，都连 <https://brain.liuxd.dev>，改动几秒内同步到其他设备。2026-11-07 上线。
 
 - 组成：CouchDB 3.5（命名空间 `notes`，PVC `couchdb` 5Gi），配置在 `livesync.ini`（插件文档要求的 CORS、请求大小等）。所有地址都要登录，没有匿名访问
 - 笔记内容只在这台服务器和 R2 的加密备份里，不进任何 Git 仓库
@@ -640,7 +640,7 @@ k3s kubectl -n notes create secret generic backup-r2 \
   --from-literal=AWS_SECRET_ACCESS_KEY="$(g AWS_SECRET_ACCESS_KEY)"
 ```
 
-验证：`curl -s -u admin:<密码> https://notes.liuxd.dev/` 返回 `"couchdb":"Welcome"`；不带密码返回 401。
+验证：`curl -s -u admin:<密码> https://brain.liuxd.dev/` 返回 `"couchdb":"Welcome"`；不带密码返回 401。
 
 恢复：缩容 `couchdb` 到 0 → `restic restore latest --host notes --target /tmp/restore` → 把 `/tmp/restore/data/` 拷回 PVC 的目录（属主 5984）→ 扩回 1。
 

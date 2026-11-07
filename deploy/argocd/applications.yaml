@@ -229,7 +229,7 @@ spec:
       limit: 10
       backoff: { duration: 30s, factor: 2, maxDuration: 10m }
 ---
-# 个人笔记同步 CouchDB（deploy/apps/notes/）：https://notes.liuxd.dev，Obsidian 的 LiveSync 插件连它；笔记内容不进仓库
+# 个人笔记同步 CouchDB（deploy/apps/notes/）：https://brain.liuxd.dev，Obsidian 的 LiveSync 插件连它；笔记内容不进仓库
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

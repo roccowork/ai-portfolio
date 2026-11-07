@@ -1,4 +1,4 @@
-# 个人笔记同步：CouchDB，给 Obsidian 的 Self-hosted LiveSync 插件用。电脑和手机上的 Obsidian 都连 https://notes.liuxd.dev，
+# 个人笔记同步：CouchDB，给 Obsidian 的 Self-hosted LiveSync 插件用。电脑和手机上的 Obsidian 都连 https://brain.liuxd.dev，
 # 改动几秒内同步到其他设备。笔记内容只存在这台服务器（和 R2 上的加密备份）里，不进任何仓库。
 # Secret couchdb 由人在服务器上创建（不进仓库，命令见 docs/runbook.md 第 17 节）：
 #   user / password  CouchDB 管理员账号，Obsidian 插件里也填这个
@@ -120,10 +120,10 @@ metadata:
 spec:
   ingressClassName: traefik
   tls:
-    - hosts: [notes.liuxd.dev]
-      secretName: notes-tls
+    - hosts: [brain.liuxd.dev]
+      secretName: brain-tls
   rules:
-    - host: notes.liuxd.dev
+    - host: brain.liuxd.dev
       http:
         paths:
           - path: /

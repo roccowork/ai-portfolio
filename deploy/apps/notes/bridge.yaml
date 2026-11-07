@@ -1,0 +1,109 @@
+# LiveSync Bridge：把 CouchDB 里的笔记双向同步成普通文件（PVC vault 的 files/），给 MCP 服务读写。
+# AI 改了文件 → 几秒内进 CouchDB → 电脑、手机上的 Obsidian；反过来也一样。镜像见 deploy/docker/livesync-bridge.Dockerfile。
+# 不加密（LiveSync 没开端到端加密），useRemoteTweaks 采用 Obsidian 插件写在数据库里的分块等设置。
+# vault 里的文件都能从 CouchDB 重新生成，不单独备份；CouchDB 每天备份（backup.yaml）。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vault
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: livesync-bridge
+  labels:
+    app.kubernetes.io/name: livesync-bridge
+spec:
+  replicas: 1
+  # 两个同步桥同时写同一个目录会互相打架：先停旧的再起新的
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: livesync-bridge
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: livesync-bridge
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 1993 # 镜像里的 deno 用户
+        runAsGroup: 1993
+        fsGroup: 1993
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # 配置里有 CouchDB 密码，不进仓库：启动时从 Secret 生成到内存目录
+        - name: config
+          image: node:24.21.0-alpine
+          command:
+            - node
+            - -e
+            - |
+              const e = process.env;
+              const config = { peers: [
+                { type: 'couchdb', name: 'couchdb', group: 'main', url: 'http://couchdb:5984', database: 'obsidian',
+                  username: e.COUCHDB_USER, password: e.COUCHDB_PASSWORD, passphrase: '', obfuscatePassphrase: '',
+                  baseDir: '', useRemoteTweaks: true },
+                { type: 'storage', name: 'files', group: 'main', baseDir: './data/', scanOfflineChanges: true,
+                  // MCP 写文件用的临时文件、隐藏目录都不同步
+                  ignore: ['**/.*', '**/.*/**'] },
+              ] };
+              require('fs').writeFileSync('/dat/config.json', JSON.stringify(config), { mode: 0o600 });
+          env:
+            - name: COUCHDB_USER
+              valueFrom:
+                secretKeyRef: { name: couchdb, key: user }
+            - name: COUCHDB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: couchdb, key: password }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: dat, mountPath: /dat }
+      containers:
+        - name: bridge
+          image: ghcr.io/roccowork/livesync-bridge:1c25230
+          env:
+            - { name: LSB_CONFIG, value: /dat/config.json }
+          # 每 10 秒写一次心跳文件；2 分钟没更新说明卡死了，重启
+          livenessProbe:
+            exec:
+              command:
+                [sh, -c, 'test $(( $(date +%s) - $(stat -c %Y /tmp/lsb-health.json) )) -lt 120']
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 20m, memory: 128Mi }
+            limits: { cpu: 1000m, memory: 768Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: dat, mountPath: /dat, readOnly: true }
+            - { name: vault, mountPath: /app/data, subPath: files }
+            # 同步进度（CouchDB 读到哪了）存在 Deno 的 localStorage，放进卷里，重启后接着同步
+            - { name: vault, mountPath: /deno-dir/location_data, subPath: state }
+      volumes:
+        - name: dat
+          emptyDir: { medium: Memory, sizeLimit: 1Mi }
+        - name: vault
+          persistentVolumeClaim:
+            claimName: vault

@@ -5,9 +5,14 @@ namespace: notes
 resources:
   - couchdb.yaml
   - backup.yaml
+  - bridge.yaml
+  - mcp.yaml
 components:
   - ../../backup
 configMapGenerator:
   - name: couchdb-config
     files:
       - livesync.ini
+  - name: brain-mcp-script
+    files:
+      - mcp.mjs

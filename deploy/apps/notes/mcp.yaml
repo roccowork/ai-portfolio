@@ -1,0 +1,78 @@
+# 个人知识库的 MCP 服务（脚本见 mcp.mjs）：https://brain.liuxd.dev/mcp，要 Bearer 令牌。
+# AI 只读 原始/，只写 wiki/，私密/ 和隐藏目录读不到。
+# Secret brain-mcp 由人在服务器上创建（命令见 docs/runbook.md 第 17 节）：token  随机令牌，Claude 和私人助理用它访问
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: brain-mcp
+  labels:
+    app.kubernetes.io/name: brain-mcp
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: brain-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: brain-mcp
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        # 和同步桥同一个用户：两边都要读写 vault 里的文件
+        runAsUser: 1993
+        runAsGroup: 1993
+        fsGroup: 1993
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mcp
+          image: node:24.21.0-alpine
+          command: [node, /app/mcp.mjs]
+          env:
+            - { name: VAULT_DIR, value: /vault }
+            - { name: PORT, value: '8080' }
+            - name: MCP_TOKEN
+              valueFrom:
+                secretKeyRef: { name: brain-mcp, key: token }
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: script, mountPath: /app }
+            - { name: vault, mountPath: /vault, subPath: files }
+      volumes:
+        - name: script
+          configMap:
+            name: brain-mcp-script
+        - name: vault
+          persistentVolumeClaim:
+            claimName: vault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: brain-mcp
+spec:
+  selector:
+    app.kubernetes.io/name: brain-mcp
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

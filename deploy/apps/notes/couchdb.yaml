@@ -126,6 +126,14 @@ spec:
     - host: brain.liuxd.dev
       http:
         paths:
+          # MCP 服务（mcp.yaml）；路径更长，Traefik 优先匹配它
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: brain-mcp
+                port:
+                  name: http
           - path: /
             pathType: Prefix
             backend:

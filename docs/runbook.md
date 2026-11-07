@@ -644,6 +644,32 @@ k3s kubectl -n notes create secret generic backup-r2 \
 
 恢复：缩容 `couchdb` 到 0 → `restic restore latest --host notes --target /tmp/restore` → 把 `/tmp/restore/data/` 拷回 PVC 的目录（属主 5984）→ 扩回 1。
 
+### 同步桥和 MCP（AI 读写笔记）
+
+```
+Obsidian（电脑、手机）⇄ CouchDB ⇄ LiveSync Bridge ⇄ PVC vault/files ⇄ brain-mcp ⇄ Claude、私人助理
+```
+
+- **LiveSync Bridge**（`bridge.yaml`）：LiveSync 作者的开源同步桥，把 CouchDB 里的笔记双向同步成普通文件。作者没发布镜像，`deploy/docker/livesync-bridge.Dockerfile` 固定在一个看过、本地试跑过的上游提交上，由 `.github/workflows/livesync-bridge.yml` 构建 `ghcr.io/roccowork/livesync-bridge:<上游提交前 7 位>`。升级：改 Dockerfile 里的提交，本地试跑后推送，再改 `bridge.yaml` 的镜像标签
+- **brain-mcp**（`mcp.yaml`、`mcp.mjs`）：MCP 服务，<https://brain.liuxd.dev/mcp>，Bearer 令牌。AI 只读 `原始/`、只写 `wiki/`，`私密/` 和隐藏目录读不到（`tests/brain-mcp.test.ts`）。分工的原因：同一个文件几秒内两边同时改，后保存的会覆盖先保存的
+- vault 里的文件都能从 CouchDB 重新生成，不单独备份；临时文件和隐藏目录不同步（配置里的 `ignore`）
+
+首次安装：
+
+1. 第一次构建后，GitHub → Packages → `livesync-bridge` → Package settings → Change visibility → **Public**（集群拉镜像不用凭据），在此之前 `livesync-bridge` 停在 ImagePullBackOff
+2. 创建 MCP 令牌（记下来，Claude 和私人助理用）：
+
+```bash
+T=$(openssl rand -hex 32); k3s kubectl -n notes create secret generic brain-mcp --from-literal=token="$T"; echo "$T"; unset T
+```
+
+验证：`k3s kubectl -n notes logs deploy/livesync-bridge | tail` 能看到 `Watch starting from`；
+
+```bash
+curl -s https://brain.liuxd.dev/mcp -H "Authorization: Bearer <令牌>" -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_notes","arguments":{}}}'
+```
+
 ### Secret 备份（`deploy/apps/secret-backup/`）
 
 每天 05:00 用只读权限列出全部 Secret，挑出人工创建的（跳过证书、Helm、控制器生成的和 `kube-system`），写成一个 `kubectl apply` 能直接用的文件，restic 加密备份到 R2 的 `/secrets`。导出文件只在 Pod 的内存目录里。

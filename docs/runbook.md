@@ -468,11 +468,12 @@ k3s kubectl -n umami create secret generic backup-r2 \
 
 用得少、最占资源（十来个容器），停掉省内存；想体验功能用官网云版。**只停不删**：`/opt/dify` 的配置和数据都在，R2 里留着停用前最后一次备份。停用时做了这些：
 
-- 宿主机：`cd /opt/dify/docker && docker compose stop`，删掉每天导出数据库的 `/etc/cron.d/dify-dump`
+- 宿主机：先关掉自动重启再停：`cd /opt/dify/docker && docker update --restart=no $(docker compose ps -aq) && docker compose stop`；删掉每天导出数据库的 `/etc/cron.d/dify-dump`
+  - 只 `docker compose stop` 不够（2026-11-14 踩坑）：Dify 的容器是 `restart: always`，服务器一重启 Docker 又把十来个容器全拉起来，多占约 1.4 GiB 内存和不少 CPU。确认：重启后 `docker ps` 里不该有 Dify 的容器
 - 仓库：拨测去掉 dify.liuxd.dev，总控台去掉 Dify 节点，`deploy/apps/dify/kustomization.yaml` 里注释掉 `backup.yaml`（不再每天备份），作品集卡片改成「演示已下线」
 - Argo CD 应用 `dify`（Service、Ingress、证书）保留，恢复时不用重新配域名
 
-恢复：`cd /opt/dify/docker && docker compose start`，把 `/etc/cron.d/dify-dump` 加回来（内容见 `deploy/server/install-dify.sh`），再把上面几处仓库改动改回来。
+恢复：`cd /opt/dify/docker && docker compose up -d --force-recreate`（重建容器，自动重启按 compose 文件恢复成 `always`；只 `start` 的话还是不自动重启），把 `/etc/cron.d/dify-dump` 加回来（内容见 `deploy/server/install-dify.sh`），再把上面几处仓库改动改回来。
 
 ### 集群 DNS 解析失败（2026-11-06）
 

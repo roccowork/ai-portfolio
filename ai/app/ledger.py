@@ -78,6 +78,15 @@ class Ledger:
         ).fetchone()
         return {"calls": int(r[0]), "tokens": int(r[1]) + int(r[2]), "cost": round(float(r[3]), 4)}
 
+    def model_usage(self, since: str) -> list[dict]:
+        """从 since（YYYY-MM-DD，含）到今天按模型汇总：[{model, calls, tokens, cost}]，费用从多到少（估算）"""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT model, SUM(calls), SUM(tokens_in) + SUM(tokens_out), SUM(cost) FROM usage WHERE day>=? GROUP BY model ORDER BY SUM(cost) DESC, SUM(calls) DESC",
+                (since,),
+            ).fetchall()
+        return [{"model": m or "?", "calls": int(c or 0), "tokens": int(t or 0), "cost": round(float(x or 0), 4)} for m, c, t, x in rows]
+
     def summary(self) -> dict:
         with self._lock:
             def agg(where: str, args: tuple) -> dict:

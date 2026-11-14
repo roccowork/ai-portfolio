@@ -62,6 +62,26 @@ async def last_recharge(c: httpx.AsyncClient, ak: str, sk: str, endpoint: str, n
     return best
 
 
+def _cycle(now: datetime, months_back: int = 0) -> str:
+    """账期 YYYY-MM（阿里云国内站按北京时间出账）"""
+    t = now.astimezone(timezone(timedelta(hours=8)))
+    y, m = t.year, t.month - months_back
+    while m <= 0:
+        y, m = y - 1, m + 12
+    return f"{y:04d}-{m:02d}"
+
+
+async def bill(c: httpx.AsyncClient, ak: str, sk: str, endpoint: str, cycle: str, now: datetime) -> dict:
+    """某个月的账单概览（QueryBillOverview）：{cycle, total, products: [(产品名, 应付金额)] 从多到少}"""
+    d = await rpc(c, ak, sk, endpoint, "QueryBillOverview", {"BillingCycle": cycle}, now)
+    by: dict[str, float] = {}
+    for it in ((d.get("Items") or {}).get("Item")) or []:
+        name = str(it.get("ProductName") or it.get("ProductCode") or "其他")
+        by[name] = by.get(name, 0.0) + _num(it.get("PretaxAmount"))
+    products = sorted(((k, v) for k, v in by.items() if v > 0), key=lambda x: -x[1])
+    return {"cycle": cycle, "total": sum(v for _, v in products), "products": products}
+
+
 async def balance(ak: str, sk: str, endpoint: str, transport: httpx.AsyncBaseTransport | None = None, now: datetime | None = None) -> dict:
     """返回 {amount（现在可用余额）, currency, recharge: {time, amount, balance} | None, spent（最近一次充值后花了多少） | None}；
     余额查不到抛 RuntimeError，流水查不到只是没有 spent"""
@@ -74,4 +94,18 @@ async def balance(ak: str, sk: str, endpoint: str, transport: httpx.AsyncBaseTra
                 out["recharge"], out["spent"] = rec, max(0.0, rec["balance"] - out["amount"])
         except (RuntimeError, httpx.HTTPError) as e:
             out["error"] = str(e)[:60]
+        # 本月和上月的账单，按产品分（2026-11-14 用户要求「再丰富一下」）
+        try:
+            out["month"] = await bill(c, ak, sk, endpoint, _cycle(now), now)
+            out["last_month"] = await bill(c, ak, sk, endpoint, _cycle(now, 1), now)
+        except (RuntimeError, httpx.HTTPError) as e:
+            out["bill_error"] = str(e)[:60]
+    if out["recharge"] and out["spent"] is not None:
+        try:
+            since = datetime.fromisoformat(out["recharge"]["time"].replace("Z", "+00:00"))
+            days = max(1.0, (now - since).total_seconds() / 86400)
+            out["per_day"] = out["spent"] / days
+            out["days_left"] = int(out["amount"] / out["per_day"]) if out["per_day"] > 0 else None
+        except ValueError:
+            pass
     return out

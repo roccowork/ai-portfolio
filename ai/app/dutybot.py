@@ -13,7 +13,7 @@ from . import autoheal, localtime
 from . import opsagent as ops
 from . import schedules
 from .gateway import PUBLIC_FEATURES, Gateway
-from .ledger import Ledger
+from .ledger import TZ, Ledger
 from .telegram import to_html
 
 e = html.escape
@@ -251,7 +251,32 @@ def balance_line(b: dict | None, error: str = "") -> str:
         lines.append(f"　{r['time'][:10]} 充值 {sym}{r['amount']:.2f}（充值后余额 {sym}{r['balance']:.2f}），之后一共花了 {sym}{b['spent']:.2f}")
     elif b.get("error"):
         lines.append(f"　充值后花了多少：查不到（{e(b['error'])}）")
+    if b.get("per_day") is not None:
+        left = b.get("days_left")
+        lines.append(f"　平均每天 {sym}{b['per_day']:.2f}" + (f"，照这个速度还能用约 {left} 天" if left is not None and left < 3650 else "，几乎不花钱"))
+    if m := b.get("month"):
+        top = "、".join(f"{e(n)} {sym}{v:.2f}" for n, v in m["products"][:4])
+        lines.append(f"　本月（{m['cycle']}）账单 {sym}{m['total']:.2f}" + (f"：{top}" if top else ""))
+        if lm := b.get("last_month"):
+            lines.append(f"　上月（{lm['cycle']}）账单 {sym}{lm['total']:.2f}")
+    elif b.get("bill_error"):
+        lines.append(f"　月账单：查不到（{e(b['bill_error'])}）")
     return "\n".join(lines)
+
+
+def _model_lines(ledger: Ledger, n: int = 6) -> list[str]:
+    """本月每个模型用了多少（本站账本，按价格表估算；私人助理的调用不在这本账里）"""
+    month = datetime.now(TZ).strftime("%Y-%m-01")
+    rows = [r for r in ledger.model_usage(month) if r["calls"]]
+    if not rows:
+        return []
+    out = ["", f"<b>本月各模型</b>（{month[:7]}，本站账本估算）"]
+    for r in rows[:n]:
+        out.append(f"　{e(r['model'].split('/')[-1])}：{r['calls']} 次，{r['tokens'] / 10000:.1f} 万 token，约 ¥{r['cost']:.2f}")
+    if len(rows) > n:
+        rest = rows[n:]
+        out.append(f"　其他 {len(rest)} 个：{sum(r['calls'] for r in rest)} 次，约 ¥{sum(r['cost'] for r in rest):.2f}")
+    return out
 
 
 def usage_text(ledger: Ledger, daily_budget: float, public_budget: float, balance: str = "") -> str:
@@ -268,6 +293,7 @@ def usage_text(ledger: Ledger, daily_budget: float, public_budget: float, balanc
             f"全站每日上限 ¥{daily_budget:.2f}（含值班台、自愈、评测），还剩 ¥{left:.2f}" + ("（已用完，全部暂停到明天）" if left <= 0 else ""),
             "",
             f"累计：{total['calls']} 次调用，约 ¥{total['cost']:.2f}",
+            *_model_lines(ledger),
             *(["", balance] if balance else []),
         ]
     )

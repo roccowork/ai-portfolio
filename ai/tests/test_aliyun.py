@@ -23,6 +23,11 @@ def fake(tx_ok=True):
             return httpx.Response(200, json={"Success": True, "Data": {"AvailableAmount": "16.88", "Currency": "USD"}})
         if not tx_ok:
             return httpx.Response(403, json={"Success": False, "Code": "NotAuthorized"})
+        if action == "QueryBillOverview":
+            cycle = req.url.params["BillingCycle"]
+            items = [{"ProductName": "大模型服务平台百炼", "PretaxAmount": "0.50"}, {"ProductName": "对象存储", "PretaxAmount": "0.10"},
+                     {"ProductName": "大模型服务平台百炼", "PretaxAmount": "0.05"}, {"ProductName": "免费的", "PretaxAmount": "0"}] if cycle == "2026-11" else []
+            return httpx.Response(200, json={"Success": True, "Data": {"BillingCycle": cycle, "Items": {"Item": items}}})
         rows = [{"TransactionFlow": "Expense", "TransactionTime": "2026-11-10T01:00:00Z", "Amount": "0.50", "Balance": "19.50"},
                 {"TransactionFlow": "Income", "TransactionTime": "2026-11-02T03:00:00Z", "Amount": "20.00", "Balance": "20.00"},
                 {"TransactionFlow": "Income", "TransactionTime": "2026-10-01T03:00:00Z", "Amount": "5.00", "Balance": "5.00"}]
@@ -36,6 +41,8 @@ def test_balance_and_spent_since_last_recharge():
     assert b["amount"] == 16.88 and b["recharge"]["time"].startswith("2026-11-02") and round(b["spent"], 2) == 3.12
     line = dutybot.balance_line(b)
     assert "还剩 $16.88" in line and "2026-11-02 充值 $20.00" in line and "一共花了 $3.12" in line
+    assert "平均每天 $0.26" in line and "还能用约 64 天" in line
+    assert "本月（2026-11）账单 $0.65：大模型服务平台百炼 $0.55、对象存储 $0.10" in line and "上月（2026-10）账单 $0.00" in line and "免费的" not in line
 
 
 def test_transactions_denied_still_shows_balance():
@@ -43,3 +50,15 @@ def test_transactions_denied_still_shows_balance():
     line = dutybot.balance_line(b)
     assert "还剩 $16.88" in line and "查不到（NotAuthorized）" in line
     assert "查不到" in dutybot.balance_line(None, "InvalidAccessKeyId")
+
+
+def test_usage_text_lists_models_this_month(tmp_path):
+    from app.ledger import Ledger
+
+    ledger = Ledger(tmp_path / "ai.db")
+    ledger.record("chat", "qwen-plus", 1000, 500, 0.01)
+    ledger.record("chat", "qwen-plus", 1000, 500, 0.01)
+    ledger.record("eval", "deepseek-v3", 20000, 0, 0.30)
+    text = dutybot.usage_text(ledger, 5.0, 1.0)
+    assert "本月各模型" in text and text.index("deepseek-v3") < text.index("qwen-plus")
+    assert "qwen-plus：2 次，0.3 万 token，约 ¥0.02" in text

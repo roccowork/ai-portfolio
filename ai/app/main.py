@@ -18,6 +18,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
 from pydantic import BaseModel, Field
 
 from . import agent as ag
+from . import aliyun
 from . import autoheal
 from . import chatbi
 from . import console
@@ -205,6 +206,16 @@ def create_app(
         except httpx.HTTPError:
             return "外部拨测（Uptime Kuma）：查不到"
 
+    async def usage_card() -> str:
+        """「💰 今日用量」：本站账本 + 阿里云账户余额和充值后花了多少（配了只读 AccessKey 才查）"""
+        line = ""
+        if s.aliyun_bss_ak and s.aliyun_bss_sk:
+            try:
+                line = dutybot.balance_line(await aliyun.balance(s.aliyun_bss_ak, s.aliyun_bss_sk, s.aliyun_bss_endpoint))
+            except (RuntimeError, httpx.HTTPError) as ex:
+                line = dutybot.balance_line(None, str(ex)[:60])
+        return await asyncio.to_thread(dutybot.usage_text, ledger, s.daily_budget, s.public_budget, line)
+
     menu = [
         ("🖥 服务器状态", "status", "CPU、内存、磁盘、Argo CD、外部拨测", lambda: dutybot.status_text(k8s, kuma_status if s.kuma_api_key else None)),
         ("📦 Pod 资源", "pods", "内存、CPU 占用前 5 的 Pod，重启过的，数据盘", lambda: dutybot.pods_text(k8s)),
@@ -214,7 +225,7 @@ def create_app(
         ("📊 平台实况", "live", "最近发布、可用率、备份、证书、DORA 指标", platform),
         ("🗓 定时任务", "jobs", "服务器上的备份、周报等任务", lambda: dutybot.jobs_text(k8s)),
         ("💬 最近留言", "leads", "网站访客的留言", lambda: asyncio.to_thread(dutybot.leads_text, ledger)),
-        ("💰 今日用量", "usage", "AI 演示今天的调用和费用", lambda: asyncio.to_thread(dutybot.usage_text, ledger, s.daily_budget, s.public_budget)),
+        ("💰 今日用量", "usage", "AI 演示今天的调用和费用，阿里云账户余额", usage_card),
     ]
     # 会花钱的评测不放进菜单，只能手动输入命令，避免误点
     paid = [

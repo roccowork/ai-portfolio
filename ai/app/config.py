@@ -80,6 +80,10 @@ class Settings:
     # Uptime Kuma 的外部拨测结果（值班台「服务器状态」里一行）。Key 和私人助理共用 Secret ai-api 的 KUMA_API_KEY，没有就不显示
     kuma_url: str = field(default_factory=lambda: os.environ.get("KUMA_URL", "http://uptime-kuma.monitoring.svc:3001"))
     kuma_api_key: str = field(default_factory=lambda: os.environ.get("KUMA_API_KEY", ""))
+    # 阿里云账户余额（值班台「💰 今日用量」最后一行，ai/app/aliyun.py）：只读费用权限的 RAM AccessKey，放 Secret ai-api；没配就不显示
+    aliyun_bss_ak: str = field(default_factory=lambda: os.environ.get("ALIYUN_BSS_AK", ""))
+    aliyun_bss_sk: str = field(default_factory=lambda: os.environ.get("ALIYUN_BSS_SK", ""))
+    aliyun_bss_endpoint: str = field(default_factory=lambda: os.environ.get("ALIYUN_BSS_ENDPOINT", "business.ap-southeast-1.aliyuncs.com"))
     # 效果评测的裁判模型（ai/app/evals/），没配就和回答用同一组模型
     eval_judge_models: list[str] = field(default_factory=lambda: _list("EVAL_JUDGE_MODELS", ""))
     # 平台实况的数据（站点 nginx 提供的 /status.json，集群内地址），值班台的「📊 平台实况」读它

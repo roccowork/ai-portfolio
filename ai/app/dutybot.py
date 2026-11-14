@@ -239,7 +239,22 @@ def leads_text(ledger: Ledger, limit: int = 5) -> str:
     return "\n".join(lines)
 
 
-def usage_text(ledger: Ledger, daily_budget: float, public_budget: float) -> str:
+def balance_line(b: dict | None, error: str = "") -> str:
+    """阿里云账户余额（百炼从这里扣钱）"""
+    if error:
+        return f"🏦 阿里云余额：查不到（{e(error)}）"
+    if not b:
+        return ""
+    sym = {"CNY": "¥", "USD": "$"}.get(b["currency"], b["currency"] + " ")
+    lines = [f"🏦 阿里云账户还剩 {sym}{b['amount']:.2f}" + ("　⚠️ 快用完了" if b["amount"] < 5 else "")]
+    if (r := b.get("recharge")) and b.get("spent") is not None:
+        lines.append(f"　{r['time'][:10]} 充值 {sym}{r['amount']:.2f}（充值后余额 {sym}{r['balance']:.2f}），之后一共花了 {sym}{b['spent']:.2f}")
+    elif b.get("error"):
+        lines.append(f"　充值后花了多少：查不到（{e(b['error'])}）")
+    return "\n".join(lines)
+
+
+def usage_text(ledger: Ledger, daily_budget: float, public_budget: float, balance: str = "") -> str:
     s = ledger.summary()
     t, total = s["today"], s["total"]
     left = max(0.0, daily_budget - ledger.spent_today())
@@ -253,6 +268,7 @@ def usage_text(ledger: Ledger, daily_budget: float, public_budget: float) -> str
             f"全站每日上限 ¥{daily_budget:.2f}（含值班台、自愈、评测），还剩 ¥{left:.2f}" + ("（已用完，全部暂停到明天）" if left <= 0 else ""),
             "",
             f"累计：{total['calls']} 次调用，约 ¥{total['cost']:.2f}",
+            *(["", balance] if balance else []),
         ]
     )
 

@@ -18,7 +18,6 @@ import threading
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 from html import escape
-from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -26,7 +25,7 @@ from . import opsagent as ops
 from .gateway import AIUnavailable, Gateway
 
 log = logging.getLogger("ai")
-SG = ZoneInfo("Asia/Singapore")
+from .localtime import TZ as SG  # 显示用时区（UTC+8，见 localtime.py）
 
 HEAL_NAMESPACES = ["ops-desk", "monitoring", "dify", "git-backup", "umami"]
 # 这些告警 Agent 帮不上忙（或者分析本身就要花钱），直接跳过
@@ -51,7 +50,7 @@ STATUS_ZH = {
     "error": "⚠️ 分析出错",
 }
 
-SYSTEM = """你是值班运维工程师，负责一个单节点 k3s 集群（香港，4 核 12G）。Prometheus 刚发来一条告警，你要查清原因并决定怎么处理。现在是 {now}（新加坡时间）。
+SYSTEM = """你是值班运维工程师，负责一个单节点 k3s 集群（香港，4 核 12G）。Prometheus 刚发来一条告警，你要查清原因并决定怎么处理。现在是 {now}（UTC+8）。
 """ + ops.CLUSTER_MAP + """
 规则：
 1. 先用只读工具查清原因（告警、Pod 状态、事件、日志、指标），结论要有工具结果支撑。""" + ops.GROUNDING + """

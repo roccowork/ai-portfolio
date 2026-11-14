@@ -9,7 +9,7 @@ import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
-from . import autoheal
+from . import autoheal, localtime
 from . import opsagent as ops
 from . import schedules
 from .gateway import PUBLIC_FEATURES, Gateway
@@ -310,12 +310,12 @@ def platform_text(st: dict, now: datetime | None = None) -> str:
     return "\n".join(lines)
 
 
-async def jobs_text(k8s: ops.Cluster, tz: str = "Asia/Singapore") -> str:
+async def jobs_text(k8s: ops.Cluster, tz: str = localtime.TZ_KEY) -> str:
     if not k8s.enabled:
         return "这里查不到定时任务（没有集群权限）"
     items = (await k8s.k8s("/apis/batch/v1/cronjobs"))["items"]  # type: ignore[index]
     jobs = schedules.summarize(items, tz)
-    lines = ["<b>🗓 定时任务</b>（新加坡时间）"]
+    lines = [f"<b>🗓 定时任务</b>（{localtime.LABEL}）"]
     for group, head in (("push", "📮 会发消息的"), ("ops", "🔧 后台维护（不发消息，出问题才告警）")):
         rows = [j for j in jobs if j["group"] == group]
         if rows:

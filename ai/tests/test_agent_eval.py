@@ -205,7 +205,7 @@ def test_numbers_must_come_from_tool_results():
 
 
 def test_agent_retries_when_numbers_are_made_up(tmp_path, monkeypatch):
-    # 系统提示里有当前时间：时或分是 18 时，82 会被当成 100 - 18 放过，测试时过时不过。固定在新加坡时间 11:07
+    # 系统提示里有当前时间：时或分是 18 时，82 会被当成 100 - 18 放过，测试时过时不过。固定在 UTC+8 的 11:07
     class Fixed(ops.datetime):
         @classmethod
         def now(cls, tz=None):

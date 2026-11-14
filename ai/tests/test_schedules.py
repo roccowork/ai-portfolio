@@ -43,3 +43,13 @@ def test_summarize_groups_and_status():
     assert weekly["when"] == "每天 00:00"
     assert english["suspended"] and english["next"] is None and english["last_ok"] is False
     assert backup["group"] == "ops" and backup["last_ok"] is None and backup["when"] == "每天 04:50"
+
+
+def test_tz_name_hides_city_names():
+    # 2026-11-14：值班台不出现城市时间（新加坡、洛杉矶），UTC+8 的叫 LABEL（默认 UTC+8，服务器 Secret 里配真实称呼）
+    from app import localtime
+    from app.schedules import tz_name
+
+    assert tz_name("Asia/Shanghai") == localtime.LABEL == "UTC+8"
+    assert tz_name("UTC") == "UTC 时间"
+    assert tz_name("America/Los_Angeles") in ("UTC-8", "UTC-7")

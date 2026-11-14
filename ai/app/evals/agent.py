@@ -163,8 +163,8 @@ class Faults:
         self.seen: list[dict] = []
 
     def _ago(self, minutes: float) -> str:
-        """和真实工具一样，给新加坡时间"""
-        return ops.sg_time((self.now - timedelta(minutes=minutes)).isoformat())
+        """和真实工具一样，给 UTC+8 时间"""
+        return ops.local_time((self.now - timedelta(minutes=minutes)).isoformat())
 
     def _ago_utc(self, minutes: float) -> str:
         return (self.now - timedelta(minutes=minutes)).isoformat()[:19] + "Z"

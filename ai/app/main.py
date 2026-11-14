@@ -97,7 +97,7 @@ def create_app(
         return {**overview, "alerts": firing}
 
     async def site_traffic() -> list[tuple[str, int, int]]:
-        """最近 7 个完整的天，每天的请求数和 5xx（新加坡时间按天切）。Prometheus 只保留 7 天"""
+        """最近 7 个完整的天，每天的请求数和 5xx（UTC+8 按天切）。Prometheus 只保留 7 天"""
         if not k8s.enabled:
             return []
         end = datetime.now(chatbi.SG).replace(hour=0, minute=0, second=0, microsecond=0)

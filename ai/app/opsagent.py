@@ -52,12 +52,12 @@ CLUSTER_MAP = """集群里有什么（命名空间 → 组件）：
 - argocd：Argo CD；kube-system：k3s 自带的 Traefik、CoreDNS 等；证书由 cert-manager 管（它的命名空间查不了，证书问题看 ops-desk 的事件）
 - Dify 用 Docker Compose 跑在同一台服务器上，不在集群里，查不到
 - 外部拨测：Blackbox Exporter 每分钟从服务器往外探测，指标 probe_success（1 通、0 不通）、probe_duration_seconds（耗时，秒）、probe_ssl_earliest_cert_expiry（证书到期的时间戳）；标签 group="own" 是自己的网站（ops、dify、status、grafana、argocd、push.liuxd.dev 在本服务器，push 是 LabPager App 的推送中转，liuxd.dev、cv、roadmap、ai-roadmap、it 在 Cloudflare Pages），group="dependency" 是外部依赖（阿里云百炼、GitHub、GHCR、Cloudflare、Telegram），标签 name 是名字。问网站能不能打开、外部服务挂没挂、AI 为什么慢（百炼延迟），用 promql 查这些
-工具结果里的时间都已换成新加坡时间，和上面的「现在」直接比较
+工具结果里的时间都已换成 UTC+8，和上面的「现在」直接比较
 问到某个组件先按上面找命名空间；上面没有的，用 list_pods 把允许的命名空间都看一遍再下结论，不要没查就说不在集群里"""
 
 GROUNDING = """结论里的每个数字和现象都必须来自这次真正调用过的工具结果：没调用过的工具，不能写它「显示」了什么；回答里不要写工具名和调用格式（比如 list_pods(...)）"""
 
-SYSTEM = """你是值班运维工程师，负责一个单节点 k3s 集群（香港，4 核 12G），上面跑着网站 ops-desk、AI 服务 ai-api、监控（Prometheus、Grafana、Uptime Kuma）、GitOps（Argo CD）；Dify 用 Docker Compose 跑在同一台服务器上，不在集群里。现在是 {now}（新加坡时间）。
+SYSTEM = """你是值班运维工程师，负责一个单节点 k3s 集群（香港，4 核 12G），上面跑着网站 ops-desk、AI 服务 ai-api、监控（Prometheus、Grafana、Uptime Kuma）、GitOps（Argo CD）；Dify 用 Docker Compose 跑在同一台服务器上，不在集群里。现在是 {now}（UTC+8）。
 """ + CLUSTER_MAP + """
 用只读工具排查用户的问题，规则：
 1. 先看告警和概况，再按线索查具体 Pod、事件、日志、指标；不要凭空猜，结论要有工具结果支撑
@@ -138,9 +138,9 @@ class Cluster:
         await self.prom.aclose()
 
 
-def sg_time(ts: str | None) -> str:
-    """K8s、Prometheus 给的是 UTC（2026-10-30T16:11:18Z），换成和系统提示一样的新加坡时间。
-    2026-10-30 评测：告警开始时间是 UTC、「现在」是新加坡时间，模型把 9 分钟前算成了 8 小时前"""
+def local_time(ts: str | None) -> str:
+    """K8s、Prometheus 给的是 UTC（2026-10-30T16:11:18Z），换成和系统提示一样的 UTC+8。
+    2026-10-30 评测：告警开始时间是 UTC、「现在」是 UTC+8，模型把 9 分钟前算成了 8 小时前"""
     if not ts:
         return ""
     try:
@@ -178,7 +178,7 @@ async def run_tool(c: Cluster, name: str, args: dict) -> object:
         alerts = r.json()["data"]["alerts"]
         return [
             {"name": a["labels"].get("alertname"), "state": a["state"], "severity": a["labels"].get("severity"), "namespace": a["labels"].get("namespace"),
-             "pod": a["labels"].get("pod"), "since": sg_time(a.get("activeAt")), "summary": (a.get("annotations") or {}).get("summary") or (a.get("annotations") or {}).get("description", "")[:200]}
+             "pod": a["labels"].get("pod"), "since": local_time(a.get("activeAt")), "summary": (a.get("annotations") or {}).get("summary") or (a.get("annotations") or {}).get("description", "")[:200]}
             for a in alerts
             if a["labels"].get("alertname") not in ("Watchdog", "InfoInhibitor")
         ]
@@ -211,7 +211,7 @@ async def run_tool(c: Cluster, name: str, args: dict) -> object:
                 reason = ((cs.get("state") or {}).get(state) or {}).get("reason", "")
                 out.append({
                     "pod": p["metadata"]["name"], "container": cs["name"], "phase": p["status"].get("phase"), "state": f"{state} {reason}".strip(),
-                    "ready": cs.get("ready"), "restarts": cs.get("restartCount"), "last_exit": f"{last.get('reason', '')} {sg_time(last.get('finishedAt'))}".strip(),
+                    "ready": cs.get("ready"), "restarts": cs.get("restartCount"), "last_exit": f"{last.get('reason', '')} {local_time(last.get('finishedAt'))}".strip(),
                     "age": _age(p["metadata"].get("creationTimestamp")), "mem_mib": round(mem.get((p["metadata"]["name"], cs["name"]), 0), 1),
                     "mem_limit_mib": _mib(((spec.get("resources") or {}).get("limits") or {}).get("memory")),
                 })
@@ -222,7 +222,7 @@ async def run_tool(c: Cluster, name: str, args: dict) -> object:
         items = (await c.k8s(f"/api/v1/namespaces/{ns}/events", params))["items"]
         items.sort(key=lambda e: e.get("lastTimestamp") or e.get("eventTime") or "", reverse=True)
         return [
-            {"time": sg_time(e.get("lastTimestamp") or e.get("eventTime")), "type": e.get("type"), "reason": e.get("reason"),
+            {"time": local_time(e.get("lastTimestamp") or e.get("eventTime")), "type": e.get("type"), "reason": e.get("reason"),
              "object": f"{e['involvedObject'].get('kind')}/{e['involvedObject'].get('name')}", "count": e.get("count"), "message": redact(e.get("message", ""))[:300]}
             for e in items[:20]
         ]

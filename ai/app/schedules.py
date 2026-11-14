@@ -1,4 +1,4 @@
-"""后台定时任务一览（值班台的「🗓 定时任务」）：从 K8s 读出所有 CronJob，算出下次运行时间（换成新加坡时间），配上中文说明。
+"""后台定时任务一览（值班台的「🗓 定时任务」）：从 K8s 读出所有 CronJob，算出下次运行时间（换成 UTC+8，见 localtime.py），配上中文说明。
 只读，不能改、不能触发；改时间还是改仓库里的 YAML。"""
 
 from datetime import datetime, timedelta, timezone
@@ -17,9 +17,22 @@ KNOWN = {
     "backup-dify": ("ops", "💾 备份 Dify"),
 }
 WEEKDAYS = "日一二三四五六"
-SG = ZoneInfo("Asia/Singapore")
-# 新加坡和上海同为 UTC+8、都没有夏令时，按上海时区写的任务统一称新加坡时间
-TZ_NAMES = {"Asia/Shanghai": "新加坡时间", "Asia/Singapore": "新加坡时间", "America/Los_Angeles": "洛杉矶时间", "UTC": "UTC 时间"}
+from .localtime import LABEL, TZ as SG
+
+
+def tz_name(tz: str) -> str:
+    """CronJob 的时区怎么称呼：和显示时区同为 UTC+8 的统一叫 LABEL（值班台里显示，见 localtime.py）；
+    其他时区不写城市名（2026-11-14 用户要求值班台不出现洛杉矶时间），写成 UTC±N"""
+    if tz == "UTC":
+        return "UTC 时间"
+    try:
+        off = datetime.now(ZoneInfo(tz)).utcoffset() or timedelta(0)
+    except (KeyError, ValueError):
+        return tz
+    if off == datetime.now(SG).utcoffset():
+        return LABEL
+    h = off.total_seconds() / 3600
+    return f"UTC{h:+g}"
 
 
 def _field(expr: str, lo: int, hi: int) -> set[int]:
@@ -72,8 +85,8 @@ def describe(schedule: str) -> str:
     return schedule
 
 
-def sg_when(schedule: str, nxt: datetime) -> str:
-    """按下一次运行的时刻，把频率写成新加坡时间，如 每天 09:00、每周一 09:20。"""
+def local_when(schedule: str, nxt: datetime) -> str:
+    """按下一次运行的时刻，把频率写成 UTC+8，如 每天 09:00、每周一 09:20。"""
     minute, hour, dom, month, dow = schedule.split()
     if not (minute.isdigit() and hour.isdigit() and month == "*"):
         return describe(schedule)
@@ -99,11 +112,11 @@ def summarize(items: list[dict], my_tz: str, now: datetime | None = None) -> lis
         group, title = KNOWN.get(name, ("ops", name))
         nxt = None if spec.get("suspend") else next_run(spec["schedule"], tz, now)
         if nxt:
-            when = sg_when(spec["schedule"], nxt)
+            when = local_when(spec["schedule"], nxt)
         else:
             when = describe(spec["schedule"])
             if tz != my_tz and not when.startswith("每 "):
-                when += f"（{TZ_NAMES.get(tz, tz)}）"
+                when += f"（{tz_name(tz)}）"
         last, ok = status.get("lastScheduleTime"), status.get("lastSuccessfulTime")
         out.append(
             {

@@ -20,7 +20,6 @@ import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from .extract import parse_json
 from .gateway import ChatResult, Gateway
@@ -28,7 +27,7 @@ from .gateway import ChatResult, Gateway
 MAX_ROWS = 200
 TIME_LIMIT = 2.0
 REFRESH = 600  # 快照最多 10 分钟更新一次
-SG = ZoneInfo("Asia/Singapore")
+from .localtime import TZ as SG  # 显示用时区（UTC+8，见 localtime.py）
 
 # 费用账本里的功能名 → 中文。不在这里的（比如私人助理 assistant）不进快照
 FEATURE_ZH = {
@@ -72,7 +71,7 @@ CREATE TABLE deploys (deployed_at TEXT, day TEXT, sha TEXT, state TEXT);
 """
 
 
-def sg_time(iso: str | None) -> str | None:
+def local_time(iso: str | None) -> str | None:
     if not iso:
         return None
     try:
@@ -91,7 +90,7 @@ def build(src: sqlite3.Connection, dest: Path, traffic: list[tuple[str, int, int
         src.execute("SELECT id, ts, alert, severity, started, status, action, risk, resolved_ts FROM incidents").fetchall() if has_incidents else []
     ):
         a = json.loads(action) if action else None
-        start, end = sg_time(started or ts), sg_time(resolved)
+        start, end = local_time(started or ts), local_time(resolved)
         mins = None
         if started and resolved:
             mins = round((datetime.fromisoformat(resolved.replace("Z", "+00:00")) - datetime.fromisoformat(started.replace("Z", "+00:00"))).total_seconds() / 60, 1)
@@ -102,10 +101,10 @@ def build(src: sqlite3.Connection, dest: Path, traffic: list[tuple[str, int, int
     evals = []
     for ts, kind, result in src.execute("SELECT ts, kind, result FROM eval_runs").fetchall():
         s = json.loads(result).get("summary") or {}
-        at = sg_time(ts) or ""
+        at = local_time(ts) or ""
         evals.append((at, at[:10], EVAL_ZH.get(kind, kind), s.get("cases"), s.get("hit_at_1"), s.get("hit_at_3"), s.get("keyword_acc"),
                       s.get("judge_correct"), s.get("refusal_acc"), s.get("cost_yuan"), s.get("seconds")))
-    dep = [(sg_time(d.get("time")), (sg_time(d.get("time")) or "")[:10], d.get("sha"), DEPLOY_ZH.get(d.get("state"), d.get("state"))) for d in deploys]
+    dep = [(local_time(d.get("time")), (local_time(d.get("time")) or "")[:10], d.get("sha"), DEPLOY_ZH.get(d.get("state"), d.get("state"))) for d in deploys]
     tmp = dest.with_suffix(".tmp")
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp.unlink(missing_ok=True)
@@ -151,7 +150,7 @@ def schema(path: Path, now: datetime | None = None) -> str:
         features = [r[0] for r in db.execute("SELECT DISTINCT feature FROM ai_usage ORDER BY feature")]
         t_lo, t_hi = db.execute("SELECT MIN(day), MAX(day) FROM site_traffic").fetchone()
     monday = today - timedelta(days=today.weekday())
-    return f"""SQLite 数据库，是这个网站（ops.liuxd.dev，一个 AI 应用作品集）自己的真实运行数据。日期、时间都是新加坡时间。
+    return f"""SQLite 数据库，是这个网站（ops.liuxd.dev，一个 AI 应用作品集）自己的真实运行数据。日期、时间都是 UTC+8。
 今天是 {today}（星期{"一二三四五六日"[today.weekday()]}）。「最近 7 天」= {today - timedelta(days=6)} 到 {today}；「本周」= {monday} 到 {today}；「昨天」= {today - timedelta(days=1)}。
 
 表 ai_usage：AI 功能的调用和费用，每天每个功能每个模型一行（数据从 {lo or "无"} 到 {hi or "无"}）

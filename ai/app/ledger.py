@@ -6,12 +6,11 @@ import sqlite3
 import threading
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import numpy as np
 
 # 按北京时间切换日期（用户和费用账单都在国内时区）
-TZ = ZoneInfo("Asia/Shanghai")
+from .localtime import TZ  # 时区统一在 localtime.py（私人助理也从这里取 TZ）
 
 
 def today() -> str:

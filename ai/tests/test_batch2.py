@@ -122,7 +122,7 @@ def test_chatbi_snapshot_has_real_stats_only(tmp_path):
     _, rows = chatbi.run_sql(db, "SELECT feature, SUM(calls), ROUND(SUM(cost), 4) FROM ai_usage GROUP BY feature ORDER BY feature")
     assert rows == [["ChatBI 查数据", 1, 0.01], ["作品集问答", 2, 0.004]]  # 私人助理的调用不在里面
     _, rows = chatbi.run_sql(db, "SELECT alert, status, action, handled_by, fixed, minutes_to_resolve, started_at FROM incidents ORDER BY id")
-    assert rows[0] == ["CronJobFailed", "已恢复", "补跑任务", "自动执行", 1, 12.5, "2026-10-28 10:00"]  # 新加坡时间
+    assert rows[0] == ["CronJobFailed", "已恢复", "补跑任务", "自动执行", 1, 12.5, "2026-10-28 10:00"]  # UTC+8
     assert rows[1][1:5] == ["分析中", "无", "没有处理", 0]
     assert chatbi.run_sql(db, "SELECT kind, hit_at_1 FROM eval_runs")[1] == [["运维知识库", 85.7]]
     assert chatbi.run_sql(db, "SELECT SUM(requests) FROM site_traffic")[1] == [[2700]]

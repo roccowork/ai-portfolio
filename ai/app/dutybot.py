@@ -261,6 +261,10 @@ def balance_line(b: dict | None, error: str = "") -> str:
             lines.append(f"　上月（{lm['cycle']}）账单 {sym}{lm['total']:.2f}")
     elif b.get("bill_error"):
         lines.append(f"　月账单：查不到（{e(b['bill_error'])}）")
+    if (models := b.get("models")) is not None:
+        lines.append("　本月各模型（阿里云账单，实际扣费）：" + ("、".join(f"{e(n)} {sym}{v:.2f}" for n, v in models[:6]) or "还没有扣费（可能都在免费额度里）"))
+    elif b.get("models_error"):
+        lines.append(f"　各模型扣费：查不到（{e(b['models_error'])}）")
     return "\n".join(lines)
 
 
@@ -270,7 +274,7 @@ def _model_lines(ledger: Ledger, n: int = 6) -> list[str]:
     rows = [r for r in ledger.model_usage(month) if r["calls"]]
     if not rows:
         return []
-    out = ["", f"<b>本月各模型</b>（{month[:7]}，本站账本估算）"]
+    out = ["", f"<b>本月各模型调用</b>（{month[:7]}，本站账本：次数和 token 准，费用是估算，以阿里云扣费为准）"]
     for r in rows[:n]:
         out.append(f"　{e(r['model'].split('/')[-1])}：{r['calls']} 次，{r['tokens'] / 10000:.1f} 万 token，约 ¥{r['cost']:.2f}")
     if len(rows) > n:

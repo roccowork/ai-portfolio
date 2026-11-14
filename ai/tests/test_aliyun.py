@@ -23,6 +23,13 @@ def fake(tx_ok=True):
             return httpx.Response(200, json={"Success": True, "Data": {"AvailableAmount": "16.88", "Currency": "USD"}})
         if not tx_ok:
             return httpx.Response(403, json={"Success": False, "Code": "NotAuthorized"})
+        if action == "QueryInstanceBill":
+            items = [{"ProductName": "大模型服务平台百炼", "InstanceID": "123;qwen-plus;cn-beijing", "PretaxAmount": "0.40"},
+                     {"ProductName": "大模型服务平台百炼", "InstanceID": "123;deepseek-v3;cn-beijing", "PretaxAmount": "0.10"},
+                     {"ProductName": "大模型服务平台百炼", "InstanceID": "123;qwen-plus;cn-beijing", "PretaxAmount": "0.05"},
+                     {"ProductName": "大模型服务平台百炼", "InstanceID": "123;qwen-turbo;cn-beijing", "PretaxAmount": "0"},
+                     {"ProductName": "对象存储", "InstanceID": "bucket-a", "PretaxAmount": "0.10"}]
+            return httpx.Response(200, json={"Success": True, "Data": {"TotalCount": len(items), "Items": {"Item": items}}})
         if action == "QueryBillOverview":
             cycle = req.url.params["BillingCycle"]
             items = [{"ProductName": "大模型服务平台百炼", "PretaxAmount": "0.50"}, {"ProductName": "对象存储", "PretaxAmount": "0.10"},
@@ -43,6 +50,7 @@ def test_balance_and_spent_since_last_recharge():
     assert "还剩 $16.88" in line and "2026-11-02 充值 $20.00" in line and "一共花了 $3.12" in line
     assert "平均每天 $0.26" in line and "还能用约 64 天" in line
     assert "本月（2026-11）账单 $0.65：大模型服务平台百炼 $0.55、对象存储 $0.10" in line and "上月（2026-10）账单 $0.00" in line and "免费的" not in line
+    assert "本月各模型（阿里云账单，实际扣费）：qwen-plus $0.45、deepseek-v3 $0.10" in line and "qwen-turbo" not in line and "bucket" not in line
 
 
 def test_transactions_denied_still_shows_balance():
@@ -60,5 +68,5 @@ def test_usage_text_lists_models_this_month(tmp_path):
     ledger.record("chat", "qwen-plus", 1000, 500, 0.01)
     ledger.record("eval", "deepseek-v3", 20000, 0, 0.30)
     text = dutybot.usage_text(ledger, 5.0, 1.0)
-    assert "本月各模型" in text and text.index("deepseek-v3") < text.index("qwen-plus")
+    assert "本月各模型调用" in text and text.index("deepseek-v3") < text.index("qwen-plus")
     assert "qwen-plus：2 次，0.3 万 token，约 ¥0.02" in text

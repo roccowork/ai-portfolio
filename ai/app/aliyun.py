@@ -6,6 +6,7 @@
 """
 
 import base64
+import re
 import hashlib
 import hmac
 import secrets
@@ -82,6 +83,33 @@ async def bill(c: httpx.AsyncClient, ak: str, sk: str, endpoint: str, cycle: str
     return {"cycle": cycle, "total": sum(v for _, v in products), "products": products}
 
 
+MODEL_PRODUCT = re.compile(r"百炼|灵积|大模型|dashscope|bailian|sfm", re.I)
+MODEL_NAME = re.compile(r"(qwen|deepseek|kimi|moonshot|glm|baichuan|llama|text-embedding|gte|wanx|paraformer|cosyvoice|sambert)[\w.\-]*", re.I)
+
+
+def model_label(it: dict) -> str:
+    """账单明细里认出模型名：先在实例 ID、计费项、配置里找常见模型名，找不到就用实例 ID（截短）"""
+    blob = " ".join(str(it.get(k) or "") for k in ("InstanceID", "InstanceConfig", "BillingItem", "InstanceSpec", "Item", "NickName"))
+    if m := MODEL_NAME.search(blob):
+        return m.group(0).lower()
+    return (str(it.get("InstanceID") or it.get("BillingItem") or "其他"))[:30]
+
+
+async def model_bill(c: httpx.AsyncClient, ak: str, sk: str, endpoint: str, cycle: str, now: datetime) -> list[tuple[str, float]]:
+    """本月大模型（百炼 / 灵积）的账单明细（QueryInstanceBill）按模型汇总：[(模型, 应付金额)]，从多到少，0 元的不要"""
+    by: dict[str, float] = {}
+    for page in range(1, 6):
+        d = await rpc(c, ak, sk, endpoint, "QueryInstanceBill", {"BillingCycle": cycle, "PageNum": page, "PageSize": 300}, now)
+        rows = ((d.get("Items") or {}).get("Item")) or []
+        for it in rows:
+            if MODEL_PRODUCT.search(f"{it.get('ProductName') or ''} {it.get('ProductCode') or ''}"):
+                k = model_label(it)
+                by[k] = by.get(k, 0.0) + _num(it.get("PretaxAmount"))
+        if len(rows) < 300 or page * 300 >= int(d.get("TotalCount") or 0):
+            break
+    return sorted(((k, v) for k, v in by.items() if v > 0), key=lambda x: -x[1])
+
+
 async def balance(ak: str, sk: str, endpoint: str, transport: httpx.AsyncBaseTransport | None = None, now: datetime | None = None) -> dict:
     """返回 {amount（现在可用余额）, currency, recharge: {time, amount, balance} | None, spent（最近一次充值后花了多少） | None}；
     余额查不到抛 RuntimeError，流水查不到只是没有 spent"""
@@ -100,6 +128,10 @@ async def balance(ak: str, sk: str, endpoint: str, transport: httpx.AsyncBaseTra
             out["last_month"] = await bill(c, ak, sk, endpoint, _cycle(now, 1), now)
         except (RuntimeError, httpx.HTTPError) as e:
             out["bill_error"] = str(e)[:60]
+        try:
+            out["models"] = await model_bill(c, ak, sk, endpoint, _cycle(now), now)
+        except (RuntimeError, httpx.HTTPError) as e:
+            out["models_error"] = str(e)[:60]
     if out["recharge"] and out["spent"] is not None:
         try:
             since = datetime.fromisoformat(out["recharge"]["time"].replace("Z", "+00:00"))

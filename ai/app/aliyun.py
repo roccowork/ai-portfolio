@@ -1,7 +1,7 @@
 """阿里云账户余额（值班台「💰 今日用量」用）：BSS OpenAPI QueryAccountBalance，RPC 风格签名（HMAC-SHA1）。
 
 百炼的 API Key 查不了余额，要另外建一个 RAM 用户的 AccessKey，只给 AliyunBSSReadOnlyAccess（只读费用）权限，
-放进 Secret ai-api 的 ALIYUN_BSS_AK / ALIYUN_BSS_SK。百炼用的是国际站（dashscope-intl），费用接口默认也用国际站。
+放进 Secret ai-api 的 ALIYUN_BSS_AK / ALIYUN_BSS_SK。账户在国内站（aliyun.com），费用接口默认用国内站 business.aliyuncs.com；国际站改 ALIYUN_BSS_ENDPOINT。
 只读，不改任何东西。
 """
 

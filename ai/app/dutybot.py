@@ -1,4 +1,4 @@
-"""网站值班台机器人的菜单内容：服务器状态、告警、自愈记录、访客留言、今日用量。
+"""网站值班台机器人的菜单内容：服务器状态、告警、自愈记录、访客留言、网站 AI 用量。
 
 都只读，不调用模型、不花钱；直接打字提问才交给运维 Agent（会调用模型）。
 只有主人（TELEGRAM_CHAT_ID）能用，所以这里可以显示访客留下的联系方式和完整的诊断。
@@ -29,7 +29,7 @@ HELP = """<b>我是 OPS 值班台</b>，负责网站和服务器这边的事：
 📊 <b>平台实况</b>：最近发布、7 天可用率、备份、证书、7 天告警（和网页值班大屏同一份数据），加上 DORA 四个指标（部署频率、提交到上线、变更失败率、故障恢复）
 🗓 <b>定时任务</b>：服务器上的备份、周报等任务，下次几点、上次成没成功
 💬 <b>最近留言</b>：网站访客在 AI 助手里给你的留言
-💰 <b>今日用量</b>：AI 演示今天的调用次数、费用和剩余预算
+💰 <b>网站 AI 用量</b>：网站 AI 今天的调用次数、费用和剩余预算，本月各模型用量（阿里云余额和账单在私人助理）
 
 按钮都不调用模型、不花钱。两个评测会花钱，不放在菜单里，要跑就手动输入：/eval（RAG 评测，2～3 分钟，一两毛钱）、/agenteval（Agent 故障演练，3～5 分钟，几毛钱，只读不动集群）。也可以直接打字问，运维 Agent 会自己查（每次花几分钱）：问状态，比如「为什么内存这么高」，它查实时数据；问怎么做，比如「证书快过期怎么办」「怎么回滚」，它查本站的运维手册，按手册回答并写明出处。
 
@@ -240,7 +240,7 @@ def leads_text(ledger: Ledger, limit: int = 5) -> str:
 
 
 def balance_line(b: dict | None, error: str = "") -> str:
-    """阿里云账户余额（百炼从这里扣钱）"""
+    """阿里云账户余额（百炼从这里扣钱）。值班台已不显示（钱归私人助理），留着给私人助理复用"""
     if error:
         return f"🏦 阿里云余额：查不到（{e(error)}）"
     if not b:
@@ -283,14 +283,14 @@ def _model_lines(ledger: Ledger, n: int = 6) -> list[str]:
     return out
 
 
-def usage_text(ledger: Ledger, daily_budget: float, public_budget: float, balance: str = "") -> str:
+def usage_text(ledger: Ledger, daily_budget: float, public_budget: float) -> str:
     s = ledger.summary()
     t, total = s["today"], s["total"]
     left = max(0.0, daily_budget - ledger.spent_today())
     public = ledger.spent_today(PUBLIC_FEATURES)
     return "\n".join(
         [
-            "<b>💰 今日用量</b>",
+            "<b>💰 网站 AI 用量</b>",
             "",
             f"今天：{t['calls']} 次调用，约 ¥{t['cost']:.3f}",
             f"其中访客 ¥{public:.3f}，访客每日上限 ¥{public_budget:.2f}" + ("（已用完，访客的功能暂停到明天）" if public >= public_budget else ""),
@@ -298,7 +298,6 @@ def usage_text(ledger: Ledger, daily_budget: float, public_budget: float, balanc
             "",
             f"累计：{total['calls']} 次调用，约 ¥{total['cost']:.2f}",
             *_model_lines(ledger),
-            *(["", balance] if balance else []),
         ]
     )
 

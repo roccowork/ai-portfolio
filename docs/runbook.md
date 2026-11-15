@@ -571,7 +571,7 @@ Odoo 和依赖它的办公 Agent 2026-10-28 下线，Argo CD 应用和清单已�
 
 告警、网站周报、每日英语、R2 用量共用 `deploy/monitoring/wecom-relay/relay.mjs` 里的推送函数：对应的 Telegram Secret 存在就发 Telegram，否则发企业微信（Secret `wecom-bot`）。消息格式自动转换。
 
-值班台的常驻菜单都只读、不调用模型（`ai/app/dutybot.py`）：服务器状态（含 Argo CD 同步、外部拨测、系统盘几天写满、Prometheus 序列数）、Pod 资源（内存和 CPU 前 5、快到上限的、重启过的）、外部服务（Blackbox 拨测的自有网站和外部依赖）、当前告警、自愈记录、平台实况（读站点的 `/status.json`，和网页值班大屏的发布、证书、备份同一份，后面接 DORA 指标）、定时任务（所有 CronJob，说明在 `ai/app/schedules.py` 的 `KNOWN`，新增 CronJob 时顺手补一行）、最近留言、今日用量。直接打字提问交给运维 Agent（和网站值班台同一套工具，主人自己用可以查日志，日志先脱敏），每次调用模型。菜单在机器人里发 /start 出现。
+值班台的常驻菜单都只读、不调用模型（`ai/app/dutybot.py`）：服务器状态（含 Argo CD 同步、外部拨测、系统盘几天写满、Prometheus 序列数）、Pod 资源（内存和 CPU 前 5、快到上限的、重启过的）、外部服务（Blackbox 拨测的自有网站和外部依赖）、当前告警、自愈记录、平台实况（读站点的 `/status.json`，和网页值班大屏的发布、证书、备份同一份，后面接 DORA 指标）、定时任务（所有 CronJob，说明在 `ai/app/schedules.py` 的 `KNOWN`，新增 CronJob 时顺手补一行）、最近留言、网站 AI 用量（只看本站账本，阿里云余额和账单归私人助理）。直接打字提问交给运维 Agent（和网站值班台同一套工具，主人自己用可以查日志，日志先脱敏），每次调用模型。菜单在机器人里发 /start 出现。
 
 ### 效果评测（RAG）
 

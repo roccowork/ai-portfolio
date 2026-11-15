@@ -70,3 +70,9 @@ def test_usage_text_lists_models_this_month(tmp_path):
     text = dutybot.usage_text(ledger, 5.0, 1.0)
     assert "本月各模型调用" in text and text.index("deepseek-v3") < text.index("qwen-plus")
     assert "qwen-plus：2 次，0.3 万 token，约 ¥0.02" in text
+    # 值班台只管网站：标题改名，不再有阿里云余额和账单（归私人助理）
+    assert "💰 网站 AI 用量" in text and "今日用量" not in text and "阿里云账户" not in text and "账单" not in text
+
+
+def test_help_uses_new_usage_name():
+    assert "网站 AI 用量" in dutybot.HELP and "今日用量" not in dutybot.HELP

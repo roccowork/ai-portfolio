@@ -60,7 +60,7 @@ async def status_text(k8s: ops.Cluster) -> str:
         await _argo_line(k8s),
         await _probe_line(k8s),
         "\n".join(x for x in (await _disk_forecast(k8s), await _prom_line(k8s)) if x),
-        "<i>细看每个 Pod：点「📦 Pod 资源」</i>",
+        "<i>细看每个 Pod：资源中心「Pod 和数据盘」</i>",
     ]
     return "\n\n".join(b for b in blocks if b)
 
@@ -88,11 +88,12 @@ HEALTH_ZH = {"Healthy": "健康", "Progressing": "更新中", "Degraded": "异�
 
 
 async def _probe_line(k8s: ops.Cluster) -> str | None:
-    """外部拨测（Blackbox，2026-11-22 起唯一的可用性监控）：几个通、哪些不通；细的在「外部服务」"""
+    """外部拨测（Blackbox，2026-11-22 起唯一的可用性监控）：几个通、哪些不通，只算网站和外部依赖（VPS 在私人助理那边看）"""
     try:
         items = await probes.fetch(k8s)
     except Exception:  # noqa: BLE001 —— Prometheus 查不到就不显示这一行
         return None
+    items = [x for x in items if x["group"] != "vps"]
     if not items:
         return None
     bad = [x["name"] for x in items if not x["ok"]]

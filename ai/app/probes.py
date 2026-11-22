@@ -32,6 +32,7 @@ async def fetch(c: ops.Cluster) -> list[dict]:
 def text(items: list[dict]) -> str:
     if not items:
         return "<b>🌐 外部服务</b>\n还没有拨测数据（Blackbox Exporter 刚部署时要等一两分钟）"
+    items = [x for x in items if x["group"] != "vps"]  # VPS 在私人助理那边看（资源中心的 VPS 卡片）
     bad = [x for x in items if not x["ok"]]
     lines = ["<b>🌐 外部服务</b>" + ("  ✅ 全部正常" if not bad else f"  ⚠️ {len(bad)} 个不通")]
     for g in ("own", "dependency"):

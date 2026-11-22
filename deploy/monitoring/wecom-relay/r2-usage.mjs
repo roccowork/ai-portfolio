@@ -2,7 +2,7 @@
 // 发到企业微信。monthly 模式每月 1 号必发；check 模式每周跑，超过免费额度的 80% 才发。
 // R2 免费额度：存储 10 GB / 月；读写次数（A 类 100 万、B 类 1000 万 / 月）备份用量远低于上限，这里不统计。
 import { readFileSync } from 'node:fs';
-import { channel, isMain } from './relay.mjs';
+import { channel, isMain, pushEnabled } from './relay.mjs';
 
 export const FREE_BYTES = 10 * 1024 ** 3;
 export const WARN_RATIO = 0.8;
@@ -60,6 +60,8 @@ if (isMain(process.argv[1], import.meta.url)) {
   const ch = channel();
   if (!shouldSend(sum.ratio, mode)) {
     console.log('未超过 80%，不发送');
+  } else if (!(await pushEnabled(mode === 'monthly' ? 'r2-usage-monthly' : 'r2-usage-check'))) {
+    console.log('总控台里关掉了，这次不发');
   } else if (ch && !process.env.DRY_RUN) {
     ch.send(msg)
       .then(() => console.log(`已发送（${ch.name}）`))

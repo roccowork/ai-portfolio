@@ -4,7 +4,9 @@
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-# CronJob 名字 → (分组, 中文说明)。分组 push：会发消息；其他是后台维护。新增 CronJob 时顺手补一行
+# 哪个机器人发：daily-english 用私人助理的机器人，其余用值班台
+BOT = {"daily-english": "私人助理"}
+# CronJob 名字 → (分组, 中文说明)。分组 push：会发消息（在总控台「推送」页看和开关，脚本发之前查 pushEnabled）；其他是后台维护。新增 CronJob 时顺手补一行
 KNOWN = {
     "daily-english": ("push", "📘 每日运维英语"),
     "weekly-report": ("push", "📈 网站周报"),
@@ -120,6 +122,7 @@ def summarize(items: list[dict], my_tz: str, now: datetime | None = None) -> lis
         last, ok = status.get("lastScheduleTime"), status.get("lastSuccessfulTime")
         out.append(
             {
+                "key": name,
                 "group": group,
                 "title": title,
                 "when": when,

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   alertChannel,
   consoleButton,
+  pushEnabled,
   diagnosedByAgent,
   filterPayload,
   formatMessage,
@@ -207,5 +208,25 @@ describe('在总控台查看', () => {
     });
     expect(alertChannel({ TELEGRAM_BOT_TOKEN: 't', TELEGRAM_CHAT_ID: '1' })?.name).toBe('telegram');
     expect(alertChannel({ WECOM_KEY: 'k' })?.name).toBe('wecom');
+  });
+});
+
+describe('总控台「推送」页的开关', () => {
+  it('关掉了就不发；查不到照常发', async () => {
+    const real = globalThis.fetch;
+    try {
+      globalThis.fetch = (async () =>
+        new Response(JSON.stringify({ enabled: false }))) as typeof fetch;
+      expect(await pushEnabled('weekly-report', {})).toBe(false);
+      globalThis.fetch = (async () =>
+        new Response(JSON.stringify({ enabled: true }))) as typeof fetch;
+      expect(await pushEnabled('weekly-report', {})).toBe(true);
+      globalThis.fetch = (async () => {
+        throw new Error('down');
+      }) as typeof fetch;
+      expect(await pushEnabled('weekly-report', {})).toBe(true);
+    } finally {
+      globalThis.fetch = real;
+    }
   });
 });

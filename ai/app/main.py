@@ -25,7 +25,7 @@ from . import content as ct
 from . import demo_shop
 from . import dora
 from . import dutybot
-from . import probes, tgauth
+from . import localtime, probes, schedules, tgauth
 from . import opsdocs as od
 from .evals import agent as agent_eval
 from .evals import rag as rag_eval
@@ -569,6 +569,26 @@ def create_app(
 
     # Alertmanager 的 webhook（deploy/platform/kube-prometheus-stack.yaml 的 autoheal 接收器）。
     # 不在 /api/ai 下面：Ingress 只把 /api/ai 转给 ai-api，这个地址只有集群内部能访问
+    # 总控台「推送」页（页面在私人助理那边）读这个：服务器上会发消息的定时任务，加上值班台出事才发的推送。
+    # 开关只有一套，存在私人助理那边；脚本发之前查它（relay.mjs 的 pushEnabled）。集群内地址，外网访问不到 /internal
+    EVENT_PUSHES = [
+        {"key": "alerts", "title": "🚨 告警（Prometheus）", "bot": "值班台", "when": "出问题时", "switch": False},
+        {"key": "heal", "title": "🩹 自愈诊断和确认", "bot": "值班台", "when": "告警后运维 Agent 处理时", "switch": False},
+        {"key": "lead", "title": "💬 访客新留言", "bot": "值班台", "when": "网站访客留言时", "switch": False},
+        {"key": "demo", "title": "📅 客服 Agent 演示预约", "bot": "值班台", "when": "有人预约时", "switch": False},
+    ]
+
+    @app.get("/internal/pushes")
+    async def internal_pushes():
+        jobs = []
+        if k8s.enabled:
+            items = (await k8s.k8s("/apis/batch/v1/cronjobs"))["items"]
+            for j in schedules.summarize(items, localtime.TZ_KEY):
+                if j["group"] == "push":
+                    jobs.append({"key": j["key"], "title": j["title"], "bot": schedules.BOT.get(j["key"], "值班台"), "when": j["when"],
+                                 "next": j["next"].isoformat() if j["next"] else None, "last_ok": j["last_ok"], "switch": True})
+        return {"jobs": jobs, "events": EVENT_PUSHES}
+
     @app.post("/internal/alertmanager")
     async def alert_hook(req: Request):
         if not k8s.enabled:

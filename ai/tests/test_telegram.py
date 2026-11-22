@@ -156,7 +156,8 @@ def test_jobs_text_groups_cronjobs(tmp_path):
 
     c = ops.Cluster("http://prom", "http://kube", sa_dir=sa, transport=httpx.MockTransport(handler))
     text = asyncio.run(dutybot.jobs_text(c))
-    assert "📮 会发消息的" in text and "📈 网站周报 · 每周一 09:00" in text and "上次 ✅" in text
+    # 会发消息的在总控台「推送」页，这里只列后台维护（只在一个地方看）
+    assert "网站周报" not in text and "「推送」页" in text
     assert "🔧 后台维护" in text and "💾 备份网站 AI 服务数据" in text and "上次 ❌ 失败" in text
 
 
@@ -282,3 +283,32 @@ def test_view_buttons_moved_to_console():
     kb = sent[-1][1]["reply_markup"]["inline_keyboard"]
     assert kb[0][0] == {"text": "✅ 执行", "callback_data": "heal:ok:1"}
     assert kb[1][0] == {"text": "🧭 在总控台查看", "web_app": {"url": "https://ops.liuxd.dev/console/?t=alerts"}}
+
+
+def test_internal_pushes_lists_push_cronjobs(tmp_path):
+    # 总控台「推送」页读的：会发消息的定时任务（带 key，脚本按 key 查开关），加上出事才发的推送（不给关）
+    from fastapi.testclient import TestClient
+
+    from app.config import Settings
+    from app.gateway import Gateway
+    from app.main import create_app
+
+    sa = tmp_path / "sa"
+    sa.mkdir()
+    (sa / "token").write_text("t")
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        items = [
+            {"metadata": {"name": "weekly-report"}, "spec": {"schedule": "0 9 * * 1", "timeZone": "Asia/Singapore"}, "status": {}},
+            {"metadata": {"name": "daily-english"}, "spec": {"schedule": "0 8 * * *", "timeZone": "Asia/Singapore"}, "status": {}},
+            {"metadata": {"name": "backup-ai-api"}, "spec": {"schedule": "10 5 * * *", "timeZone": "Asia/Singapore"}, "status": {}},
+        ]
+        return httpx.Response(200, json={"items": items})
+
+    c = ops.Cluster("http://prom", "http://kube", sa_dir=sa, transport=httpx.MockTransport(handler))
+    s = Settings(api_key="test", data_dir=tmp_path, samples_dir=tmp_path)
+    with TestClient(create_app(s, Gateway(s, Ledger(tmp_path / "ai.db")), cluster=c)) as client:
+        d = client.get("/internal/pushes").json()
+    jobs = {j["key"]: j for j in d["jobs"]}
+    assert set(jobs) == {"weekly-report", "daily-english"} and jobs["daily-english"]["bot"] == "私人助理" and jobs["weekly-report"]["switch"]
+    assert not any(e["switch"] for e in d["events"])

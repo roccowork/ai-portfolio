@@ -219,6 +219,23 @@ export function alertChannel(env = process.env) {
   };
 }
 
+/**
+ * 总控台「推送」页的开关（只有一套，存在私人助理那边）：这个定时推送有没有被关掉。
+ * 查不到（私人助理不在、超时）就照常发，免得开关坏了把推送全停了
+ */
+export async function pushEnabled(key, env = process.env) {
+  const base = env.PUSH_SWITCH_URL || 'http://assistant.ops-desk.svc/internal/pushes';
+  try {
+    const res = await fetch(`${base}/${encodeURIComponent(key)}`, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return true;
+    return (await res.json()).enabled !== false;
+  } catch {
+    return true;
+  }
+}
+
 /** 用当前配置的通道发一条消息，返回通道名 */
 export async function notify(content, env = process.env) {
   const ch = channel(env);

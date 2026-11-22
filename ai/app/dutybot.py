@@ -352,8 +352,9 @@ async def jobs_text(k8s: ops.Cluster, tz: str = localtime.TZ_KEY) -> str:
         return "这里查不到定时任务（没有集群权限）"
     items = (await k8s.k8s("/apis/batch/v1/cronjobs"))["items"]  # type: ignore[index]
     jobs = schedules.summarize(items, tz)
-    lines = [f"<b>🗓 定时任务</b>（{localtime.LABEL}）"]
-    for group, head in (("push", "📮 会发消息的"), ("ops", "🔧 后台维护（不发消息，出问题才告警）")):
+    # 会发消息的定时任务在总控台「推送」页（只在一个地方看），这里只列后台维护
+    lines = [f"<b>🗓 后台定时任务</b>（{localtime.LABEL}，不发消息，出问题才告警；会发消息的在「推送」页）"]
+    for group, head in (("ops", "🔧 后台维护"),):
         rows = [j for j in jobs if j["group"] == group]
         if rows:
             lines += ["", f"<b>{head}</b>"]

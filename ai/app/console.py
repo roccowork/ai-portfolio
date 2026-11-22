@@ -454,7 +454,7 @@ def collect_resources(probe, argo, st, loc, pods, mem, cpu, now: datetime) -> li
     add("k3s", "server", "香港服务器（K3s）", "unknown" if pods is None and mem is None else ("warn" if (mem or 0) > 85 or (cpu or 0) > 85 else "ok"),
         [f"{pods:.0f} 个 Pod 运行中" if pods is not None else "", nums], "status")
     add("pods", "server", "Pod 和数据盘", "ok" if pods is not None else "unknown", ["内存、CPU 占用前 5，重启过的，数据盘用量"], "pods")
-    add("jobs", "server", "定时任务", "ok", ["备份、周报等任务：下次几点、上次成没成功"], "jobs")
+    add("jobs", "server", "后台定时任务", "ok", ["备份、状态采集：下次几点、上次成没成功（会发消息的在「推送」页）"], "jobs")
     for p in probe or []:
         line = f"{p['ms']} ms" if p["ms"] is not None else ""
         if p["group"] == "own" and p.get("cert_days") is not None:

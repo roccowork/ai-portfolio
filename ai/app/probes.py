@@ -48,3 +48,49 @@ def text(items: list[dict]) -> str:
             lines.append(f"{'🟢' if x['ok'] else '🔴'} {html.escape(x['name'])}  {ms}{cert}")
     lines += ["", "<i>每分钟从服务器探测一次；外部依赖返回 401/403 也算在线（没带密钥）</i>"]
     return "\n".join(lines)
+
+
+# 托管在 Cloudflare Pages 的（挂了集群内部看不出来，证书由 Cloudflare 续期）；其余自己的网站在这台服务器上，证书由 cert-manager 续期
+CF_PAGES = {"liuxd.dev", "cv.liuxd.dev", "roadmap.liuxd.dev", "ai-roadmap.liuxd.dev", "it.liuxd.dev"}
+
+
+async def site_text(c: ops.Cluster, name: str) -> str:
+    """总控台点开单个网站 / 外部依赖：现在的状态、24 小时可用率和延迟、证书到期日、在哪托管、证书谁续期"""
+    sel = f'{{job=~"probe-.*", name="{name}"}}'  # name 已在调用处校验过字符
+
+    async def one(q: str) -> float | None:
+        r = await c.query(q)
+        return float(r[0]["value"][1]) if r else None
+
+    ok = await one(f"probe_success{sel}")
+    if ok is None:
+        return f"<b>{html.escape(name)}</b>\n\n没有这个拨测目标"
+    ms = await one(f"probe_duration_seconds{sel}")
+    up = await one(f"avg_over_time(probe_success{sel}[24h]) * 100")
+    avg = await one(f"avg_over_time(probe_duration_seconds{sel}[24h]) * 1000")
+    worst = await one(f"max_over_time(probe_duration_seconds{sel}[24h]) * 1000")
+    cert = await one(f"probe_ssl_earliest_cert_expiry{sel}")
+    group = (await c.query(f"probe_success{sel}"))[0]["metric"].get("group", "")
+    lines = [f"<b>{html.escape(name)}</b>  " + ("🟢 正常" if ok == 1 else "🔴 打不开"), ""]
+    if ms is not None:
+        lines.append(f"现在 {ms * 1000:.0f} ms")
+    if up is not None:
+        lines.append(f"24 小时可用率 {up:.2f}%" + (f" · 平均 {avg:.0f} ms · 最慢 {worst:.0f} ms" if avg is not None and worst is not None else ""))
+    if cert is not None:
+        from datetime import datetime, timezone
+
+        from .localtime import TZ
+
+        left = (cert - datetime.now(timezone.utc).timestamp()) / 86400
+        lines.append(f"证书 {datetime.fromtimestamp(cert, TZ):%Y-%m-%d} 到期（还剩 {left:.0f} 天）")
+    lines.append("")
+    if group == "own":
+        if name in CF_PAGES:
+            lines.append("托管在 Cloudflare Pages，证书由 Cloudflare 自动续期")
+        else:
+            lines.append("在这台服务器上（K3s），证书由 cert-manager 到期前 30 天自动续期；剩不到 21 天还没续上会告警")
+        lines.append("证书剩不到 14 天、或连续打不开会告警（值班台推送）")
+    else:
+        lines.append("外部依赖：不带密钥访问，返回 401 / 403 也算在线")
+    lines += ["", "<i>延迟是从香港服务器每分钟探测一次（Blackbox Exporter）测的：一次完整的 HTTPS 请求（DNS、连接、TLS 握手、等响应），不是你在本地打开的速度</i>"]
+    return "\n".join(lines)

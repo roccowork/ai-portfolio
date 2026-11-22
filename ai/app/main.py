@@ -675,7 +675,7 @@ def create_app(
     detail_cache: dict[str, opswall.Cache] = {k: opswall.Cache(20) for k in details}
 
     class DetailIn(ConsoleIn):
-        section: str = Field(min_length=1, max_length=20)
+        section: str = Field(min_length=1, max_length=60)
 
     @app.post("/api/ai/console/detail")
     async def console_detail(body: DetailIn):
@@ -688,6 +688,14 @@ def create_app(
             if r.status_code != 200:
                 raise HTTPException(502, "私人助理查不到这一项")
             return {"html": str(r.json().get("html") or "")}
+        if body.section.startswith("s:"):
+            # 单个网站 / 外部依赖的详情（资源中心的拨测卡片）；名字只放行域名和中文名里会出现的字符
+            name = body.section[2:]
+            if not re.fullmatch(r"[\w.\- \u4e00-\u9fff]{1,40}", name):
+                raise HTTPException(404, "没有这一项")
+            if not k8s.enabled:
+                raise HTTPException(503, "总控台只能在集群里运行")
+            return {"html": await probes.site_text(k8s, name)}
         if body.section not in details:
             raise HTTPException(404, "没有这一项")
         if not k8s.enabled:

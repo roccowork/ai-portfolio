@@ -156,7 +156,7 @@ def test_alert_center_and_resources(tmp_path):
     assert [r["title"] for r in rec] == ["VPSDown"] and rec[0]["minutes"] == 5 and rec[0]["detail"] == "ops-desk · 示例VPS"
     assert [a["level"] for a in d["alerts"]] == sorted((a["level"] for a in d["alerts"]), key=lambda x: console.LEVELS[x])
     r = {x["id"]: x for x in d["resources"]}
-    assert r["probe-it.liuxd.dev"]["status"] == "bad" and r["probe-it.liuxd.dev"]["group"] == "site" and r["probe-it.liuxd.dev"]["detail"] == "probes"
+    assert r["probe-it.liuxd.dev"]["status"] == "bad" and r["probe-it.liuxd.dev"]["group"] == "site" and r["probe-it.liuxd.dev"]["detail"] == "s:it.liuxd.dev"
     assert r["probe-阿里云百炼"]["group"] == "dependency" and r["k3s"]["detail"] == "status" and r["argo"]["status"] == "warn"
     assert r["p-vps1"]["detail"] == "p:vps" and "p-x" not in r and "probe-示例VPS" not in r and "detail" not in r["p-y"]
     assert d["summary"]["alerts"] == len(d["alerts"]) and d["summary"]["cost_today"] == 0.12
@@ -215,6 +215,8 @@ def test_endpoint_needs_telegram(tmp_path):
         assert c.post("/api/ai/console", json={"init": "key:wrong"}).status_code == 404
         assert c.post("/api/ai/console/detail", json={"init": "x=1", "section": "pods"}).status_code == 404
         assert c.post("/api/ai/console/detail", json={"init": good, "section": "nope"}).status_code == 404
+        assert c.post("/api/ai/console/detail", json={"init": good, "section": 's:x"} or up{'}).status_code == 404  # 不能拼进 PromQL
+        assert c.post("/api/ai/console/detail", json={"init": good, "section": "s:阿里云百炼"}).status_code == 503
     # 值班台机器人输入框左边的菜单按钮设成总控台小程序
     # 菜单改版后发一次说明并收起旧键盘；再启动不重复发
     notes = [p for m, p in calls if m == "send"]
@@ -232,3 +234,12 @@ def test_health_accepts_head(tmp_path):
     s = Settings(api_key="test", data_dir=tmp_path, cases_dir=CASES, samples_dir=tmp_path)
     with TestClient(create_app(s, Gateway(s, Ledger(tmp_path / "ai.db")))) as c:
         assert c.head("/api/ai/health").status_code == 200 and c.get("/api/ai/health").json()["status"] == "ok"
+
+
+def test_site_detail(tmp_path):
+    # 资源中心点开单个网站：状态、托管在哪、证书谁续期、延迟从哪测的
+    from app import probes
+
+    b = make(tmp_path, {"bot": True})
+    t = asyncio.run(probes.site_text(b.c, "ops.liuxd.dev"))
+    assert "🟢 正常" in t and "cert-manager" in t and "香港服务器" in t

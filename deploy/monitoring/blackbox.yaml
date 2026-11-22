@@ -97,6 +97,8 @@ spec:
         - https://argocd.liuxd.dev/
         # LabPager App 的推送中转
         - https://push.liuxd.dev/healthz
+        # 访问统计 Umami（登录页能打开就算正常）
+        - https://stats.liuxd.dev/
       relabelingConfigs:
         - sourceLabels: [__param_target]
           targetLabel: name
@@ -105,6 +107,30 @@ spec:
         - sourceLabels: [__param_target]
           targetLabel: name
           regex: https://([^/]+)/healthz
+          replacement: $1
+---
+# 自己的、要登录的接口：Prometheus 外网入口（LabPager 用，基本认证），不带密码返回 401 也算在线。2026-11-22 补上（之前漏了）
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: own-auth
+  namespace: monitoring
+spec:
+  jobName: probe-own-auth
+  interval: 60s
+  module: http_reachable
+  prober:
+    url: blackbox-exporter.monitoring.svc:9115
+  targets:
+    staticConfig:
+      labels:
+        group: own
+      static:
+        - https://prometheus.liuxd.dev/api/v1/status/buildinfo
+      relabelingConfigs:
+        - sourceLabels: [__param_target]
+          targetLabel: name
+          regex: https://([^/]+)/.*
           replacement: $1
 ---
 # 本站依赖的外部服务

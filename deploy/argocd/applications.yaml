@@ -207,6 +207,9 @@ kind: Application
 metadata:
   name: notes
   namespace: argocd
+  # 2026-11-22 要删掉这个应用（个人知识库换成 Notion）：先加这个 finalizer，删应用时 Argo CD 会连同 CouchDB、同步桥、brain MCP、域名、证书一起删掉
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
   labels:
     layer: app
     role: notes-sync

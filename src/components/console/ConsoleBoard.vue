@@ -5,7 +5,17 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import ConsoleFlow from './ConsoleFlow.vue';
 import TgHtml from './TgHtml.vue';
-import { canFullscreen, initAuth, post, startTab, toggleFullscreen } from './api';
+import {
+  LOGIN_BOT,
+  canFullscreen,
+  inBrowser,
+  initAuth,
+  logout,
+  post,
+  saveLogin,
+  startTab,
+  toggleFullscreen,
+} from './api';
 import { STATUS, type ConsoleData, type ConsoleNode, type ConsoleResource } from './types';
 
 const BASE_TABS = [
@@ -18,6 +28,9 @@ type Tab = string;
 
 const data = ref<ConsoleData | null>(null);
 const error = ref('');
+const needLogin = ref(false);
+const browser = ref(false);
+const loginBox = ref<HTMLElement | null>(null);
 const tab = ref<Tab>('home');
 const panel = ref<{ title: string; html: string; loading: boolean; error: string } | null>(null);
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -87,6 +100,10 @@ async function openDetail(item: ConsoleResource | ConsoleNode) {
     const r = await post<{ html: string }>('/api/ai/console/detail', { section: item.detail });
     if (panel.value) panel.value = { ...panel.value, html: r.html, loading: false };
   } catch (e) {
+    if ((e as Error).message === 'login') {
+      panel.value = null;
+      return showLogin();
+    }
     if (panel.value) panel.value = { ...panel.value, loading: false, error: (e as Error).message };
   }
 }
@@ -97,8 +114,45 @@ async function load() {
     error.value = '';
     if (!TABS.value.some((t) => t.key === tab.value)) tab.value = 'home';
   } catch (e) {
+    if ((e as Error).message === 'login') return showLogin();
     error.value = (e as Error).message;
   }
+}
+
+// 浏览器打开：显示 Telegram 官方登录按钮（只认主人本人的账号，后端校验签名）
+function showLogin() {
+  clearInterval(timer);
+  data.value = null;
+  needLogin.value = true;
+  (
+    window as unknown as { onTelegramAuth: (u: Record<string, string | number>) => void }
+  ).onTelegramAuth = (u) => {
+    saveLogin(u);
+    needLogin.value = false;
+    start();
+  };
+  requestAnimationFrame(() => {
+    if (!loginBox.value || loginBox.value.childElementCount) return;
+    const sc = document.createElement('script');
+    sc.async = true;
+    sc.src = 'https://telegram.org/js/telegram-widget.js?22';
+    sc.setAttribute('data-telegram-login', LOGIN_BOT);
+    sc.setAttribute('data-size', 'large');
+    sc.setAttribute('data-onauth', 'onTelegramAuth(user)');
+    sc.setAttribute('data-request-access', 'write');
+    loginBox.value.appendChild(sc);
+  });
+}
+
+function signOut() {
+  logout();
+  showLogin();
+}
+
+function start() {
+  load();
+  clearInterval(timer);
+  timer = setInterval(load, 30000);
 }
 
 function onKey(e: KeyboardEvent) {
@@ -110,13 +164,14 @@ onMounted(() => {
   const t = startTab();
   if (/^[a-z][a-z-]{0,25}$/.test(t)) tab.value = t; // 私人标签页要等数据回来才知道，先记下
   fullscreen.value = canFullscreen();
+  browser.value = inBrowser();
+  window.addEventListener('keydown', onKey);
+  if (err === 'login') return showLogin();
   if (err) {
     error.value = err;
     return;
   }
-  load();
-  timer = setInterval(load, 30000);
-  window.addEventListener('keydown', onKey);
+  start();
 });
 onBeforeUnmount(() => {
   clearInterval(timer);
@@ -142,6 +197,13 @@ onBeforeUnmount(() => {
       >
         ⛶ 全屏
       </button>
+      <button
+        v-if="browser && data"
+        class="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-300"
+        @click="signOut"
+      >
+        退出
+      </button>
     </header>
 
     <nav class="tabs mt-4" role="tablist">
@@ -163,7 +225,12 @@ onBeforeUnmount(() => {
     <p v-if="error" class="mt-6 rounded-xl bg-red-500/10 p-4 text-red-300 ring-1 ring-red-500/30">
       {{ error }}
     </p>
-    <p v-if="!data && !error" class="mt-10 text-slate-400">加载中……</p>
+    <div v-if="needLogin" class="mt-10 flex flex-col items-center gap-4 text-center">
+      <p class="text-slate-300">用 Telegram 登录（只认主人本人的账号，登录一次管 7 天）</p>
+      <div ref="loginBox"></div>
+      <p class="text-xs text-slate-500">也可以在值班台机器人里点「总控台」直接打开</p>
+    </div>
+    <p v-else-if="!data && !error" class="mt-10 text-slate-400">加载中……</p>
 
     <template v-if="data">
       <!-- 概览 -->

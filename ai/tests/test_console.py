@@ -168,6 +168,13 @@ def test_telegram_auth():
     assert tgauth.verify(good, "bot-token", "42", now=now)
     assert not tgauth.verify(good, "other-token", "42", now=now)  # 别的机器人签的
     assert not tgauth.verify(good, "bot-token", "43", now=now)  # 不是主人
+    # 浏览器：Telegram 登录按钮，7 天有效；小程序的签名规则和它不通用
+    login = tgauth.sign_login({"id": "42", "first_name": "x", "auth_date": str(now - 3 * 86400)}, "bot-token")
+    assert tgauth.verify(login, "bot-token", "42", now=now)
+    assert not tgauth.verify(login, "bot-token", "43", now=now)
+    assert not tgauth.verify(login, "other-token", "42", now=now)
+    assert not tgauth.verify(login, "bot-token", "42", now=now + 5 * 86400)  # 超过 7 天
+    assert not tgauth.verify("login:" + good, "bot-token", "42", now=now)
     assert not tgauth.verify(good, "bot-token", "42", now=now + 3 * 86400)  # 过期
     assert not tgauth.verify(good.replace("id%22%3A42", "id%22%3A43"), "bot-token", "43", now=now)  # 改了内容签名就不对
     assert not tgauth.verify("", "bot-token", "42") and not tgauth.verify("a=%%%", "bot-token", "42")

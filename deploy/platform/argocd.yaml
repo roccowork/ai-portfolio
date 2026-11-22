@@ -24,8 +24,10 @@ spec:
         # TLS 在 Traefik 终止，Argo CD 本身只提供 HTTP
         server.insecure: true
       cm:
-        # 默认 3 分钟检查一次 Git，改成 1 分钟，推送后更快上线
-        timeout.reconciliation: 60s
+        # 默认 3 分钟检查一次 Git，改成 30 秒，推送后更快上线（2026-11-22 从 60s 再缩短）。
+        # 新版默认还会再随机加最多 60 秒（jitter，防止很多应用同时去拉 Git），这里只有 9 个应用，关掉
+        timeout.reconciliation: 30s
+        timeout.reconciliation.jitter: 0s
         # 界面上不允许进入容器执行命令
         exec.enabled: false
 

@@ -263,3 +263,22 @@ def test_probes_text(tmp_path):
     assert "⚠️ 1 个不通" in text and "🟢 cv.liuxd.dev  123 ms · 证书 9 天 ⚠️" in text and "🔴 阿里云百炼  10000 ms" in text
     assert "证书 300" not in text  # 外部依赖不显示证书
     assert "还没有拨测数据" in probes.text([])
+
+
+def test_view_buttons_moved_to_console():
+    # 值班台没有查看类按钮了：旧按钮、旧命令回帮助并收起旧键盘；推送消息的 https 按钮打开总控台小程序
+    sent: list = []
+
+    async def on_button(data: str) -> str:
+        return ""
+
+    tg = Telegram("T", "42", transport=fake_tg(sent))
+    bot = OpsBot(tg, on_button, [], None, "去总控台看")
+    bot.moved = {"🖥 服务器状态", "/status"}
+    for old in ("🖥 服务器状态", "/status"):
+        asyncio.run(bot.handle(msg(old)))
+        assert sent[-1][1]["text"] == "去总控台看" and sent[-1][1]["reply_markup"] == {"remove_keyboard": True}
+    asyncio.run(tg.send("🚨 告警", [[("✅ 执行", "heal:ok:1")], [("🧭 在总控台查看", "https://ops.liuxd.dev/console/?t=alerts")]]))
+    kb = sent[-1][1]["reply_markup"]["inline_keyboard"]
+    assert kb[0][0] == {"text": "✅ 执行", "callback_data": "heal:ok:1"}
+    assert kb[1][0] == {"text": "🧭 在总控台查看", "web_app": {"url": "https://ops.liuxd.dev/console/?t=alerts"}}

@@ -59,10 +59,11 @@ class Telegram:
         return body["result"]
 
     async def send(self, text: str, buttons: list[list[tuple[str, str]]] | None = None, keyboard: dict | None = None) -> dict:
-        """buttons：消息下面的按钮；keyboard：输入框下面常驻的菜单键盘。"""
+        """buttons：消息下面的按钮，(文字, 回调数据)；回调数据是 https:// 地址的，做成打开 Telegram 小程序的按钮（比如「在总控台查看」）。
+        keyboard：输入框下面常驻的菜单键盘。"""
         params: dict = {"chat_id": self.chat_id, "text": text, "parse_mode": "HTML", "link_preview_options": {"is_disabled": True}}
         if buttons:
-            params["reply_markup"] = {"inline_keyboard": [[{"text": t, "callback_data": d} for t, d in row] for row in buttons]}
+            params["reply_markup"] = {"inline_keyboard": [[_button(t, d) for t, d in row] for row in buttons]}
         elif keyboard:
             params["reply_markup"] = keyboard
         return await self.call("sendMessage", **params)  # type: ignore[return-value]
@@ -76,6 +77,10 @@ class Telegram:
 
     async def close(self) -> None:
         await self.client.aclose()
+
+
+def _button(text: str, data: str) -> dict:
+    return {"text": text, "web_app": {"url": data}} if data.startswith("https://") else {"text": text, "callback_data": data}
 
 
 MenuItem = tuple[str, str, str, Callable[[], Awaitable[str]]]  # (按钮文字, 命令, 命令说明, 生成回复的函数)
@@ -104,11 +109,14 @@ class OpsBot:
             self.actions[f"/{cmd}"] = fn
             self.actions.setdefault(label, fn)  # 旧键盘上的按钮还能点
         rows = [label for label, *_ in self.menu] + ["❓ 帮助"]
-        self.keyboard = {
+        self.keyboard: dict = {
             "keyboard": [[{"text": t} for t in rows[i : i + 2]] for i in range(0, len(rows), 2)],
             "resize_keyboard": True,
             "is_persistent": True,
         }
+        if not self.menu:  # 没有菜单（值班台的查看类按钮都挪进了总控台）：把输入框下面的旧键盘收起来
+            self.keyboard = {"remove_keyboard": True}
+        self.moved: set[str] = set()  # 挪走了的旧按钮和命令：点了就回 help_text 并收起旧键盘
 
     async def reply(self, text: str) -> None:
         for part in split_message(text):
@@ -128,7 +136,7 @@ class OpsBot:
             return  # 只理主人
         text = (msg.get("text") or "").strip()
         key = text.split("@")[0]  # 群里命令会带 @机器人名
-        if key in ("/start", "/help", "❓ 帮助") or not text:
+        if key in ("/start", "/help", "❓ 帮助") or not text or key in self.moved:
             await self.tg.send(self.help_text or "我是网站的值班台机器人", keyboard=self.keyboard)
             return
         if fn := self.actions.get(key):

@@ -203,6 +203,22 @@ export function channel(env = process.env) {
   return null;
 }
 
+/** 告警消息下面的「在总控台查看」：打开值班台机器人的 Telegram 小程序（总控台的告警中心）。查看类内容只在总控台 */
+export function consoleButton(env = process.env) {
+  const url = `${env.CONSOLE_URL || 'https://ops.liuxd.dev/console/'}?t=alerts`;
+  return { reply_markup: { inline_keyboard: [[{ text: '🧭 在总控台查看', web_app: { url } }]] } };
+}
+
+/** 转发告警用的通道：Telegram 时消息下面带「在总控台查看」 */
+export function alertChannel(env = process.env) {
+  const ch = channel(env);
+  if (ch?.name !== 'telegram') return ch;
+  return {
+    name: ch.name,
+    send: (c) => sendTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHAT_ID, c, consoleButton(env)),
+  };
+}
+
 /** 用当前配置的通道发一条消息，返回通道名 */
 export async function notify(content, env = process.env) {
   const ch = channel(env);
@@ -260,7 +276,7 @@ export function isMain(scriptPath = process.argv[1], moduleUrl = import.meta.url
 
 // 只有直接运行时才启动服务，单元测试导入时不启动
 if (isMain()) {
-  const ch = channel();
+  const ch = alertChannel();
   if (!ch) {
     console.error('没有配置推送通道：TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID，或 WECOM_KEY');
     process.exit(1);

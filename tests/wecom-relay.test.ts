@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  alertChannel,
+  consoleButton,
   diagnosedByAgent,
   filterPayload,
   formatMessage,
@@ -194,5 +196,16 @@ describe('只发运维 Agent 不会诊断的告警', () => {
   it('没开 SKIP_DIAGNOSED 时全部照常发', () => {
     const p = { alerts: [alert({ alertname: 'NodeDiskHigh', severity: 'warning' })] };
     expect(filterPayload(p, {})).toBe(p);
+  });
+});
+
+describe('在总控台查看', () => {
+  it('Telegram 通道的告警带打开总控台小程序的按钮；企业微信不带', () => {
+    expect(consoleButton({}).reply_markup.inline_keyboard[0][0]).toEqual({
+      text: '🧭 在总控台查看',
+      web_app: { url: 'https://ops.liuxd.dev/console/?t=alerts' },
+    });
+    expect(alertChannel({ TELEGRAM_BOT_TOKEN: 't', TELEGRAM_CHAT_ID: '1' })?.name).toBe('telegram');
+    expect(alertChannel({ WECOM_KEY: 'k' })?.name).toBe('wecom');
   });
 });

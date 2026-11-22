@@ -209,27 +209,24 @@ def create_app(
         """「💰 网站 AI 用量」：只看本站账本（阿里云余额和账单在私人助理那边）"""
         return await asyncio.to_thread(dutybot.usage_text, ledger, s.daily_budget, s.public_budget)
 
-    menu = [
-        ("🖥 服务器状态", "status", "CPU、内存、磁盘、Argo CD、外部拨测", lambda: dutybot.status_text(k8s, kuma_status if s.kuma_api_key else None)),
-        ("📦 Pod 资源", "pods", "内存、CPU 占用前 5 的 Pod，重启过的，数据盘", lambda: dutybot.pods_text(k8s)),
-        ("🌐 外部服务", "probes", "自己的网站和外部依赖通不通、多快", lambda: _probes_text()),
-        ("🚨 当前告警", "alerts", "正在触发的告警", lambda: dutybot.alerts_text(k8s)),
-        ("🩹 自愈记录", "heal", "运维 Agent 最近处理的故障", lambda: asyncio.to_thread(dutybot.heal_text, healer.store)),
-        ("📊 平台实况", "live", "最近发布、可用率、备份、证书、DORA 指标", platform),
-        ("🗓 定时任务", "jobs", "服务器上的备份、周报等任务", lambda: dutybot.jobs_text(k8s)),
-        ("💬 最近留言", "leads", "网站访客的留言", lambda: asyncio.to_thread(dutybot.leads_text, ledger)),
-        ("💰 网站 AI 用量", "usage", "网站 AI 今天的调用、费用和预算，本月各模型", usage_card),
-    ]
+    # 查看类的按钮（服务器、Pod、外部服务、告警、自愈、平台实况、定时任务、留言、用量）2026-11-22 都挪进了总控台
+    # （任何单个功能只能从一个地方查看）：值班台只推送和操作。旧键盘上的按钮、旧命令点了回帮助并收起旧键盘
+    moved = ["🖥 服务器状态", "📦 Pod 资源", "🌐 外部服务", "🚨 当前告警", "🩹 自愈记录", "📊 平台实况", "🗓 定时任务", "💬 最近留言", "💰 网站 AI 用量", "💰 今日用量",
+             "/status", "/pods", "/probes", "/alerts", "/heal", "/live", "/jobs", "/leads", "/usage"]
     # 会花钱的评测不放进菜单，只能手动输入命令，避免误点
     paid = [
         ("📏 RAG 评测", "eval", "跑一遍作品集问答和运维知识库的评测集", start_eval),
         ("🧪 Agent 评测", "agenteval", "故障演练：注入故障，看运维 Agent 的诊断和处置", start_agent_eval),
     ]
-    bot = OpsBot(tg, healer.on_button, menu, dutybot.make_ask(gw, k8s, runbook), dutybot.HELP, hidden=paid) if tg else None
+    bot = OpsBot(tg, healer.on_button, [], dutybot.make_ask(gw, k8s, runbook), dutybot.HELP, hidden=paid) if tg else None
     if bot:
-        bot.actions.setdefault("💰 今日用量", usage_card)  # 旧名称，旧键盘上的按钮还能点
+        bot.moved = set(moved)
     if tg:
-        healer.notify = tg.send  # type: ignore[assignment]
+        async def heal_notify(text: str, buttons: list[list[tuple[str, str]]] | None = None) -> None:
+            """自愈、告警消息下面加「在总控台查看」（打开总控台的告警中心）"""
+            await tg.send(text, [*(buttons or []), [("🧭 在总控台查看", f"{s.console_url}?t=alerts")]])  # type: ignore[union-attr]
+
+        healer.notify = heal_notify  # type: ignore[assignment]
 
     async def build_index() -> None:
         # 启动后在后台建索引，失败（比如还没配置密钥）每 10 分钟重试一次，不影响服务启动

@@ -84,8 +84,8 @@ function setTab(t: Tab) {
 }
 
 function fmt(iso: string) {
+  // 用打开设备的本地时区（公开仓库不写所在地）
   return new Date(iso).toLocaleString('zh-CN', {
-    timeZone: 'Asia/Singapore',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
@@ -176,7 +176,7 @@ onBeforeUnmount(() => {
       <img src="/favicon.svg?v=4" alt="" width="36" height="36" class="size-9" />
       <div class="min-w-0">
         <h1 class="text-lg font-semibold tracking-wide">向晓 AI · 总控台</h1>
-        <p class="text-xs text-slate-400">所有告警、资源、数字员工都在这里看（新加坡时间）</p>
+        <p class="text-xs text-slate-400">所有告警、资源、数字员工都在这里看（本地时间）</p>
       </div>
       <span v-if="data" class="ml-auto text-xs text-slate-500"
         >更新于 {{ fmt(data.generated) }}</span
@@ -437,12 +437,13 @@ onBeforeUnmount(() => {
 <style scoped>
 .tabs {
   display: flex;
+  flex-wrap: wrap; /* 小程序窗口窄：换行，不横向滚动（滚动条看不出来，后面的标签像没了） */
   gap: 4px;
-  overflow-x: auto;
   border-bottom: 1px solid rgb(30 41 59);
 }
 .tabs button {
   flex-shrink: 0;
+  outline: none;
   padding: 8px 14px;
   font-size: 14px;
   color: rgb(148 163 184);

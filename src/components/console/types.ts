@@ -32,8 +32,7 @@ export interface ConsoleResource {
   name: string;
   status: string;
   lines: string[];
-  detail?: string; // 公开部分的详情：/api/ai/console/detail 的 section
-  html?: string; // 私人助理直接给的详情（Telegram 格式）
+  detail?: string; // 点开后看的详情：/api/ai/console/detail 的 section（p: 开头的在私人助理那边）
 }
 export interface ConsoleData {
   generated: string;

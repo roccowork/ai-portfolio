@@ -647,6 +647,14 @@ def create_app(
     async def console_detail(body: DetailIn):
         if not s.me_token or not secrets.compare_digest(body.k.encode(), s.me_token.encode()):
             raise HTTPException(404, "Not Found")
+        if body.section.startswith("p:") and re.fullmatch(r"p:[a-z]{1,18}", body.section):
+            # 私人资源（VPS、私人助理的用量余额）的详情在私人助理那边，集群内转一下
+            base = s.assistant_url.rsplit("/internal/", 1)[0]
+            async with httpx.AsyncClient(timeout=30) as c:
+                r = await c.get(f"{base}/internal/detail/{body.section[2:]}")
+            if r.status_code != 200:
+                raise HTTPException(502, "私人助理查不到这一项")
+            return {"html": str(r.json().get("html") or "")}
         if body.section not in details:
             raise HTTPException(404, "没有这一项")
         if not k8s.enabled:

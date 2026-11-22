@@ -12,6 +12,7 @@
 
 import asyncio
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 
@@ -125,7 +126,8 @@ def private_alerts(asst: dict | None) -> list[dict]:
 
 
 def private_resources(asst: dict | None) -> list[dict]:
-    """私人助理的资源：[{id, group, name, status, lines, detail}]，detail 是 Telegram 格式的详情（HTML 子集），前端会过滤标签"""
+    """私人助理的资源：[{id, group, name, status, lines, detail}]，detail 是私人助理 /internal/detail/{detail} 的名字，
+    这边加 p: 前缀，点开时由 /api/ai/console/detail 转给私人助理"""
     keys = {g["key"] for g in RESOURCE_GROUPS}
     out = []
     for x in private_list(asst, "resources", 20):
@@ -134,7 +136,7 @@ def private_resources(asst: dict | None) -> list[dict]:
         out.append({"id": "p-" + str(x["id"]).strip()[:30], "group": x["group"], "name": str(x["name"])[:30],
                     "status": x.get("status") if x.get("status") in PRIVATE_STATUS else "unknown",
                     "lines": [str(line)[:100] for line in (x.get("lines") or [])[:4] if line],
-                    **({"html": str(x["detail"])[:6000]} if x.get("detail") else {})})
+                    **({"detail": "p:" + str(x["detail"])} if re.fullmatch(r"[a-z]{1,20}", str(x.get("detail") or "")) else {})})
     return out
 
 

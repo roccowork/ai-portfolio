@@ -128,8 +128,8 @@ def test_private_staff_from_assistant(tmp_path):
 def test_alert_center_and_resources(tmp_path):
     # 告警中心：拨测打不开、Argo CD 不健康、备份过期都排成一张表，异常在前；资源中心按分组列出，带详情入口
     asst = {"bot": True, "alerts": [{"level": "warn", "title": "示例 VPS 掉线", "detail": "演示数据"}, {"level": "oops", "title": "非法级别"}],
-            "resources": [{"id": "vps1", "group": "server", "name": "示例 VPS", "status": "ok", "lines": ["在线"], "detail": "<b>演示</b>"},
-                          {"id": "x", "group": "nowhere", "name": "非法分组"}]}
+            "resources": [{"id": "vps1", "group": "server", "name": "示例 VPS", "status": "ok", "lines": ["在线"], "detail": "vps"},
+                          {"id": "x", "group": "nowhere", "name": "非法分组"}, {"id": "y", "group": "server", "name": "非法详情", "detail": "../x"}]}
     d = asyncio.run(make(tmp_path, asst).build())
     titles = [a["title"] for a in d["alerts"]]
     assert "it.liuxd.dev 打不开" in titles and "umami 没同步或不健康" in titles and "backup-github 超过 26 小时没成功" in titles
@@ -138,7 +138,7 @@ def test_alert_center_and_resources(tmp_path):
     r = {x["id"]: x for x in d["resources"]}
     assert r["probe-it.liuxd.dev"]["status"] == "bad" and r["probe-it.liuxd.dev"]["group"] == "site" and r["probe-it.liuxd.dev"]["detail"] == "probes"
     assert r["probe-阿里云百炼"]["group"] == "dependency" and r["k3s"]["detail"] == "status" and r["argo"]["status"] == "warn"
-    assert r["p-vps1"]["html"] == "<b>演示</b>" and "p-x" not in r
+    assert r["p-vps1"]["detail"] == "p:vps" and "p-x" not in r and "detail" not in r["p-y"]
     assert d["summary"]["alerts"] == len(d["alerts"]) and d["summary"]["cost_today"] == 0.12
     assert {n["id"]: n.get("detail") for n in d["nodes"]}["xiaoxiao"] == "leads"
 

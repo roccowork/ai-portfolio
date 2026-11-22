@@ -68,10 +68,6 @@ function fmt(iso: string) {
 }
 
 async function openDetail(item: ConsoleResource | ConsoleNode) {
-  if ('html' in item && item.html) {
-    panel.value = { title: item.name, html: item.html, loading: false, error: '' };
-    return;
-  }
   if (!item.detail) return;
   panel.value = { title: item.name, html: '', loading: true, error: '' };
   try {
@@ -251,17 +247,17 @@ onBeforeUnmount(() => {
           <h2 class="h2">{{ g.name }}</h2>
           <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <component
-              :is="r.detail || r.html ? 'button' : 'div'"
+              :is="r.detail ? 'button' : 'div'"
               v-for="r in g.items"
               :key="r.id"
               class="card"
-              :class="[`st-${STATUS[r.status]?.[1] || 'idle'}`, { click: r.detail || r.html }]"
+              :class="[`st-${STATUS[r.status]?.[1] || 'idle'}`, { click: r.detail }]"
               @click="openDetail(r)"
             >
               <div class="flex items-center gap-2">
                 <b class="truncate">{{ r.name }}</b>
                 <span class="badge">{{ STATUS[r.status]?.[0] || r.status }}</span>
-                <span v-if="r.detail || r.html" class="ml-auto text-slate-500">详情 ›</span>
+                <span v-if="r.detail" class="ml-auto text-slate-500">详情 ›</span>
               </div>
               <ul v-if="r.lines.length" class="mt-1.5 space-y-0.5 text-xs text-slate-300">
                 <li v-for="(l, i) in r.lines" :key="i">{{ l }}</li>

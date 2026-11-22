@@ -220,3 +220,30 @@ def test_card_explains_the_alert_first(env):
     assert lines[1] == "🚨 告警：🟡 警告 · 根分区使用超过 85% · 10-28 09:00 开始"  # UTC+8
     # 「是什么 / 为什么 / 怎么处理」之间空一行
     assert lines[2] == "📍 对象：monitoring" and lines[3] == "" and lines[4].startswith("🔍 分析：") and lines[5] == ""
+
+
+def test_alerts_the_agent_cannot_diagnose_are_forwarded(env):
+    # 告警只有 ai-api 一个入口：VPS、模型费用、ai-api 自己的告警直接拼成消息推出去（含恢复）；Agent 诊断得了的不重复推
+    from app import alerts as al
+
+    h, _script, _writes, sent, _ = env
+    vps = alert("VPSDown", "v1")
+    vps["labels"]["name"] = "VPS-示例"
+    vps["annotations"] = {"summary": "VPS-示例 的节点端口连不上"}
+    own = alert("PodRestartingOften", "o1", namespace="ops-desk", pod="ai-api-7d9f-abc")
+    done = {**alert("AIModelErrors", "m1"), "status": "resolved", "endsAt": "2026-10-28T02:00:00Z"}
+    assert not al.diagnosed_by_agent(vps, autoheal.SKIP_ALERTS) and not al.diagnosed_by_agent(own, autoheal.SKIP_ALERTS)
+    assert al.diagnosed_by_agent(alert("NodeDiskHigh", "d1", namespace="monitoring"), autoheal.SKIP_ALERTS)
+    assert not al.diagnosed_by_agent(alert("CPUThrottlingHigh", "i1", severity="info"), autoheal.SKIP_ALERTS)
+
+    async def go():
+        h.on_webhook({"alerts": [vps, done]})
+        await drain(h)
+
+    asyncio.run(go())
+    text = sent[0][0]
+    assert "<b>🟠 VPSDown：1 条告警中</b>" in text and "VPS-示例 的节点端口连不上" in text and "┃ 对象：VPS-示例" in text
+    assert "┃ 恢复：2026-10-28 10:00" in text and len(sent) == 1  # 两条在同一条消息里
+    t = al.text([own])
+    assert "┃ 对象：ops-desk/ai-api-7d9f-abc" in t and "┃ 开始：2026-10-28 09:00" in t
+    assert al.text([{**vps, "annotations": {"summary": "<x>" * 3000}}]).endswith("请到总控台告警中心查看）")

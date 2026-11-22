@@ -1,5 +1,5 @@
-# 运维周报：每周一 09:00 从 Prometheus 汇总过去 7 天的数据，发到企业微信群（和告警同一个群机器人、同一个 Secret wecom-bot）。
-# 脚本在 wecom-relay/weekly-report.mjs，由 kustomization 生成 ConfigMap 挂载；手动试跑见 docs/runbook.md「运维周报」。
+# 运维周报：每周一 09:00 从 Prometheus 汇总过去 7 天的数据，发到 Telegram（值班台机器人）。
+# 脚本在 scripts/weekly-report.mjs，由 kustomization 生成 ConfigMap 挂载；手动试跑见 docs/runbook.md「运维周报」。
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -34,9 +34,6 @@ spec:
               env:
                 - name: PROMETHEUS_URL
                   value: http://kps-prometheus.monitoring.svc:9090
-                - name: WECOM_KEY
-                  valueFrom:
-                    secretKeyRef: { name: wecom-bot, key: key, optional: true }
                 - name: TELEGRAM_BOT_TOKEN
                   valueFrom:
                     secretKeyRef: { name: telegram-ops, key: token, optional: true }

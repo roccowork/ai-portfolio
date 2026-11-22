@@ -5,12 +5,13 @@ metadata:
   labels:
     app.kubernetes.io/name: ops-desk
 spec:
-  replicas: 2
+  # 2026-11-22 从 2 个减到 1 个：单节点上两个副本挡不住整机故障，只多占一个 Pod；滚动更新照样先起新的再停旧的，不断服
+  replicas: 1
   revisionHistoryLimit: 5
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      # 先起新 Pod、就绪后再停旧 Pod，更新过程中可用副本数不低于 2
+      # 先起新 Pod、就绪后再停旧 Pod，更新过程中一直有可用副本
       maxUnavailable: 0
       maxSurge: 1
   selector:

@@ -4,7 +4,7 @@ import {
   FREE_BYTES,
   shouldSend,
   summarize,
-} from '../deploy/monitoring/wecom-relay/r2-usage.mjs';
+} from '../deploy/monitoring/scripts/r2-usage.mjs';
 
 const GB = 1024 ** 3;
 

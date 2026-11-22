@@ -64,9 +64,6 @@ spec:
               image: node:24.21.0-alpine
               command: [node, /app/r2-usage.mjs, monthly]
               env:
-                - name: WECOM_KEY
-                  valueFrom:
-                    secretKeyRef: { name: wecom-bot, key: key, optional: true }
                 - name: TELEGRAM_BOT_TOKEN
                   valueFrom:
                     secretKeyRef: { name: telegram-ops, key: token, optional: true }
@@ -157,9 +154,6 @@ spec:
               image: node:24.21.0-alpine
               command: [node, /app/r2-usage.mjs, check]
               env:
-                - name: WECOM_KEY
-                  valueFrom:
-                    secretKeyRef: { name: wecom-bot, key: key, optional: true }
                 - name: TELEGRAM_BOT_TOKEN
                   valueFrom:
                     secretKeyRef: { name: telegram-ops, key: token, optional: true }

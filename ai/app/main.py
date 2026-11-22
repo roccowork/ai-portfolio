@@ -561,7 +561,7 @@ def create_app(
     # Alertmanager 的 webhook（deploy/platform/kube-prometheus-stack.yaml 的 autoheal 接收器）。
     # 不在 /api/ai 下面：Ingress 只把 /api/ai 转给 ai-api，这个地址只有集群内部能访问
     # 总控台「推送」页（页面在私人助理那边）读这个：服务器上会发消息的定时任务，加上值班台出事才发的推送。
-    # 开关只有一套，存在私人助理那边；脚本发之前查它（relay.mjs 的 pushEnabled）。集群内地址，外网访问不到 /internal
+    # 开关只有一套，存在私人助理那边；脚本发之前查它（deploy/monitoring/scripts/telegram.mjs 的 pushEnabled）。集群内地址，外网访问不到 /internal
     EVENT_PUSHES = [
         {"key": "alerts", "title": "🚨 告警（Prometheus）", "bot": "值班台", "when": "出问题时", "switch": False},
         {"key": "heal", "title": "🩹 自愈诊断和确认", "bot": "值班台", "when": "告警后运维 Agent 处理时", "switch": False},

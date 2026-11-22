@@ -35,7 +35,7 @@ grep newTag deploy/k8s/overlays/prod/kustomization.yaml   # Git 里期望的版�
 |                                                                                               | Argo CD 自己：版本和配置                                                                                          | `deploy/platform/argocd.yaml`                |
 | **不在 Git 里，要上服务器或控制台操作**                                                       | k3s 本身（版本固定在脚本里，升级时改版本号后在服务器上重新执行）                                                  | `deploy/server/install-k3s.sh`               |
 |                                                                                               | 系统配置：自动更新、fail2ban、SSH 加固                                                                            | `deploy/server/init.sh`、`ssh-hardening.sh`  |
-|                                                                                               | Secret：Grafana 密码、企业微信 key、R2 密钥和 restic 密码                                                         | 第 6 节、第 9 节                             |
+|                                                                                               | Secret：Grafana 密码、R2 密钥和 restic 密码                                                                       | 第 6 节、第 9 节                             |
 |                                                                                               | Alertmanager 的静默、Grafana 界面上的手动修改（仪表盘要导出 JSON 放进仓库才会保留）                               | 第 6 节                                      |
 |                                                                                               | DNS（Cloudflare）、服务器防火墙（ufw）、私有仓库的部署密钥                                                        | 第 3 节、第 7 节                             |
 
@@ -134,7 +134,7 @@ kubectl logs -n cert-manager deploy/cert-manager --tail=50
 | UptimeRobot（uptimerobot.com） | 外部兜底：服务器整体宕机时，服务器上的监控都发不出告警，由它发邮件            | 个人账号                                          |
 | Prometheus、Alertmanager       | 不对公网开放                                                                  | 见下方「查看告警和静默」                          |
 
-告警链路：Prometheus 规则触发 → Alertmanager 分组去重 → `wecom-relay`（转发器）转成 markdown → 企业微信群机器人。info 级别只在 Grafana 里看，不发通知。
+告警链路（2026-11-22 起只有一条）：Prometheus 规则触发 → Alertmanager 分组去重 → ai-api（`/internal/alertmanager`）：运维 Agent 诊断得了的推诊断，诊断不了的（ai-api 自己的、模型费用、VPS 等）由 `ai/app/alerts.py` 拼成消息直接推到值班台。不再有单独的转发器，也不再用企业微信。ai-api 整个挂掉时发不出告警，由 UptimeRobot 拨测 `https://ops.liuxd.dev/api/ai/health` 发邮件兜底。info 级别只在 Grafana 里看，不发通知。
 
 ### 创建 Secret（安装或重建时）
 
@@ -144,23 +144,15 @@ kubectl logs -n cert-manager deploy/cert-manager --tail=50
 k3s kubectl create namespace monitoring
 read -rs -p 'Grafana 管理员密码: ' P; echo
 k3s kubectl -n monitoring create secret generic grafana-admin --from-literal=admin-user=admin --from-literal=admin-password="$P"; unset P
-read -rs -p '企业微信机器人 key: ' K; echo
-k3s kubectl -n monitoring create secret generic wecom-bot --from-literal=key="$K"; unset K
 ```
 
-key 是群机器人 webhook 地址里 `key=` 后面的部分。**更换 key**：
-
-```bash
-read -rs -p '企业微信机器人 key: ' K; echo
-k3s kubectl -n monitoring create secret generic wecom-bot --from-literal=key="$K" --dry-run=client -o yaml | k3s kubectl apply -f -; unset K
-k3s kubectl -n monitoring rollout restart deploy/wecom-relay
-```
+推送用的 Telegram 机器人 Secret 见第 16 节。
 
 ### 可用性监控：只有 Blackbox 拨测一套
 
 2026-11-22 停用了 Uptime Kuma（和 Blackbox 重复，同一次故障会收到两套告警）。现在网站、外部依赖、证书、VPS 节点端口都由 Blackbox Exporter 每分钟拨测（`deploy/monitoring/blackbox.yaml`；VPS 的地址和告警在私有仓库，不进公开仓库），告警由 Prometheus 规则发出、经值班台推送，状态在总控台看。全部写在代码里，重建后不用手动配置。
 
-UptimeRobot：New → HTTP 监控 `https://ops.liuxd.dev/healthz`，间隔 5 分钟（免费版最短），通知发到注册邮箱。
+UptimeRobot：New → HTTP 监控，两个：`https://ops.liuxd.dev/healthz`（网站）和 `https://ops.liuxd.dev/api/ai/health`（ai-api：告警都从它推出去，它挂了只能靠这里报），间隔 5 分钟（免费版最短），通知发到注册邮箱。
 
 ### 告警规则
 
@@ -197,14 +189,14 @@ k3s kubectl get --raw "/api/v1/namespaces/monitoring/services/kps-prometheus:909
 
 ### 运维周报
 
-CronJob `weekly-report`（`deploy/monitoring/weekly-report.yaml`）每周一 09:00（新加坡时间）查询 Prometheus，把过去 7 天的访问量和 5xx、p95、告警（按持续时间排序）、备份最近成功时间、证书剩余天数、节点内存和磁盘、容器重启汇总成一条消息，发到告警所在的企业微信群。脚本是 `deploy/monitoring/wecom-relay/weekly-report.mjs`，复用告警转发器的发送函数和同一个 Secret `wecom-bot`，不用另外配置。
+CronJob `weekly-report`（`deploy/monitoring/weekly-report.yaml`）每周一 09:00（新加坡时间）查询 Prometheus，把过去 7 天的访问量和 5xx、p95、告警（按持续时间排序）、备份最近成功时间、证书剩余天数、节点内存和磁盘、容器重启汇总成一条消息，发到 Telegram（值班台机器人）。脚本是 `deploy/monitoring/scripts/weekly-report.mjs`，复用告警转发器的发送函数和同一个 Secret `wecom-bot`，不用另外配置。
 
 只看内容不发送（在本机仓库目录执行，需要 Node）：
 
 ```bash
 # 服务器上：k3s kubectl -n monitoring port-forward svc/kps-prometheus 9090
 # 本机另开终端：ssh -L 9090:127.0.0.1:9090 root@<服务器IP>，然后：
-PROMETHEUS_URL=http://127.0.0.1:9090 DRY_RUN=1 node deploy/monitoring/wecom-relay/weekly-report.mjs
+PROMETHEUS_URL=http://127.0.0.1:9090 DRY_RUN=1 node deploy/monitoring/scripts/weekly-report.mjs
 ```
 
 立即真正发一次（服务器上）：
@@ -214,7 +206,7 @@ k3s kubectl -n monitoring create job --from=cronjob/weekly-report weekly-report-
 k3s kubectl -n monitoring logs job/<上一步的 Job 名>
 ```
 
-某一项查询失败时，那一节显示「查询失败」，其他照常发送；所有查询都失败（Prometheus 不可用）或企业微信返回错误时 Job 失败，重试 1 次。告警规则 `KubeJobFailed`（默认规则）会通知。
+某一项查询失败时，那一节显示「查询失败」，其他照常发送；所有查询都失败（Prometheus 不可用）或 Telegram 返回错误时 Job 失败，重试 1 次。告警规则 `KubeJobFailed`（默认规则）会通知。
 
 ### 平台实况数据（/status.json，值班大屏用）
 
@@ -239,14 +231,14 @@ k3s kubectl -n ops-desk get configmap ops-desk-status -o jsonpath='{.data.status
 
 ### 监控相关的常见问题
 
-| 现象                                           | 原因                                                                                                                                      | 处理                                                                                                               |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `wecom-relay` CrashLoopBackOff，日志为空       | ConfigMap 挂载的文件是符号链接（`/app/relay.mjs` → `..data/relay.mjs`），脚本「是否直接运行」的判断没解析真实路径，服务没启动就正常退出了 | 已修复：比较前用 `realpathSync` 解析两边路径                                                                       |
-| 告警 `AlertmanagerFailedToSendAlerts`          | 转发器没起来，或企业微信 key 无效（errcode 93000）                                                                                        | `kubectl -n monitoring logs deploy/wecom-relay`；按上面步骤更换 key                                                |
-| 收到 `CPUThrottlingHigh` 之类的 info 告警刷屏  | 默认路由会发所有级别                                                                                                                      | 已在 Alertmanager 配置里把 `severity="info"` 路由到 null                                                           |
-| Traefik 指标里服务名在 `exported_service` 标签 | Traefik 自己的 `service` 标签和采集时加的 `service` 标签重名                                                                              | ServiceMonitor 设置 `honorLabels: true`                                                                            |
-| 仪表盘 P95 响应时间约 95ms，但实际很快         | Traefik 默认直方图分桶很粗（0.1s、0.3s…），请求都落在 0～0.1s 桶里，只能在桶内估算                                                        | 理解为「P95 小于 100ms」；需要更精确时再调整 Traefik 的分桶                                                        |
-| Prometheus 镜像里没有 `wget` / `curl`          | distroless 精简镜像                                                                                                                       | 通过 API Server 代理访问：`kubectl get --raw /api/v1/namespaces/monitoring/services/kps-prometheus:9090/proxy/...` |
+| 现象                                           | 原因                                                                                                                    | 处理                                                                                                               |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| 定时推送的脚本什么都没做就退出了，日志为空     | ConfigMap 挂载的文件是符号链接（`/app/telegram.mjs` → `..data/telegram.mjs`），脚本「是否直接运行」的判断没解析真实路径 | 已修复：比较前用 `realpathSync` 解析两边路径                                                                       |
+| 告警 `AlertmanagerFailedToSendAlerts`          | ai-api 没起来，Alertmanager 的 webhook 发不过去                                                                         | `kubectl -n ops-desk logs deploy/ai-api`；ai-api 恢复后 Alertmanager 会重发                                        |
+| 收到 `CPUThrottlingHigh` 之类的 info 告警刷屏  | 默认路由会发所有级别                                                                                                    | 已在 Alertmanager 配置里把 `severity="info"` 路由到 null                                                           |
+| Traefik 指标里服务名在 `exported_service` 标签 | Traefik 自己的 `service` 标签和采集时加的 `service` 标签重名                                                            | ServiceMonitor 设置 `honorLabels: true`                                                                            |
+| 仪表盘 P95 响应时间约 95ms，但实际很快         | Traefik 默认直方图分桶很粗（0.1s、0.3s…），请求都落在 0～0.1s 桶里，只能在桶内估算                                      | 理解为「P95 小于 100ms」；需要更精确时再调整 Traefik 的分桶                                                        |
+| Prometheus 镜像里没有 `wget` / `curl`          | distroless 精简镜像                                                                                                     | 通过 API Server 代理访问：`kubectl get --raw /api/v1/namespaces/monitoring/services/kps-prometheus:9090/proxy/...` |
 
 ### Prometheus 外网入口（给 LabPager App）
 
@@ -274,7 +266,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://prometheus.liuxd.dev/api/v1/que
   | `root`              | 应用定义本身（增删应用改这个文件即可）                                | `deploy/argocd`            |
   | `platform`          | Argo CD、cert-manager、kube-prometheus-stack 的 HelmChart，证书签发者 | `deploy/platform`          |
   | `ops-desk`          | 站点                                                                  | `deploy/k8s/overlays/prod` |
-  | `monitoring-extras` | 告警转发器、Blackbox 拨测、Traefik 指标、告警规则、仪表盘             | `deploy/monitoring`        |
+  | `monitoring-extras` | Blackbox 拨测、定时推送脚本、Traefik 指标、告警规则、仪表盘           | `deploy/monitoring`        |
   | `dify`              | Dify 的 Service、Ingress 和备份任务（Dify 本身跑在宿主机 Docker）     | `deploy/apps/dify`         |
   | `personal`          | 私人助理（私有仓库 `roccowork/ops-desk` 的 `personal/`）              | 私有仓库                   |
 
@@ -548,23 +540,23 @@ Odoo 和依赖它的办公 Agent 2026-10-28 下线，Argo CD 应用和清单已�
 
 ## 15. R2 用量报告
 
-- 每月 1 号 09:30（新加坡时间）CronJob `r2-usage-monthly` 发月报到企业微信：总用量、占 10 GB 免费额度的比例、每个应用（restic 仓库）各占多少
+- 每月 1 号 09:30（新加坡时间）CronJob `r2-usage-monthly` 发月报到 Telegram（值班台）：总用量、占 10 GB 免费额度的比例、每个应用（restic 仓库）各占多少
 - 每周一 09:30（新加坡时间）`r2-usage-check` 检查一次，超过 80% 才提醒
 - 用 `monitoring` 命名空间里的 Secret `backup-r2`（原来给 Uptime Kuma 备份用，Kuma 停用后保留给这里）列出整个桶，不需要额外的 Cloudflare API 令牌；读写次数没统计（备份用量远低于免费额度）
 - 手动试跑：`k3s kubectl -n monitoring create job r2-test --from=cronjob/r2-usage-monthly`
 
-## 16. Telegram 推送（替代企业微信群机器人）
+## 16. Telegram 推送（2026-11-22 起唯一的推送渠道，企业微信已停用）
 
 用两个机器人，按「作品 / 私人」严格分开。一个机器人同一时间只能有一个程序收消息（getUpdates），分开以后也互不影响：
 
-| Secret                                               | 谁在用                                                                                                                                                                                                                      |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `telegram-ops`（`ops-desk`、`monitoring`，值班台）   | ai-api 收发：自愈消息和「执行 / 忽略」按钮、「总控台」菜单按钮（Telegram 小程序，总控台用它的 token 验证身份）、访客留言、客服 Agent 演示预约。只发不收：告警转发（wecom-relay，带「在总控台查看」）、网站周报、R2 用量报告 |
-| `telegram-bot`（`ops-desk`、`monitoring`，私人助理） | 私人助理收发（私有仓库）。只发不收：每日运维英语                                                                                                                                                                            |
+| Secret                                               | 谁在用                                                                                                                                                                                                                              |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `telegram-ops`（`ops-desk`、`monitoring`，值班台）   | ai-api 收发：自愈消息和「执行 / 忽略」按钮、「总控台」菜单按钮（Telegram 小程序，总控台用它的 token 验证身份）、访客留言、客服 Agent 演示预约。只发不收：诊断不了的告警（ai-api 直接推，带「在总控台查看」）、网站周报、R2 用量报告 |
+| `telegram-bot`（`ops-desk`、`monitoring`，私人助理） | 私人助理收发（私有仓库）。只发不收：每日运维英语                                                                                                                                                                                    |
 
-告警只推一次：warning / critical 告警由运维 Agent 发诊断（每天分析次数用完或诊断出错时也会发一条），告警转发器（`SKIP_DIAGNOSED=1`）只转发它诊断不了的：ai-api 自己的告警、模型费用 / 报错告警，以及这些告警的恢复通知。
+告警只推一次：warning / critical 告警由运维 Agent 发诊断（每天分析次数用完或诊断出错时也会发一条）；它诊断不了的（ai-api 自己的告警、模型费用 / 报错、VPSDown，以及这些告警的恢复通知）由 ai-api 直接拼成消息推出去（`ai/app/alerts.py`）。
 
-告警、网站周报、每日英语、R2 用量共用 `deploy/monitoring/wecom-relay/relay.mjs` 里的推送函数：对应的 Telegram Secret 存在就发 Telegram，否则发企业微信（Secret `wecom-bot`）。消息格式自动转换。
+网站周报、每日英语、R2 用量共用 `deploy/monitoring/scripts/telegram.mjs` 里的推送函数，只发 Telegram；发之前查总控台「推送」页的开关。
 
 **查看类内容只在总控台**（2026-11-22 起，任何单个功能只能从一个地方查看）：值班台机器人输入框左边的「总控台」按钮打开 `/console/`（Telegram 小程序，手机和电脑版 Telegram 都行，电脑上可以全屏）。只认主人本人的 Telegram 账号（`ai/app/tgauth.py` 校验 Telegram 签名的 initData，用 `telegram-ops` 的 token 和 chat_id），没有密钥，浏览器直接打开只提示去 Telegram。总控台分概览、告警中心（Prometheus、拨测、Argo CD、备份、私人助理报的告警一张表）、资源中心、数字员工、私人助理的页面、数据流几个标签页；资源和员工点开的详情就是原来值班台按钮的内容（`ai/app/dutybot.py`：服务器状态、Pod 资源、外部服务、自愈记录、平台实况和 DORA、定时任务、最近留言、网站 AI 用量；定时任务的说明在 `ai/app/schedules.py` 的 `KNOWN`，新增 CronJob 时顺手补一行），接口 `/api/ai/console/detail`。值班台机器人不再有查看按钮，只推送和操作：告警、自愈消息下面带「在总控台查看」；直接打字提问交给运维 Agent（主人自己用可以查日志，日志先脱敏），每次调用模型；点旧键盘上的按钮会回帮助并收起旧键盘。
 
@@ -593,7 +585,6 @@ for ns in ops-desk monitoring; do
 done
 unset TG
 k3s kubectl -n ops-desk rollout restart deployment ai-api
-k3s kubectl -n monitoring rollout restart deployment wecom-relay
 ```
 
 - `chat id` 为空：说明还没给新机器人发过消息，先发一句再执行
@@ -610,7 +601,7 @@ k3s kubectl -n ops-desk rollout restart deployment assistant
 k3s kubectl -n monitoring create job tg-test --from=cronjob/daily-english   # 手机上应该收到今天的运维英语
 ```
 
-- 确认 Telegram 正常后可以删掉企业微信：`k3s kubectl -n monitoring delete secret wecom-bot`（不删也行，Telegram 优先）
+- 企业微信 2026-11-22 停用，旧 Secret 可以删：`k3s kubectl -n monitoring delete secret wecom-bot`
 
 ## 17. 个人笔记同步（CouchDB）和 Secret 备份
 

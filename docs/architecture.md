@@ -69,7 +69,7 @@ flowchart LR
 
 ## 可用性设计
 
-- 2 副本 + `maxUnavailable: 0`：滚动更新时先起新 Pod、就绪后再停旧 Pod。
+- 1 个副本 + `maxSurge: 1`、`maxUnavailable: 0`：滚动更新时先起新 Pod、就绪后再停旧 Pod，不断服（2026-11-22 从 2 个副本减到 1 个：单节点上多一个副本挡不住整机故障）。
 - 就绪探针（`/healthz`）：新版本不健康时不接收流量，旧版本继续服务。
 - `preStop` 等待 5 秒：Pod 删除时先让 Traefik 把它摘出转发名单，再退出，避免滚动更新时出现 504。
 - 新版本不健康时 rollout 停住，旧版本继续服务；CI 通过 `/version.txt` 确认上线，失败时用 git revert 回滚（约 1 分钟）。
@@ -89,31 +89,29 @@ flowchart LR
     tr[Traefik 指标] --> prom
     cm[cert-manager 指标] --> prom
     prom -- 告警规则 --> am[Alertmanager<br/>分组 · 去重 · 抑制]
-    am -- webhook --> heal[ai-api 自愈<br/>运维 Agent 诊断]
-    am -- webhook --> relay[wecom-relay<br/>它诊断不了的告警]
+    am -- webhook --> heal[ai-api<br/>诊断得了的推诊断<br/>诊断不了的直接推]
     prom --> graf[Grafana<br/>grafana.liuxd.dev]
     bb[Blackbox Exporter<br/>拨测网站、依赖、VPS 端口] --> prom
   end
   prom -- 每周一汇总 --> weekly[weekly-report<br/>运维周报]
   heal --> tg[Telegram<br/>OPS 值班台]
-  relay --> tg
   weekly --> tg
   bb -- 每分钟探测、证书天数 --> site[ops.liuxd.dev]
   ur[UptimeRobot<br/>外部兜底] -- 每 5 分钟 --> site
   ur --> mail[邮件]
 ```
 
-| 决定                                                              | 理由                                                                                                                                                                                                                                                                  |
-| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| kube-prometheus-stack，用 k3s 的 HelmChart 安装                   | 一套装齐 Prometheus、Alertmanager、Grafana 和常用规则；HelmChart 由 Argo CD 从 Git 同步（`deploy/platform/`），改配置提交即可                                                                                                                                         |
-| 关闭 etcd、scheduler、controller-manager、kube-proxy 的采集和规则 | k3s 把它们合在一个进程里，没有单独的指标端口，不关会一直误报                                                                                                                                                                                                          |
-| 自己写 Alertmanager → 企业微信的转发器                            | Alertmanager 只支持「企业微信应用」（要可信 IP，可信 IP 要求备案域名），不支持群机器人；现成的转发镜像来源不明。转发器约 150 行、零依赖、有单元测试，用官方 Node 镜像加 ConfigMap 运行，不用另外构建镜像。2026-10 起推送改走 Telegram（OPS 值班台），企业微信只作后备 |
-| 告警只推一次：运维 Agent 的诊断                                   | warning / critical 告警同时交给 ai-api 自愈：运维 Agent 查原因、推诊断（带「执行 / 忽略」按钮）。转发器只转它诊断不了的（ai-api 自己的告警、模型费用 / 报错告警），免得一条告警收到两条消息                                                                           |
-| Grafana 不做持久化                                                | 数据源和仪表盘都由代码预置（`deploy/monitoring/dashboards/`），重建后完全一致                                                                                                                                                                                         |
-| 内部指标 + Blackbox 拨测 + UptimeRobot 三层                       | 内部指标看原因；Blackbox 从用户视角看可用性和证书（2026-11-22 起代替 Uptime Kuma，监控只留一套，告警只从值班台来）；它和站点在同一台机器上，整机宕机时由外部的 UptimeRobot 兜底                                                                                       |
-| info 级别不发通知                                                 | 避免 CPUThrottlingHigh 这类提示信息刷屏，只在 Grafana 里看                                                                                                                                                                                                            |
-| 关掉和自定义规则重复的默认告警，名字不同的同类告警用抑制规则去重  | 同一个问题只收到一条中文告警；默认规则只保留自定义规则没有覆盖的部分（如按趋势预测磁盘写满）                                                                                                                                                                          |
-| 站点 5xx 和响应时间告警加最低请求量条件                           | 访问量小，一两个请求出错就会让比例跳到很高；没有流量时也不会因为算不出比例而误报                                                                                                                                                                                      |
+| 决定                                                              | 理由                                                                                                                                                                                              |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| kube-prometheus-stack，用 k3s 的 HelmChart 安装                   | 一套装齐 Prometheus、Alertmanager、Grafana 和常用规则；HelmChart 由 Argo CD 从 Git 同步（`deploy/platform/`），改配置提交即可                                                                     |
+| 关闭 etcd、scheduler、controller-manager、kube-proxy 的采集和规则 | k3s 把它们合在一个进程里，没有单独的指标端口，不关会一直误报                                                                                                                                      |
+| 告警只经过 ai-api 一个入口（2026-11-22）                          | 原来另有一个 Node 转发器（能发企业微信），和 ai-api 是两套；企业微信停用后并进 ai-api：诊断得了的推诊断，诊断不了的直接推，少一个 Pod。ai-api 整个挂掉时由 UptimeRobot 拨测 `/api/ai/health` 兜底 |
+| 告警只推一次：运维 Agent 的诊断                                   | warning / critical 告警交给运维 Agent：查原因、推诊断（带「执行 / 忽略」按钮）；它诊断不了的（ai-api 自己的告警、模型费用 / 报错、VPS）由 ai-api 直接推原始告警，同一条告警不会收到两条消息       |
+| Grafana 不做持久化                                                | 数据源和仪表盘都由代码预置（`deploy/monitoring/dashboards/`），重建后完全一致                                                                                                                     |
+| 内部指标 + Blackbox 拨测 + UptimeRobot 三层                       | 内部指标看原因；Blackbox 从用户视角看可用性和证书（2026-11-22 起代替 Uptime Kuma，监控只留一套，告警只从值班台来）；它和站点在同一台机器上，整机宕机时由外部的 UptimeRobot 兜底                   |
+| info 级别不发通知                                                 | 避免 CPUThrottlingHigh 这类提示信息刷屏，只在 Grafana 里看                                                                                                                                        |
+| 关掉和自定义规则重复的默认告警，名字不同的同类告警用抑制规则去重  | 同一个问题只收到一条中文告警；默认规则只保留自定义规则没有覆盖的部分（如按趋势预测磁盘写满）                                                                                                      |
+| 站点 5xx 和响应时间告警加最低请求量条件                           | 访问量小，一两个请求出错就会让比例跳到很高；没有流量时也不会因为算不出比例而误报                                                                                                                  |
 
 ### 评估过但没有部署的组件
 
@@ -134,4 +132,4 @@ flowchart LR
 - 单节点：服务器整体故障时站点不可用。靠「一小时内按 runbook 重建」应对，见 `runbook.md` 第 3 节。
 - 「镜像标签提交回同一个仓库」会在 main 上留下 CI 的 deploy 提交；快速回滚时必须记得带 `[skip ci]`，否则会被 CI 覆盖（见 runbook 第 2 节）。
 - Argo CD 界面开放在公网，安全依赖强密码和及时升级。
-- 单节点上没有设置 PodDisruptionBudget：节点排空时两个副本无处可迁，PDB 反而会让排空卡住。
+- 单节点上没有设置 PodDisruptionBudget：节点排空时 Pod 无处可迁，PDB 反而会让排空卡住。

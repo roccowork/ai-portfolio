@@ -21,6 +21,7 @@ from html import escape
 
 import httpx
 
+from . import alerts
 from . import opsagent as ops
 from .gateway import AIUnavailable, Gateway
 
@@ -228,6 +229,12 @@ class Healer:
             except Exception as e:  # noqa: BLE001
                 log.warning("自愈通知发送失败：%s", e)
 
+    async def forward(self, msg: str) -> None:
+        try:
+            await self.notify(msg, None)  # type: ignore[misc]
+        except Exception as e:  # noqa: BLE001
+            log.warning("告警推送失败：%s", e)
+
     async def notify_unanalyzed(self, alert: dict) -> None:
         if not self.notify:
             return
@@ -248,6 +255,10 @@ class Healer:
     def on_webhook(self, payload: dict) -> int:
         """Alertmanager 的 webhook；返回这次开始处理的告警数。分析在后台跑，马上给 Alertmanager 回 200"""
         n = 0
+        # 运维 Agent 诊断不了的（含恢复通知）直接拼成消息推出去：告警只有这一个入口（alerts.py）
+        rest = [a for a in payload.get("alerts") or [] if not alerts.diagnosed_by_agent(a, SKIP_ALERTS)]
+        if rest and self.notify and (msg := alerts.text(rest)):
+            self.spawn(self.forward(msg))
         for a in payload.get("alerts") or []:
             labels, fp = a.get("labels") or {}, a.get("fingerprint") or ""
             if a.get("status") == "resolved":
@@ -259,7 +270,7 @@ class Healer:
                 continue
             if self.store.count_since(datetime.now(timezone.utc) - timedelta(days=1)) >= self.daily:
                 log.warning("今天的自愈分析次数已用完，跳过 %s", labels.get("alertname"))
-                # 告警转发器不再单独发原始告警，这里不能悄悄跳过：至少把告警本身推给人
+                # 诊断得了的告警不会另外推原始告警，这里不能悄悄跳过：至少把告警本身推给人
                 self.spawn(self.notify_unanalyzed(a))
                 continue
             ann = a.get("annotations") or {}

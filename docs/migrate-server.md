@@ -57,8 +57,7 @@ ssh -i /root/.ssh/migrate root@<旧IP> hostname
 alias k='k3s kubectl'
 # 1. 先停 Argo CD，否则它会把下面停掉的服务又拉起来
 k -n argocd scale sts -l app.kubernetes.io/name=argocd-application-controller --replicas=0
-# 2. 停告警转发和所有定时任务（英语、备份等），避免和新机器重复推送
-k -n monitoring scale deploy wecom-relay --replicas=0
+# 2. 停所有定时任务（英语、备份等），避免和新机器重复推送（告警由 ai-api 推，下一步停 ops-desk 时一起停）
 k get cronjob -A --no-headers | while read ns n _; do k -n "$ns" patch cronjob "$n" -p '{"spec":{"suspend":true}}'; done
 # 3. 停掉有数据的应用，保证拷贝时数据不再变化（个人助理也在这里面，停了就不会和新机器抢 Telegram 消息）
 k -n ops-desk scale deploy,sts --all --replicas=0

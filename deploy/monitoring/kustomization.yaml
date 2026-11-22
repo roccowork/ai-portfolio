@@ -4,7 +4,6 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - middleware.yaml
-  - wecom-relay.yaml
   - weekly-report.yaml
   - daily-english.yaml
   - r2-usage.yaml
@@ -15,29 +14,25 @@ resources:
   - rules/ops-desk.yaml
 configMapGenerator:
   # 脚本内容变化时 ConfigMap 名字的哈希后缀会变，Deployment 随之滚动更新
-  - name: wecom-relay
-    namespace: monitoring
-    files:
-      - wecom-relay/relay.mjs
-  # 周报复用告警转发器的发送函数，所以两个文件放在同一个 ConfigMap 里
+  # 周报用 scripts/telegram.mjs 的发送函数，所以两个文件放在同一个 ConfigMap 里
   - name: weekly-report
     namespace: monitoring
     files:
-      - wecom-relay/weekly-report.mjs
-      - wecom-relay/relay.mjs
+      - scripts/weekly-report.mjs
+      - scripts/telegram.mjs
   # 每日运维英语，同样复用发送函数
   - name: daily-english
     namespace: monitoring
     files:
-      - wecom-relay/daily-english.mjs
-      - wecom-relay/words.json
-      - wecom-relay/relay.mjs
+      - scripts/daily-english.mjs
+      - scripts/words.json
+      - scripts/telegram.mjs
   # R2 用量报告，同样复用发送函数
   - name: r2-usage
     namespace: monitoring
     files:
-      - wecom-relay/r2-usage.mjs
-      - wecom-relay/relay.mjs
+      - scripts/r2-usage.mjs
+      - scripts/telegram.mjs
   # 仪表盘：Grafana 的 sidecar 会自动加载带 grafana_dashboard=1 标签的 ConfigMap
   - name: grafana-dashboards-ops-desk
     namespace: monitoring

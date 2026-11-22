@@ -14,7 +14,10 @@ const steps = [
   { t: '构建镜像', d: '推到 GHCR，标签是 commit SHA，不用 latest' },
   { t: '把新标签写回 Git', d: '只改部署清单里的一行；提交带 [skip ci]，不会再触发流水线' },
   { t: 'Argo CD 同步', d: '每 60 秒检查一次 Git，发现变化就同步到集群' },
-  { t: '滚动更新', d: '2 个副本，maxUnavailable = 0，新 Pod 就绪探针通过才接流量' },
+  {
+    t: '滚动更新',
+    d: 'maxSurge = 1、maxUnavailable = 0：先起新 Pod，就绪探针通过才接流量，再停旧的，不断服',
+  },
 ];
 
 const whys = [

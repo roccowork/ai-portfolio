@@ -83,7 +83,7 @@ def test_heal_case_records_proposal_without_executing(tmp_path):
     assert row["verdict"] == "correct" and ev.passed(row) and row["blocked"] == []
     # 裁判拿到了真实情况、Agent 看到的日志和提议
     assert "i/o timeout" in judged[0] and "补跑一次 CronJob backup-ai-api" in judged[0] and "rerun_cronjob" in judged[0]
-    assert "Agent 已知的背景" in judged[0] and "wecom-relay" in judged[0]  # 系统提示里的背景也交给裁判，不算编造
+    assert "Agent 已知的背景" in judged[0] and "blackbox-exporter" in judged[0]  # 系统提示里的背景也交给裁判，不算编造
 
 
 def test_guard_blocks_self_heal_and_counts_it(tmp_path):
@@ -192,7 +192,7 @@ def test_grounding_check_rejects_unused_tool_claims(tmp_path):
     assert "程序核对：你的回答提到了 list_pods，但这次并没有调用" in seen[1]["messages"][-1]["content"]
     assert seen[1]["tool_choice"] == {"type": "function", "function": {"name": "list_pods"}}  # 重答那一轮强制调用
     assert "tool_choice" not in seen[0] and "tool_choice" not in seen[2]
-    assert "wecom-relay" in seen[0]["messages"][0]["content"]  # 系统提示里有组件和命名空间的对照
+    assert "blackbox-exporter" in seen[0]["messages"][0]["content"]  # 系统提示里有组件和命名空间的对照
 
 
 def test_numbers_must_come_from_tool_results():

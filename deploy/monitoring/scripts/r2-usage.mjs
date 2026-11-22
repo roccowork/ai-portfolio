@@ -1,8 +1,8 @@
 // R2 用量报告：rclone 先把桶里所有文件列成 JSON（/out/files.json），这里按顶层目录（每个应用一个 restic 仓库）汇总，
-// 发到企业微信。monthly 模式每月 1 号必发；check 模式每周跑，超过免费额度的 80% 才发。
+// 发到 Telegram（值班台机器人）。monthly 模式每月 1 号必发；check 模式每周跑，超过免费额度的 80% 才发。
 // R2 免费额度：存储 10 GB / 月；读写次数（A 类 100 万、B 类 1000 万 / 月）备份用量远低于上限，这里不统计。
 import { readFileSync } from 'node:fs';
-import { channel, isMain, pushEnabled } from './relay.mjs';
+import { channel, isMain, pushEnabled } from './telegram.mjs';
 
 export const FREE_BYTES = 10 * 1024 ** 3;
 export const WARN_RATIO = 0.8;

@@ -1,7 +1,7 @@
-// 每日运维英语：每天早上从 words.json 里按顺序取 5 个运维常用词，连同音标（美式）和例句推送（优先 Telegram，其次企业微信）。
+// 每日运维英语：每天早上从 words.json 里按顺序取 5 个运维常用词，连同音标（美式）和例句推送到 Telegram（私人助理机器人）。
 // 100 个词 20 天一轮，按日期计算当天是哪一组，不需要保存任何状态；和周报一样复用告警转发器的发送函数。
 import { readFileSync } from 'node:fs';
-import { channel, isMain, pushEnabled } from './relay.mjs';
+import { channel, isMain, pushEnabled } from './telegram.mjs';
 
 export const PER_DAY = 5;
 const TZ = 'America/Los_Angeles';

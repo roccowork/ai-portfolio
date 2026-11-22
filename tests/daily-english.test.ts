@@ -5,10 +5,10 @@ import {
   groupIndex,
   localDate,
   PER_DAY,
-} from '../deploy/monitoring/wecom-relay/daily-english.mjs';
-import { MAX_BYTES } from '../deploy/monitoring/wecom-relay/relay.mjs';
+} from '../deploy/monitoring/scripts/daily-english.mjs';
+import { MAX_BYTES } from '../deploy/monitoring/scripts/telegram.mjs';
 
-const words = JSON.parse(readFileSync('deploy/monitoring/wecom-relay/words.json', 'utf8')) as Array<
+const words = JSON.parse(readFileSync('deploy/monitoring/scripts/words.json', 'utf8')) as Array<
   Record<'word' | 'ipa' | 'zh' | 'example' | 'exampleZh', string>
 >;
 

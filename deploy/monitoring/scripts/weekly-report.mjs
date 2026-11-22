@@ -1,7 +1,7 @@
-// 运维周报：每周一从 Prometheus 查询过去 7 天的数据，汇总成一条 markdown 发到企业微信群（和告警同一个群机器人）。
+// 运维周报：每周一从 Prometheus 查询过去 7 天的数据，汇总成一条消息发到 Telegram（值班台机器人）。
 // 告警只在出问题时响；周报回答「这一周整体怎么样」：访问量、错误率、告警、备份、证书、资源、重启。
 // 和告警转发器放在同一个目录、同一个 ConfigMap 里，复用它的发送和格式化函数；同样只用 Node 自带的库。
-import { formatDate, formatTime, isMain, notify, pushEnabled, truncate } from './relay.mjs';
+import { formatDate, formatTime, isMain, notify, pushEnabled, truncate } from './telegram.mjs';
 
 const SITE = 'ops-desk-ops-desk-http@kubernetes'; // Traefik 给站点 Service 起的名字，和告警规则一致
 const RANGE = '7d'; // Prometheus 只保留 7 天，周报正好覆盖全部数据
@@ -77,7 +77,7 @@ function day(date) {
   return formatDate(date.toISOString()).slice(5);
 }
 
-/** 把查询结果拼成企业微信 markdown。data 的值为 null 表示这条查询失败 */
+/** 把查询结果拼成消息（简单 markdown，发送时转 Telegram HTML）。data 的值为 null 表示这条查询失败 */
 export function buildReport(data, now = new Date()) {
   const start = new Date(now.getTime() - 7 * 86400_000);
   const parts = [`## 📊 运维周报 ${day(start)} ~ ${day(now)}`];

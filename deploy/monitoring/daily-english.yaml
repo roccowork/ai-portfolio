@@ -1,5 +1,5 @@
-# 每日运维英语：每天新加坡时间 09:15 发 5 个运维常用词和例句到企业微信群（和告警同一个群机器人、同一个 Secret wecom-bot）。
-# 脚本和词库在 wecom-relay/daily-english.mjs、words.json，由 kustomization 生成 ConfigMap 挂载。
+# 每日运维英语：每天新加坡时间 09:15 发 5 个运维常用词和例句到 Telegram（私人助理机器人）。
+# 脚本和词库在 scripts/daily-english.mjs、words.json，由 kustomization 生成 ConfigMap 挂载。
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -32,9 +32,6 @@ spec:
               image: node:24.21.0-alpine
               command: [node, /app/daily-english.mjs]
               env:
-                - name: WECOM_KEY
-                  valueFrom:
-                    secretKeyRef: { name: wecom-bot, key: key, optional: true }
                 - name: TELEGRAM_BOT_TOKEN
                   valueFrom:
                     secretKeyRef: { name: telegram-bot, key: token, optional: true }

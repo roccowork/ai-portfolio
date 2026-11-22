@@ -176,8 +176,8 @@ def test_pods_and_status_details(tmp_path):
         'kube_pod_container_resource_limits{resource="memory"}': vec((pod("monitoring", "prometheus-kps-prometheus-0"), 1280 * 2**20), (pod("ops-desk", "ai-api-x"), 384 * 2**20)),
         "topk(5, sum by (namespace, pod) (rate(container_cpu": vec((pod("ops-desk", "ai-api-x"), 0.12),),
         'kube_pod_container_resource_limits{resource="cpu"}': vec((pod("ops-desk", "ai-api-x"), 1),),
-        "increase(kube_pod_container_status_restarts_total": vec((pod("ops-desk", "wecom-relay-y"), 3),),
-        "last_terminated_reason": vec((pod("ops-desk", "wecom-relay-y", reason="OOMKilled"), 1),),
+        "increase(kube_pod_container_status_restarts_total": vec((pod("ops-desk", "blackbox-exporter-y"), 3),),
+        "last_terminated_reason": vec((pod("ops-desk", "blackbox-exporter-y", reason="OOMKilled"), 1),),
         "max(node_filesystem_avail_bytes": vec(({}, 20 * 2**30),),
         "deriv(": vec(({}, -2 * 2**30 / 86400),),
         "prometheus_tsdb_head_series": vec(({}, 56000),),
@@ -196,7 +196,7 @@ def test_pods_and_status_details(tmp_path):
     text = asyncio.run(dutybot.pods_text(c))
     assert "monitoring/prometheus-kps-prometheus-0  430 MiB / 1.2 GiB（34%）" in text
     assert "🔴 ops-desk/ai-api-x  330 MiB / 384 MiB（86%）" in text
-    assert "ops-desk/ai-api-x  0.12 / 1" in text and "wecom-relay-y  3 次，上次退出原因 OOMKilled" in text
+    assert "ops-desk/ai-api-x  0.12 / 1" in text and "blackbox-exporter-y  3 次，上次退出原因 OOMKilled" in text
     assert "快到内存上限的</b>（超过 80%，容易被 OOM 杀掉）\n🔴 ops-desk/ai-api-x  86%" in text
     assert "数据盘" not in text  # 没有卷指标就不显示这一块
     assert "约 10 天写满" in asyncio.run(dutybot._disk_forecast(c)) and "5.6 万条序列" in asyncio.run(dutybot._prom_line(c))

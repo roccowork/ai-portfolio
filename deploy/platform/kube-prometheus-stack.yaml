@@ -92,16 +92,14 @@ spec:
           limits: { cpu: 400m, memory: 96Mi }
       config:
         route:
-          receiver: wecom
+          # 告警只有一个去处：ai-api（ai/app/alerts.py）。运维 Agent 诊断得了的推诊断（带「执行 / 忽略」），
+          # 诊断不了的（ai-api 自己的、模型费用、VPS 等）直接转成消息推到值班台。2026-11-22 起不再有单独的转发器和企业微信
+          receiver: ai-api
           group_by: [alertname, namespace]
           group_wait: 30s
           group_interval: 5m
           repeat_interval: 4h
           routes:
-            # 同一条告警同时交给运维 Agent 自愈（ai/app/autoheal.py），continue 让它继续往下走，照常发通知
-            - receiver: autoheal
-              matchers: ['severity =~ "warning|critical"', 'alertname !~ "Watchdog|InfoInhibitor|AIDailyBudgetReached|AIModelErrors|VPSDown"']
-              continue: true
             # Watchdog 是「监控系统本身活着」的心跳告警，一直处于触发状态，不需要通知
             - receiver: 'null'
               matchers: ['alertname = "Watchdog"']
@@ -112,15 +110,10 @@ spec:
               matchers: ['severity = "info"']
         receivers:
           - name: 'null'
-          - name: autoheal
+          - name: ai-api
             webhook_configs:
               # 集群内部地址；Ingress 只转发 /api/ai，外网访问不到 /internal
               - url: http://ai-api.ops-desk.svc/internal/alertmanager
-                send_resolved: true
-          - name: wecom
-            webhook_configs:
-              # 转发器把 Alertmanager 的格式转成企业微信群机器人的 markdown（见 wecom-relay/）
-              - url: http://wecom-relay.monitoring.svc:8080/alert
                 send_resolved: true
         inhibit_rules:
           # 同一条告警已经是严重级别时，不再重复发警告级别

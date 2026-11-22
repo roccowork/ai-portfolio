@@ -64,7 +64,7 @@ def fake_pod(deploy: str) -> str:
 
 # ── 快照：评测用的固定集群 ──
 # 2026-10-30 前四次评测是在「实时集群 + 注入故障」上跑的：Agent 一查没注入到的东西（日志、别的 Job、指标）就拿到真实数据，
-# 和注入的故障互相矛盾（假装 wecom-relay 在崩溃，日志却是真实的正常日志），分数在 47%～57% 之间来回晃。
+# 和注入的故障互相矛盾（假装某个 Pod 在崩溃，日志却是真实的正常日志），分数在 47%～57% 之间来回晃。
 # 现在先把真实集群拍一次快照（Pod、概况、告警），之后每次评测都在同一份快照上注入故障，所有工具只查快照，不碰实时集群
 SNAPSHOT_MAX_AGE_DAYS = 30
 JOB_POD = re.compile(r"^(?P<cronjob>.+)-\d{6,}-[a-z0-9]{5}$")
@@ -75,7 +75,7 @@ def _offline_snapshot() -> dict:
     """没有集群（CI、本地测试）时用的快照：一个健康的小集群，Pod 名和真实集群的命名规则一样"""
     pods: dict[str, list[dict]] = {}
     for ns, deploys in {"ops-desk": [("ops-desk", "web", 38.5, 64), ("ops-desk", "web", 37.9, 64), ("ai-api", "api", 210.3, 384), ("assistant", "assistant", 96.2, 256)],
-                        "monitoring": [("blackbox-exporter", "blackbox-exporter", 31.2, 64), ("wecom-relay", "relay", 30.1, 96), ("kps-grafana", "grafana", 220.7, 640)],
+                        "monitoring": [("blackbox-exporter", "blackbox-exporter", 31.2, 64), ("kps-grafana", "grafana", 220.7, 640)],
                         "argocd": [("argocd-server", "server", 60.2, 256)], "kube-system": [("traefik", "traefik", 55.0, None)], "dify": []}.items():
         pods[ns] = []
         for i, (d, ctr, mem, lim) in enumerate(deploys):

@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { describe, expect, it } from 'vitest';
-import { buildReport, collect, query } from '../deploy/monitoring/wecom-relay/weekly-report.mjs';
-import { MAX_BYTES } from '../deploy/monitoring/wecom-relay/relay.mjs';
+import { buildReport, collect, query } from '../deploy/monitoring/scripts/weekly-report.mjs';
+import { MAX_BYTES } from '../deploy/monitoring/scripts/telegram.mjs';
 
 const now = new Date('2026-10-26T01:00:00Z'); // 新加坡 10-26 09:00（周一）= 洛杉矶 10-25 18:00
 const row = (labels: Record<string, string>, value: number) => ({ labels, value });
@@ -49,7 +49,7 @@ describe('buildReport', () => {
         ],
         backups: [row({ cronjob: 'backup-cloudreve' }, 30 * 3600)],
         certs: [row({ name: 'grafana-tls' }, 10)],
-        restarts: [row({ namespace: 'monitoring', pod: 'wecom-relay-abc' }, 4)],
+        restarts: [row({ namespace: 'monitoring', pod: 'blackbox-exporter-abc' }, 4)],
       },
       now,
     );
@@ -59,7 +59,7 @@ describe('buildReport', () => {
     );
     expect(msg).toContain('⚠️ backup-cloudreve 最近成功：30 小时前');
     expect(msg).toContain('⚠️ grafana-tls 剩余 10 天');
-    expect(msg).toContain('monitoring/wecom-relay-abc：4 次');
+    expect(msg).toContain('monitoring/blackbox-exporter-abc：4 次');
   });
 
   it('单条查询失败只影响对应的一节', () => {

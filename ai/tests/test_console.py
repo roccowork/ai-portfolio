@@ -211,3 +211,10 @@ def test_endpoint_needs_telegram(tmp_path):
     assert not [p for m, p in calls if m == "send"]
     menu = next(p for m, p in calls if m == "setChatMenuButton")
     assert menu["menu_button"] == {"type": "web_app", "text": "总控台", "web_app": {"url": "https://ops.liuxd.dev/console/"}}
+
+
+def test_health_accepts_head(tmp_path):
+    # UptimeRobot 默认用 HEAD 拨测 /api/ai/health（ai-api 挂了只能靠它从外面报）：HEAD 和 GET 都是 200
+    s = Settings(api_key="test", data_dir=tmp_path, cases_dir=CASES, samples_dir=tmp_path)
+    with TestClient(create_app(s, Gateway(s, Ledger(tmp_path / "ai.db")))) as c:
+        assert c.head("/api/ai/health").status_code == 200 and c.get("/api/ai/health").json()["status"] == "ok"

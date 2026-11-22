@@ -302,7 +302,8 @@ def create_app(
     async def unavailable(_: Request, e: AIUnavailable):
         return JSONResponse({"detail": str(e)}, status_code=503)
 
-    @app.get("/api/ai/health")
+    # UptimeRobot 默认用 HEAD 请求拨测（只看状态码），GET 和 HEAD 都要给 200，否则报 405
+    @app.api_route("/api/ai/health", methods=["GET", "HEAD"])
     def health():
         return {"status": "ok", "enabled": s.enabled, "index_ready": qa.ready, "opsdocs_ready": docs.ready, "opsdocs_chunks": len(docs.chunks)}
 

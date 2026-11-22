@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 安装或升级 Dify。Dify 1.17 有十多个组件（还有 Agent 沙箱），官方只维护 Docker Compose 部署方式，
 # 所以它不放进 k3s：用官方 Compose 跑在 /opt/dify，只监听 k3s 的内网地址（cni0 网卡，10.42.0.1:8088），
-# 公网进不来；对外由 Traefik 按 deploy/apps/dify/ 转发，HTTPS 证书由 cert-manager 签发。
+# 公网进不来；对外由 Traefik 转发，HTTPS 证书由 cert-manager 签发。
+# 2026-11-22 Dify 停用后删掉了 k3s 里的域名、证书配置（deploy/apps/dify/，在 git 历史里）和 Argo CD 应用；要恢复先从历史里把它们找回来
 # 用法（root）：bash install-dify.sh。可重复执行：密钥只在第一次生成；升级时改 DIFY_VERSION 再执行。
 set -euo pipefail
 

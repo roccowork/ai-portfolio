@@ -267,7 +267,6 @@ curl -s -o /dev/null -w '%{http_code}\n' https://prometheus.liuxd.dev/api/v1/que
   | `platform`          | Argo CD、cert-manager、kube-prometheus-stack 的 HelmChart，证书签发者 | `deploy/platform`          |
   | `ops-desk`          | 站点                                                                  | `deploy/k8s/overlays/prod` |
   | `monitoring-extras` | Blackbox 拨测、定时推送脚本、Traefik 指标、告警规则、仪表盘           | `deploy/monitoring`        |
-  | `dify`              | Dify 的 Service、Ingress 和备份任务（Dify 本身跑在宿主机 Docker）     | `deploy/apps/dify`         |
   | `personal`          | 私人助理（私有仓库 `roccowork/ops-desk` 的 `personal/`）              | 私有仓库                   |
 
 - 都开了自动同步、`prune`、`selfHeal` 和失败重试。
@@ -457,7 +456,7 @@ k3s kubectl -n umami create secret generic backup-r2 \
 
 - 宿主机：先关掉自动重启再停：`cd /opt/dify/docker && docker update --restart=no $(docker compose ps -aq) && docker compose stop`；删掉每天导出数据库的 `/etc/cron.d/dify-dump`
   - 只 `docker compose stop` 不够（2026-11-14 踩坑）：Dify 的容器是 `restart: always`，服务器一重启 Docker 又把十来个容器全拉起来，多占约 1.4 GiB 内存和不少 CPU。确认：重启后 `docker ps` 里不该有 Dify 的容器
-- 仓库：拨测去掉 dify.liuxd.dev，总控台去掉 Dify 节点，`deploy/apps/dify/kustomization.yaml` 里注释掉 `backup.yaml`（不再每天备份），作品集卡片改成「演示已下线」
+- 仓库：拨测去掉 dify.liuxd.dev，总控台去掉 Dify 节点，作品集卡片改成「演示已下线」；2026-11-22 又删掉了 k3s 里 Dify 的域名、证书配置和 Argo CD 应用（`deploy/apps/dify/`，在 git 历史里，恢复时找回来）。如果 `dify` 命名空间还在：`k3s kubectl delete namespace dify`
 - Argo CD 应用 `dify`（Service、Ingress、证书）保留，恢复时不用重新配域名
 
 恢复：`cd /opt/dify/docker && docker compose up -d --force-recreate`（重建容器，自动重启按 compose 文件恢复成 `always`；只 `start` 的话还是不自动重启），把 `/etc/cron.d/dify-dump` 加回来（内容见 `deploy/server/install-dify.sh`），再把上面几处仓库改动改回来。

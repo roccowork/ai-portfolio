@@ -68,6 +68,7 @@ const NOT_DIAGNOSED = new Set([
   'InfoInhibitor',
   'AIDailyBudgetReached',
   'AIModelErrors',
+  'VPSDown', // VPS 不在集群里，运维 Agent 管不到，直接转发
 ]);
 export function diagnosedByAgent(alert) {
   const l = alert?.labels ?? {};

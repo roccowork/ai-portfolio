@@ -29,7 +29,7 @@ from .localtime import TZ as SG  # 显示用时区（UTC+8，见 localtime.py）
 
 HEAL_NAMESPACES = ["ops-desk", "monitoring", "dify", "git-backup", "umami"]
 # 这些告警 Agent 帮不上忙（或者分析本身就要花钱），直接跳过
-SKIP_ALERTS = {"Watchdog", "InfoInhibitor", "AIDailyBudgetReached", "AIModelErrors"}
+SKIP_ALERTS = {"Watchdog", "InfoInhibitor", "AIDailyBudgetReached", "AIModelErrors", "VPSDown"}  # VPSDown：VPS 不在集群里，Agent 管不到
 SELF = "ai-api"
 NAME_RE = re.compile(r"[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?")
 

@@ -197,15 +197,6 @@ def create_app(
             return "这里查不到拨测结果（没有集群权限）"
         return probes.text(await probes.fetch(k8s))
 
-    async def kuma_status() -> str | None:
-        try:
-            async with httpx.AsyncClient(timeout=8) as c:
-                r = await c.get(s.kuma_url.rstrip("/") + "/metrics", auth=("", s.kuma_api_key))
-                r.raise_for_status()
-            return dutybot.kuma_line(r.text)
-        except httpx.HTTPError:
-            return "外部拨测（Uptime Kuma）：查不到"
-
     async def usage_card() -> str:
         """「💰 网站 AI 用量」：只看本站账本（阿里云余额和账单在私人助理那边）"""
         return await asyncio.to_thread(dutybot.usage_text, ledger, s.daily_budget, s.public_budget)
@@ -666,7 +657,7 @@ def create_app(
 
     # 总控台点开某个资源、员工后看的详情：就是原来值班台按钮的内容（Telegram 的 HTML 格式，前端只放行 b、i、code、a 标签）
     details = {
-        "status": lambda: dutybot.status_text(k8s, kuma_status if s.kuma_api_key else None),
+        "status": lambda: dutybot.status_text(k8s),
         "pods": lambda: dutybot.pods_text(k8s),
         "probes": _probes_text,
         "heal": lambda: asyncio.to_thread(dutybot.heal_text, healer.store, 10),

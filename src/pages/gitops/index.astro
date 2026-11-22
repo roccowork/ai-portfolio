@@ -44,7 +44,7 @@ const parts = [
   { t: 'Traefik', d: '入口、HTTPS、按 IP 限流' },
   { t: 'cert-manager', d: "Let's Encrypt 证书自动续期" },
   { t: 'kube-prometheus-stack', d: 'Prometheus、Grafana、Alertmanager，自定义告警规则' },
-  { t: 'Uptime Kuma', d: '定时拨测网站、AI 服务和 VPS 是否在线' },
+  { t: 'Blackbox Exporter', d: '每分钟拨测网站、外部依赖和 VPS 端口是否在线、证书还剩几天' },
   { t: 'restic → R2', d: '每天加密备份到另一家云，失败或超过 26 小时没成功就告警' },
   { t: '运维 Agent', d: '告警来了自动排查原因，低风险问题自动处理' },
 ];

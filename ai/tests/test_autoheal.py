@@ -42,7 +42,7 @@ def fake_k8s(writes: list) -> httpx.MockTransport:
             return httpx.Response(200, json={"items": list(jobs.values())})
         if "/jobs/" in p:
             return httpx.Response(200, json=jobs[p.rsplit("/", 1)[1]])
-        if p.endswith("/deployments/uptime-kuma"):
+        if p.endswith("/deployments/blackbox-exporter"):
             return httpx.Response(200, json={"metadata": {"generation": 2}, "spec": {"replicas": 1}, "status": {"observedGeneration": 2, "updatedReplicas": 1, "readyReplicas": 1}})
         if p.endswith("/pods/lonely"):
             return httpx.Response(200, json={"metadata": {"name": "lonely"}})
@@ -119,8 +119,8 @@ def test_backup_failure_is_rerun_automatically(env):
 def test_restart_waits_for_confirmation(env):
     h, script, writes, sent, _ = env
     script += [
-        [tc("propose_action", {"action": "restart_deployment", "namespace": "monitoring", "name": "uptime-kuma", "reason": "进程卡死"}, 1)],
-        "原因：uptime-kuma 不响应。处理：滚动重启。",
+        [tc("propose_action", {"action": "restart_deployment", "namespace": "monitoring", "name": "blackbox-exporter", "reason": "进程卡死"}, 1)],
+        "原因：blackbox-exporter 不响应。处理：滚动重启。",
     ]
 
     async def run():
@@ -134,7 +134,7 @@ def test_restart_waits_for_confirmation(env):
         assert "已经处理过了" in await h.on_button("heal:ok:1")
 
     asyncio.run(run())
-    assert writes == [("PATCH", "/apis/apps/v1/namespaces/monitoring/deployments/uptime-kuma")]
+    assert writes == [("PATCH", "/apis/apps/v1/namespaces/monitoring/deployments/blackbox-exporter")]
     assert h.store.get(1)["status"] == "fixed"
 
 

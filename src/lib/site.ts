@@ -135,7 +135,7 @@ export const PROJECTS: Work[] = [
     highlights: [
       'CI 不持有集群凭据，只把新镜像标签写回 Git；回滚就是 git revert',
       '就绪探针通过才接流量，新版本不健康时旧版本继续服务',
-      'kube-prometheus-stack、Grafana、Uptime Kuma 监控，告警推 Telegram 并交给运维 Agent 排查；数据用 restic 每天加密备份到 R2',
+      'kube-prometheus-stack、Grafana、Blackbox 拨测监控，告警推 Telegram 并交给运维 Agent 排查；数据用 restic 每天加密备份到 R2',
     ],
     stack: [
       'k3s',

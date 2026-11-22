@@ -7,7 +7,7 @@
 推送到 `main` 即自动部署，无需人工操作。CI（GitHub Actions，`.github/workflows/ci.yml`）**不访问集群**：
 
 1. `check`：格式、ESLint、`astro check`、单元测试、构建。PR 和 main 都跑，任何一项失败后续不执行。
-2. `release`（构建和提交标签合在一个 job，省一次按分钟取整的计费）：先看这次推送改了哪些文件，只改了 `deploy/`（`deploy/docker/` 除外）、`docs/` 或根目录 `*.md` 就跳过构建，Argo CD 直接同步清单；否则构建镜像，标签为 commit SHA，推送到 `ghcr.io/roccowork/ops-desk`（公开，镜像名沿用拆分前的仓库名），构建时把 SHA 写进站点的 `/version.txt`，再把 `deploy/k8s/overlays/prod/kustomization.yaml` 里的 `newTag` 改成新 SHA，以 `deploy: ops-desk <sha> [skip ci]` 提交回 `main`（`[skip ci]` 防止再次触发流水线）。CI 不等上线、不做冒烟检查（2026-10-25 仓库还是私有、Actions 按分钟计费时省掉的）：需要确认时看 `https://ops.liuxd.dev/version.txt` 是否变成新 SHA，可用性由 Uptime Kuma 和告警盯着。只改 `docs/**` 或根目录 `*.md` 不触发 CI；同一个 PR 推新提交会取消旧的运行。
+2. `release`（构建和提交标签合在一个 job，省一次按分钟取整的计费）：先看这次推送改了哪些文件，只改了 `deploy/`（`deploy/docker/` 除外）、`docs/` 或根目录 `*.md` 就跳过构建，Argo CD 直接同步清单；否则构建镜像，标签为 commit SHA，推送到 `ghcr.io/roccowork/ops-desk`（公开，镜像名沿用拆分前的仓库名），构建时把 SHA 写进站点的 `/version.txt`，再把 `deploy/k8s/overlays/prod/kustomization.yaml` 里的 `newTag` 改成新 SHA，以 `deploy: ops-desk <sha> [skip ci]` 提交回 `main`（`[skip ci]` 防止再次触发流水线）。CI 不等上线、不做冒烟检查（2026-10-25 仓库还是私有、Actions 按分钟计费时省掉的）：需要确认时看 `https://ops.liuxd.dev/version.txt` 是否变成新 SHA，可用性由 Blackbox 拨测和告警盯着。只改 `docs/**` 或根目录 `*.md` 不触发 CI；同一个 PR 推新提交会取消旧的运行。
 3. 集群里的 Argo CD 每 60 秒检查一次 Git，发现标签变化后自动同步（`prune` + `selfHeal`）。
 
 查看线上当前版本：
@@ -26,7 +26,7 @@ grep newTag deploy/k8s/overlays/prod/kustomization.yaml   # Git 里期望的版�
 | 生效方式                                                                                      | 配置                                                                                                              | 改哪里                                       |
 | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
 | **Argo CD 直接应用清单**（约 1 分钟）                                                         | 站点：镜像版本（CI 自动改）、副本数、资源限制、Ingress                                                            | `deploy/k8s/`                                |
-|                                                                                               | 告警规则、Grafana 仪表盘、告警转发器、Uptime Kuma、Traefik 指标采集                                               | `deploy/monitoring/`                         |
+|                                                                                               | 告警规则、Grafana 仪表盘、告警转发器、Blackbox 拨测、Traefik 指标采集                                             | `deploy/monitoring/`                         |
 |                                                                                               | Dify 等其他应用和它们的备份任务（备份脚本在 `deploy/backup/`，各应用共用）                                        | `deploy/apps/`                               |
 |                                                                                               | 证书签发者（ClusterIssuer）                                                                                       | `deploy/platform/cluster-issuers.yaml`       |
 |                                                                                               | 增删 Argo CD 应用                                                                                                 | `deploy/argocd/applications.yaml`            |
@@ -36,7 +36,7 @@ grep newTag deploy/k8s/overlays/prod/kustomization.yaml   # Git 里期望的版�
 | **不在 Git 里，要上服务器或控制台操作**                                                       | k3s 本身（版本固定在脚本里，升级时改版本号后在服务器上重新执行）                                                  | `deploy/server/install-k3s.sh`               |
 |                                                                                               | 系统配置：自动更新、fail2ban、SSH 加固                                                                            | `deploy/server/init.sh`、`ssh-hardening.sh`  |
 |                                                                                               | Secret：Grafana 密码、企业微信 key、R2 密钥和 restic 密码                                                         | 第 6 节、第 9 节                             |
-|                                                                                               | Uptime Kuma 的监控项、Alertmanager 的静默、Grafana 界面上的手动修改（仪表盘要导出 JSON 放进仓库才会保留）         | 第 6 节                                      |
+|                                                                                               | Alertmanager 的静默、Grafana 界面上的手动修改（仪表盘要导出 JSON 放进仓库才会保留）                               | 第 6 节                                      |
 |                                                                                               | DNS（Cloudflare）、服务器防火墙（ufw）、私有仓库的部署密钥                                                        | 第 3 节、第 7 节                             |
 
 确认是否生效：
@@ -86,12 +86,12 @@ curl https://ops.liuxd.dev/version.txt      # 确认回到上一个版本
 | 8    | 按第 6 节创建 `monitoring` 命名空间和两个 Secret；再按第 9 节在 `ops-desk`、`monitoring` 两个命名空间创建 Secret `backup-r2`（每天的备份任务要用） | 密码和 key 不在仓库里，要在 Argo CD 部署前准备好；有 Secret 备份时按第 17 节一次全部恢复 |
 | 9    | `bash /root/ops-desk-deploy/server/install-argocd.sh`，把最后打印的公钥添加到 GitHub 仓库的 Deploy keys（不勾写权限），并删掉旧服务器的那把        | 每台服务器生成自己的部署密钥                                                             |
 | 10   | `k3s kubectl apply -f /root/ops-desk-deploy/argocd/applications.yaml`                                                                              | Argo CD 从 Git 装好其余全部组件，见下方说明，不需要重跑 CI                               |
-| 11   | **立刻**打开 `https://status.liuxd.dev` 创建 Uptime Kuma 管理员并按第 6 节配置；按第 7 节修改 Argo CD 管理员密码                                   | 初始化页面谁先打开谁就能设管理员                                                         |
+| 11   | 按第 7 节修改 Argo CD 管理员密码                                                                                                                   | 初始化页面谁先打开谁就能设管理员                                                         |
 | 12   | 验证：`curl https://ops.liuxd.dev/version.txt` 与 Git 里的 `newTag` 一致；证书签发者为 Let's Encrypt；Grafana「ops-desk 总览」有数据               |                                                                                          |
 
 第 10 步之后，Argo CD 按 `deploy/argocd/applications.yaml` 依次安装 cert-manager、kube-prometheus-stack、证书签发者（`platform` 应用），以及站点、监控附加组件、Dify 的 K8s 部分和私人助理。组件之间有依赖（比如告警规则要等 kube-prometheus-stack 装好 CRD），前几分钟部分应用同步失败是正常的，会自动重试；约 10 到 15 分钟后 `k3s kubectl -n argocd get applications` 全部显示 `Synced`、`Healthy`。
 
-Uptime Kuma、AI 服务、Dify 和私人助理的数据要从 R2 恢复：应用起来后按第 9 节「恢复」操作。
+AI 服务、Dify 和私人助理的数据要从 R2 恢复：应用起来后按第 9 节「恢复」操作。
 
 重建演练（在全新系统上按本节操作并记录耗时）尚未进行，计划在第一版完成后补做。
 
@@ -131,8 +131,7 @@ kubectl logs -n cert-manager deploy/cert-manager --tail=50
 | 地址                           | 用途                                                                          | 登录                                              |
 | ------------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------- |
 | <https://grafana.liuxd.dev>    | 仪表盘「ops-desk 总览」：站点请求量、响应时间、状态码，节点 CPU / 内存 / 磁盘 | `admin`，密码在 Secret `monitoring/grafana-admin` |
-| <https://status.liuxd.dev>     | Uptime Kuma：从外部探测首页、`/healthz`、证书到期                             | 首次访问时创建的管理员                            |
-| UptimeRobot（uptimerobot.com） | 外部兜底：服务器整体宕机时，Uptime Kuma 也发不出告警，由它发邮件              | 个人账号                                          |
+| UptimeRobot（uptimerobot.com） | 外部兜底：服务器整体宕机时，服务器上的监控都发不出告警，由它发邮件            | 个人账号                                          |
 | Prometheus、Alertmanager       | 不对公网开放                                                                  | 见下方「查看告警和静默」                          |
 
 告警链路：Prometheus 规则触发 → Alertmanager 分组去重 → `wecom-relay`（转发器）转成 markdown → 企业微信群机器人。info 级别只在 Grafana 里看，不发通知。
@@ -157,13 +156,9 @@ k3s kubectl -n monitoring create secret generic wecom-bot --from-literal=key="$K
 k3s kubectl -n monitoring rollout restart deploy/wecom-relay
 ```
 
-### Uptime Kuma 配置（不支持配置文件，重建后手动做一遍）
+### 可用性监控：只有 Blackbox 拨测一套
 
-1. 数据库选 SQLite，创建管理员（强密码）
-2. 设置 → 通知 → 类型「WeCom（企业微信群机器人）」，填 key，打开「默认开启」「应用到所有现有监控项」，点「测试」确认群里收到
-3. 添加监控项（重试次数都设 2，避免网络抖动误报）：
-   - HTTP(s)「首页」`https://ops.liuxd.dev/`，间隔 60 秒，打开「证书到期通知」
-   - HTTP(s) - 关键字「健康检查」`https://ops.liuxd.dev/healthz`，关键字 `ok`
+2026-11-22 停用了 Uptime Kuma（和 Blackbox 重复，同一次故障会收到两套告警）。现在网站、外部依赖、证书、VPS 节点端口都由 Blackbox Exporter 每分钟拨测（`deploy/monitoring/blackbox.yaml`；VPS 的地址和告警在私有仓库，不进公开仓库），告警由 Prometheus 规则发出、经值班台推送，状态在总控台看。全部写在代码里，重建后不用手动配置。
 
 UptimeRobot：New → HTTP 监控 `https://ops.liuxd.dev/healthz`，间隔 5 分钟（免费版最短），通知发到注册邮箱。
 
@@ -279,7 +274,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://prometheus.liuxd.dev/api/v1/que
   | `root`              | 应用定义本身（增删应用改这个文件即可）                                | `deploy/argocd`            |
   | `platform`          | Argo CD、cert-manager、kube-prometheus-stack 的 HelmChart，证书签发者 | `deploy/platform`          |
   | `ops-desk`          | 站点                                                                  | `deploy/k8s/overlays/prod` |
-  | `monitoring-extras` | 告警转发器、Uptime Kuma、Traefik 指标、告警规则、仪表盘               | `deploy/monitoring`        |
+  | `monitoring-extras` | 告警转发器、Blackbox 拨测、Traefik 指标、告警规则、仪表盘             | `deploy/monitoring`        |
   | `dify`              | Dify 的 Service、Ingress 和备份任务（Dify 本身跑在宿主机 Docker）     | `deploy/apps/dify`         |
   | `personal`          | 私人助理（私有仓库 `roccowork/ops-desk` 的 `personal/`）              | 私有仓库                   |
 
@@ -356,16 +351,15 @@ k3s kubectl -n argocd delete secret argocd-initial-admin-secret
 - 有状态的数据每天用 restic 加密备份到 Cloudflare R2，脚本在 `deploy/backup/`（`backup.sh` 备份和清理旧快照，`snapshot.mjs` 先给正在使用的 SQLite 做一致性快照），各应用共用
 - 现在的备份任务（新加坡时间）：
 
-  | CronJob              | 命名空间        | 时间  | 内容                                                                                  |
-  | -------------------- | --------------- | ----- | ------------------------------------------------------------------------------------- |
-  | `backup-uptime-kuma` | `monitoring`    | 04:00 | Uptime Kuma 的数据库                                                                  |
-  | `backup-dify`        | `dify`          | 04:10 | Dify 的数据库导出文件和上传的文件（2026-11-06 Dify 停用，这个任务已撤下，见第 11 节） |
-  | `backup-umami`       | `umami`         | 04:20 | 访问统计 Umami 的数据库（`pg_dump` 导出）                                             |
-  | `backup-github`      | `git-backup`    | 04:40 | 所有 GitHub 账号的全部仓库（镜像，含私有仓库），见下文                                |
-  | `backup-notes`       | `notes`         | 04:50 | 个人笔记同步服务 CouchDB 的数据目录，见第 17 节                                       |
-  | `backup-secrets`     | `secret-backup` | 05:00 | 集群里人工创建的全部 Secret（密码、密钥、令牌），见第 17 节                           |
-  | `backup-ai-api`      | `ops-desk`      | 05:10 | `ai.db`：费用账本、自愈记录、评测结果                                                 |
-  | `backup-assistant`   | `ops-desk`      | 05:30 | 私人助理的数据库（私有仓库）                                                          |
+  | CronJob            | 命名空间        | 时间  | 内容                                                                                  |
+  | ------------------ | --------------- | ----- | ------------------------------------------------------------------------------------- |
+  | `backup-dify`      | `dify`          | 04:10 | Dify 的数据库导出文件和上传的文件（2026-11-06 Dify 停用，这个任务已撤下，见第 11 节） |
+  | `backup-umami`     | `umami`         | 04:20 | 访问统计 Umami 的数据库（`pg_dump` 导出）                                             |
+  | `backup-github`    | `git-backup`    | 04:40 | 所有 GitHub 账号的全部仓库（镜像，含私有仓库），见下文                                |
+  | `backup-notes`     | `notes`         | 04:50 | 个人笔记同步服务 CouchDB 的数据目录，见第 17 节                                       |
+  | `backup-secrets`   | `secret-backup` | 05:00 | 集群里人工创建的全部 Secret（密码、密钥、令牌），见第 17 节                           |
+  | `backup-ai-api`    | `ops-desk`      | 05:10 | `ai.db`：费用账本、自愈记录、评测结果                                                 |
+  | `backup-assistant` | `ops-desk`      | 05:30 | 私人助理的数据库（私有仓库）                                                          |
 
 - 保留策略：最近 7 天、4 周、6 个月各一份
 - 告警：备份任务失败（`BackupJobFailed`），或超过 26 小时没有成功（`BackupStale`）。运维 Agent 收到备份失败的告警会自动补跑一次
@@ -382,7 +376,8 @@ read -r -p 'R2 账户 ID: ' ACCOUNT; read -r -p '存储桶名: ' BUCKET
 read -rs -p 'Access Key ID: ' A; echo
 read -rs -p 'Secret Access Key: ' S; echo
 read -rs -p 'restic 密码: ' R; echo
-for pair in ops-desk:ai-api monitoring:uptime-kuma; do
+# monitoring 里那份给 R2 用量报告列文件用（只用到 endpoint 和桶名，路径随便）
+for pair in ops-desk:ai-api monitoring:r2-usage; do
   k3s kubectl -n "${pair%%:*}" create secret generic backup-r2 \
     --from-literal=RESTIC_REPOSITORY="s3:https://$ACCOUNT.r2.cloudflarestorage.com/$BUCKET/${pair#*:}" \
     --from-literal=RESTIC_PASSWORD="$R" \
@@ -555,7 +550,7 @@ Odoo 和依赖它的办公 Agent 2026-10-28 下线，Argo CD 应用和清单已�
 
 - 每月 1 号 09:30（新加坡时间）CronJob `r2-usage-monthly` 发月报到企业微信：总用量、占 10 GB 免费额度的比例、每个应用（restic 仓库）各占多少
 - 每周一 09:30（新加坡时间）`r2-usage-check` 检查一次，超过 80% 才提醒
-- 用 `monitoring` 命名空间里 Uptime Kuma 备份的 Secret `backup-r2` 列出整个桶，不需要额外的 Cloudflare API 令牌；读写次数没统计（备份用量远低于免费额度）
+- 用 `monitoring` 命名空间里的 Secret `backup-r2`（原来给 Uptime Kuma 备份用，Kuma 停用后保留给这里）列出整个桶，不需要额外的 Cloudflare API 令牌；读写次数没统计（备份用量远低于免费额度）
 - 手动试跑：`k3s kubectl -n monitoring create job r2-test --from=cronjob/r2-usage-monthly`
 
 ## 16. Telegram 推送（替代企业微信群机器人）

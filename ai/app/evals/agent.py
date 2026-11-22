@@ -75,7 +75,7 @@ def _offline_snapshot() -> dict:
     """没有集群（CI、本地测试）时用的快照：一个健康的小集群，Pod 名和真实集群的命名规则一样"""
     pods: dict[str, list[dict]] = {}
     for ns, deploys in {"ops-desk": [("ops-desk", "web", 38.5, 64), ("ops-desk", "web", 37.9, 64), ("ai-api", "api", 210.3, 384), ("assistant", "assistant", 96.2, 256)],
-                        "monitoring": [("uptime-kuma", "uptime-kuma", 160.4, 320), ("wecom-relay", "relay", 30.1, 96), ("kps-grafana", "grafana", 220.7, 640)],
+                        "monitoring": [("blackbox-exporter", "blackbox-exporter", 31.2, 64), ("wecom-relay", "relay", 30.1, 96), ("kps-grafana", "grafana", 220.7, 640)],
                         "argocd": [("argocd-server", "server", 60.2, 256)], "kube-system": [("traefik", "traefik", 55.0, None)], "dify": []}.items():
         pods[ns] = []
         for i, (d, ctr, mem, lim) in enumerate(deploys):
@@ -91,7 +91,7 @@ def _offline_snapshot() -> dict:
         "overview": {"cpu_used_pct": 9.5, "mem_used_pct": 52.0, "disk_used_pct": 46.0, "load1": 0.7, "unhealthy_pods_by_namespace": {}, "top_restarts_24h": []},
         "alerts": [],
         "pods": pods,
-        "cronjobs": {"ops-desk": ["backup-ai-api"], "monitoring": ["backup-uptime-kuma"]},
+        "cronjobs": {"ops-desk": ["backup-ai-api"], "monitoring": ["r2-usage-check"]},
         "metrics": {"series": 132000, "req_per_min": 18.6},
     }
 

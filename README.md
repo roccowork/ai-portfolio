@@ -128,7 +128,7 @@ ai/                  AI 后端（FastAPI）；ai/knowledge/ 是 AI 助手回答�
 public/sw.js         清理旧 Service Worker 用，2026-12 后可删除
 deploy/docker/       Dockerfile 和 nginx 配置
 deploy/k8s/          Kustomize 清单（base + overlays/prod；base/status 是平台实况的 CronJob）
-deploy/monitoring/   告警规则、Grafana 面板、外部拨测（Blackbox Exporter）、Uptime Kuma、告警转发和定时报告
+deploy/monitoring/   告警规则、Grafana 面板、外部拨测（Blackbox Exporter，唯一的可用性监控）、告警转发和定时报告
 deploy/apps/         其他应用（Dify 的入口）
 deploy/backup/       restic 备份脚本（备份到 Cloudflare R2）
 deploy/server/       服务器初始化、k3s、Argo CD 的安装脚本

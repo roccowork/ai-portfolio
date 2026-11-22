@@ -77,9 +77,6 @@ class Settings:
     demo_booking_daily: int = field(default_factory=lambda: int(os.environ.get("DEMO_BOOKING_DAILY", "30")))
     # 运维 Agent 查询的 Prometheus（kube-prometheus-stack，集群内地址）
     prom_url: str = field(default_factory=lambda: os.environ.get("PROM_URL", "http://kps-prometheus.monitoring.svc:9090"))
-    # Uptime Kuma 的外部拨测结果（值班台「服务器状态」里一行）。Key 和私人助理共用 Secret ai-api 的 KUMA_API_KEY，没有就不显示
-    kuma_url: str = field(default_factory=lambda: os.environ.get("KUMA_URL", "http://uptime-kuma.monitoring.svc:3001"))
-    kuma_api_key: str = field(default_factory=lambda: os.environ.get("KUMA_API_KEY", ""))
     # 阿里云账户余额（ai/app/aliyun.py，私人助理用；值班台不再显示）：只读费用权限的 RAM AccessKey；没配就不查
     aliyun_bss_ak: str = field(default_factory=lambda: os.environ.get("ALIYUN_BSS_AK", ""))
     aliyun_bss_sk: str = field(default_factory=lambda: os.environ.get("ALIYUN_BSS_SK", ""))

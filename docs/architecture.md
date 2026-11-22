@@ -92,14 +92,13 @@ flowchart LR
     am -- webhook --> heal[ai-api 自愈<br/>运维 Agent 诊断]
     am -- webhook --> relay[wecom-relay<br/>它诊断不了的告警]
     prom --> graf[Grafana<br/>grafana.liuxd.dev]
-    kuma[Uptime Kuma<br/>status.liuxd.dev]
+    bb[Blackbox Exporter<br/>拨测网站、依赖、VPS 端口] --> prom
   end
   prom -- 每周一汇总 --> weekly[weekly-report<br/>运维周报]
   heal --> tg[Telegram<br/>OPS 值班台]
   relay --> tg
   weekly --> tg
-  kuma -- 探测首页 / healthz / 证书 --> site[ops.liuxd.dev]
-  kuma --> tg
+  bb -- 每分钟探测、证书天数 --> site[ops.liuxd.dev]
   ur[UptimeRobot<br/>外部兜底] -- 每 5 分钟 --> site
   ur --> mail[邮件]
 ```
@@ -111,7 +110,7 @@ flowchart LR
 | 自己写 Alertmanager → 企业微信的转发器                            | Alertmanager 只支持「企业微信应用」（要可信 IP，可信 IP 要求备案域名），不支持群机器人；现成的转发镜像来源不明。转发器约 150 行、零依赖、有单元测试，用官方 Node 镜像加 ConfigMap 运行，不用另外构建镜像。2026-10 起推送改走 Telegram（OPS 值班台），企业微信只作后备 |
 | 告警只推一次：运维 Agent 的诊断                                   | warning / critical 告警同时交给 ai-api 自愈：运维 Agent 查原因、推诊断（带「执行 / 忽略」按钮）。转发器只转它诊断不了的（ai-api 自己的告警、模型费用 / 报错告警），免得一条告警收到两条消息                                                                           |
 | Grafana 不做持久化                                                | 数据源和仪表盘都由代码预置（`deploy/monitoring/dashboards/`），重建后完全一致                                                                                                                                                                                         |
-| 内部指标 + Uptime Kuma + UptimeRobot 三层                         | 内部指标看原因；Uptime Kuma 从用户视角看可用性和证书；Kuma 和站点在同一台机器上，整机宕机时由外部的 UptimeRobot 兜底                                                                                                                                                  |
+| 内部指标 + Blackbox 拨测 + UptimeRobot 三层                       | 内部指标看原因；Blackbox 从用户视角看可用性和证书（2026-11-22 起代替 Uptime Kuma，监控只留一套，告警只从值班台来）；它和站点在同一台机器上，整机宕机时由外部的 UptimeRobot 兜底                                                                                       |
 | info 级别不发通知                                                 | 避免 CPUThrottlingHigh 这类提示信息刷屏，只在 Grafana 里看                                                                                                                                                                                                            |
 | 关掉和自定义规则重复的默认告警，名字不同的同类告警用抑制规则去重  | 同一个问题只收到一条中文告警；默认规则只保留自定义规则没有覆盖的部分（如按趋势预测磁盘写满）                                                                                                                                                                          |
 | 站点 5xx 和响应时间告警加最低请求量条件                           | 访问量小，一两个请求出错就会让比例跳到很高；没有流量时也不会因为算不出比例而误报                                                                                                                                                                                      |
@@ -130,7 +129,7 @@ flowchart LR
 
 ## 已知局限
 
-- Uptime Kuma 的监控项和 Alertmanager 的静默规则只存在集群里（Kuma 在 1Gi 卷上，静默在内存里），重建后需要按 runbook 手动配置一遍；监控项只有两个，几分钟就能配好。
+- Alertmanager 的静默规则只存在内存里，重启后需要重新设置。
 - Grafana 界面上手动做的修改，Pod 重启后会丢失；正式的仪表盘要导出 JSON 放进仓库。
 - 单节点：服务器整体故障时站点不可用。靠「一小时内按 runbook 重建」应对，见 `runbook.md` 第 3 节。
 - 「镜像标签提交回同一个仓库」会在 main 上留下 CI 的 deploy 提交；快速回滚时必须记得带 `[skip ci]`，否则会被 CI 覆盖（见 runbook 第 2 节）。

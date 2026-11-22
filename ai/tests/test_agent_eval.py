@@ -173,8 +173,8 @@ def test_eval_queue_runs_later_jobs_instead_of_dropping():
 def test_grounding_check_rejects_unused_tool_claims(tmp_path):
     """回答里写「list_pods 显示……」却没调用过：程序让它重来一次，这次真的去查"""
     seen: list = []
-    steps = {0: "list_pods 显示 uptime-kuma 重启 127 次。", 1: call("list_pods", {"namespace": "monitoring"})}
-    answers = iter([steps[0], steps[1], "Uptime Kuma 没有就绪，建议删除 Pod 重建。"])
+    steps = {0: "list_pods 显示 blackbox-exporter 重启 127 次。", 1: call("list_pods", {"namespace": "monitoring"})}
+    answers = iter([steps[0], steps[1], "Blackbox Exporter 没有就绪，建议删除 Pod 重建。"])
 
     def handler(req: httpx.Request) -> httpx.Response:
         body = json.loads(req.content)
@@ -187,8 +187,8 @@ def test_grounding_check_rejects_unused_tool_claims(tmp_path):
     gw = Gateway(s, Ledger(tmp_path / "ai.db"), transport=httpx.MockTransport(handler))
     c = ops.Cluster("http://prom", sa_dir=tmp_path / "none")
     f = ev.Faults(ev.load_snapshot_offline(), {})
-    answer, steps_, _ = asyncio.run(ops.investigate(gw, c, "Uptime Kuma 打不开了", runner=f.run))
-    assert answer.startswith("Uptime Kuma 没有就绪") and [x["tool"] for x in steps_] == ["list_pods"]
+    answer, steps_, _ = asyncio.run(ops.investigate(gw, c, "外部拨测的数据好像不更新了", runner=f.run))
+    assert answer.startswith("Blackbox Exporter 没有就绪") and [x["tool"] for x in steps_] == ["list_pods"]
     assert "程序核对：你的回答提到了 list_pods，但这次并没有调用" in seen[1]["messages"][-1]["content"]
     assert seen[1]["tool_choice"] == {"type": "function", "function": {"name": "list_pods"}}  # 重答那一轮强制调用
     assert "tool_choice" not in seen[0] and "tool_choice" not in seen[2]

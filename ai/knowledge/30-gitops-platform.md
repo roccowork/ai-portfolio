@@ -15,7 +15,7 @@ summary: 本站按生产标准部署在单节点 k3s 上：推送到 main 后 CI
 
 ## 监控和备份
 
-- kube-prometheus-stack（Prometheus、Alertmanager）和 Grafana 做监控，Uptime Kuma 做可用性探测
+- kube-prometheus-stack（Prometheus、Alertmanager）和 Grafana 做监控，Blackbox Exporter 做可用性探测（2026-11-22 起 Uptime Kuma 停用，监控只留一套）
 - 告警推送到 Telegram 的「值班台」机器人：运维 Agent 先查原因再推诊断，需要人确认的操作带「执行」按钮
 - 应用数据用 restic 每天加密备份到 Cloudflare R2
 - 证书由 cert-manager 自动签发和续期（Let's Encrypt）

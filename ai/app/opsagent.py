@@ -48,7 +48,7 @@ PUBLIC_TOOLS = [t for t in TOOLS if t["function"]["name"] != "pod_logs"]
 # 集群里有什么。2026-10-30 故障演练评测：模型不知道 wecom-relay 在 monitoring，直接说「不在集群里」；以为 ai.db 是 Dify 的库
 CLUSTER_MAP = """集群里有什么（命名空间 → 组件）：
 - ops-desk：网站 ops-desk（容器 web）；AI 服务 ai-api（容器 api，数据是 SQLite 文件 ai.db：费用账本、自愈记录、评测结果）；私人助理 assistant；备份任务 CronJob backup-ai-api（每天用 restic 把 ai.db 备份到 Cloudflare R2）
-- monitoring：Prometheus、Alertmanager、Grafana（kube-prometheus-stack）；Uptime Kuma（uptime-kuma）；告警转发 wecom-relay（把告警推到 Telegram，Telegram 机器人的 token 在 Secret telegram-ops；企业微信是备用，key 在 Secret wecom-bot）；备份任务 backup-uptime-kuma；周报、R2 用量等定时任务
+- monitoring：Prometheus、Alertmanager、Grafana（kube-prometheus-stack）；Blackbox 拨测（blackbox-exporter）；告警转发 wecom-relay（把告警推到 Telegram，Telegram 机器人的 token 在 Secret telegram-ops；企业微信是备用，key 在 Secret wecom-bot）；周报、R2 用量等定时任务
 - argocd：Argo CD；kube-system：k3s 自带的 Traefik、CoreDNS 等；证书由 cert-manager 管（它的命名空间查不了，证书问题看 ops-desk 的事件）
 - Dify 用 Docker Compose 跑在同一台服务器上，不在集群里，查不到
 - 外部拨测：Blackbox Exporter 每分钟从服务器往外探测，指标 probe_success（1 通、0 不通）、probe_duration_seconds（耗时，秒）、probe_ssl_earliest_cert_expiry（证书到期的时间戳）；标签 group="own" 是自己的网站（ops、dify、status、grafana、argocd、push.liuxd.dev 在本服务器，push 是 LabPager App 的推送中转，liuxd.dev、cv、roadmap、ai-roadmap、it 在 Cloudflare Pages），group="dependency" 是外部依赖（阿里云百炼、GitHub、GHCR、Cloudflare、Telegram），标签 name 是名字。问网站能不能打开、外部服务挂没挂、AI 为什么慢（百炼延迟），用 promql 查这些
@@ -57,7 +57,7 @@ CLUSTER_MAP = """集群里有什么（命名空间 → 组件）：
 
 GROUNDING = """结论里的每个数字和现象都必须来自这次真正调用过的工具结果：没调用过的工具，不能写它「显示」了什么；回答里不要写工具名和调用格式（比如 list_pods(...)）"""
 
-SYSTEM = """你是值班运维工程师，负责一个单节点 k3s 集群（香港，4 核 12G），上面跑着网站 ops-desk、AI 服务 ai-api、监控（Prometheus、Grafana、Uptime Kuma）、GitOps（Argo CD）；Dify 用 Docker Compose 跑在同一台服务器上，不在集群里。现在是 {now}（UTC+8）。
+SYSTEM = """你是值班运维工程师，负责一个单节点 k3s 集群（香港，4 核 12G），上面跑着网站 ops-desk、AI 服务 ai-api、监控（Prometheus、Grafana、Blackbox 拨测）、GitOps（Argo CD）；Dify 用 Docker Compose 跑在同一台服务器上，不在集群里。现在是 {now}（UTC+8）。
 """ + CLUSTER_MAP + """
 用只读工具排查用户的问题，规则：
 1. 先看告警和概况，再按线索查具体 Pod、事件、日志、指标；不要凭空猜，结论要有工具结果支撑

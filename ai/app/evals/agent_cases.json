@@ -140,20 +140,20 @@
         "labels": {
           "alertname": "BackupJobFailed",
           "severity": "warning",
-          "namespace": "monitoring",
-          "job_name": "backup-uptime-kuma-29360715"
+          "namespace": "ops-desk",
+          "job_name": "backup-ai-api-29360715"
         },
         "annotations": {
           "summary": "备份任务失败",
-          "description": "monitoring/backup-uptime-kuma-29360715 运行失败，用 kubectl logs 查看原因。"
+          "description": "ops-desk/backup-ai-api-29360715 运行失败，用 kubectl logs 查看原因。"
         },
         "since_min": 60
       },
       "inject": {
         "pods": [
           {
-            "namespace": "monitoring",
-            "pod": "backup-uptime-kuma-29360715-p4m7d",
+            "namespace": "ops-desk",
+            "pod": "backup-ai-api-29360715-p4m7d",
             "container": "restic",
             "set": {
               "phase": "Failed",
@@ -165,12 +165,12 @@
         ],
         "logs": [
           {
-            "namespace": "monitoring",
-            "pod": "backup-uptime-kuma-29360715-p4m7d",
+            "namespace": "ops-desk",
+            "pod": "backup-ai-api-29360715-p4m7d",
             "text": "open repository\nFatal: wrong password or no key found\ncheck the RESTIC_PASSWORD setting"
           }
         ],
-        "objects": ["backup-uptime-kuma"]
+        "objects": ["backup-ai-api"]
       },
       "truth": "restic 仓库密码不对（Secret 里的 RESTIC_PASSWORD 配置错误），补跑也会同样失败，不应提议补跑；建议人检查并改正备份用的 Secret。",
       "expect": {
@@ -187,11 +187,11 @@
           "alertname": "DeploymentReplicasLow",
           "severity": "warning",
           "namespace": "monitoring",
-          "deployment": "uptime-kuma"
+          "deployment": "blackbox-exporter"
         },
         "annotations": {
           "summary": "Deployment 可用副本数不足",
-          "description": "monitoring/uptime-kuma 可用 0 个，少于期望的副本数，已持续 10 分钟。"
+          "description": "monitoring/blackbox-exporter 可用 0 个，少于期望的副本数，已持续 10 分钟。"
         },
         "since_min": 12
       },
@@ -199,24 +199,24 @@
         "pods": [
           {
             "namespace": "monitoring",
-            "pod": "{pod:monitoring/uptime-kuma}",
-            "container": "uptime-kuma",
+            "pod": "{pod:monitoring/blackbox-exporter}",
+            "container": "blackbox-exporter",
             "set": {
               "ready": false,
               "state": "running",
               "restarts": 0,
               "age": "6.3 天",
-              "mem_mib": 187.0,
-              "mem_limit_mib": 320
+              "mem_mib": 31.0,
+              "mem_limit_mib": 64
             }
           }
         ],
         "events": [
           {
             "namespace": "monitoring",
-            "pod": "{pod:monitoring/uptime-kuma}",
+            "pod": "{pod:monitoring/blackbox-exporter}",
             "reason": "Unhealthy",
-            "message": "Readiness probe failed: Get \"http://10.42.0.57:3001/\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
+            "message": "Readiness probe failed: Get \"http://10.42.0.57:9115/-/healthy\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
             "count": 41,
             "ago_min": 1
           }
@@ -224,25 +224,25 @@
         "logs": [
           {
             "namespace": "monitoring",
-            "pod": "{pod:monitoring/uptime-kuma}",
-            "text": "2026-10-29T06:58:01Z [MONITOR] INFO: Monitor #3 'ops-desk' is UP\n2026-10-29T06:58:31Z [MONITOR] ERROR: SQLITE_BUSY: database is locked\n2026-10-29T06:58:31Z [MONITOR] ERROR: SQLITE_BUSY: database is locked\n2026-10-29T06:59:01Z [SERVER] WARN: event loop blocked for 30012ms"
+            "pod": "{pod:monitoring/blackbox-exporter}",
+            "text": "ts=2026-10-29T06:58:01Z caller=main.go:225 level=info msg=\"Listening on address\" address=:9115\nts=2026-10-29T06:58:31Z caller=handler.go:119 level=error msg=\"Error for HTTP request\" err=\"context deadline exceeded\"\nts=2026-10-29T06:59:01Z caller=handler.go:119 level=error msg=\"probe goroutines blocked, 512 requests waiting\""
           }
         ]
       },
-      "truth": "Uptime Kuma 进程卡住（日志里数据库被锁、事件循环阻塞），就绪探针一直超时但容器没有崩溃，所以不会自己重启；删除这个 Pod 让 Deployment 重建即可（delete_pod），滚动重启 Deployment 也可以。",
+      "truth": "Blackbox Exporter 进程卡住（日志里探测请求超时、大量请求排队），就绪探针一直超时但容器没有崩溃，所以不会自己重启；删除这个 Pod 让 Deployment 重建即可（delete_pod），滚动重启 Deployment 也可以。",
       "expect": {
         "tools": ["pod_events|pod_logs"],
-        "keywords": ["就绪|探针|卡|阻塞|locked|超时"],
+        "keywords": ["就绪|探针|卡|阻塞|排队|超时"],
         "action": [
           {
             "action": "delete_pod",
             "namespace": "monitoring",
-            "name": "{pod:monitoring/uptime-kuma}"
+            "name": "{pod:monitoring/blackbox-exporter}"
           },
           {
             "action": "restart_deployment",
             "namespace": "monitoring",
-            "name": "uptime-kuma"
+            "name": "blackbox-exporter"
           }
         ]
       }
@@ -676,29 +676,29 @@
     {
       "id": "a6",
       "mode": "ask",
-      "question": "Uptime Kuma 打不开了，帮我看看",
+      "question": "外部拨测的数据好像不更新了，帮我看看",
       "inject": {
         "pods": [
           {
             "namespace": "monitoring",
-            "pod": "{pod:monitoring/uptime-kuma}",
-            "container": "uptime-kuma",
+            "pod": "{pod:monitoring/blackbox-exporter}",
+            "container": "blackbox-exporter",
             "set": {
               "ready": false,
               "state": "running",
               "restarts": 0,
               "age": "6.3 天",
-              "mem_mib": 187.0,
-              "mem_limit_mib": 320
+              "mem_mib": 31.0,
+              "mem_limit_mib": 64
             }
           }
         ],
         "events": [
           {
             "namespace": "monitoring",
-            "pod": "{pod:monitoring/uptime-kuma}",
+            "pod": "{pod:monitoring/blackbox-exporter}",
             "reason": "Unhealthy",
-            "message": "Readiness probe failed: Get \"http://10.42.0.57:3001/\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
+            "message": "Readiness probe failed: Get \"http://10.42.0.57:9115/-/healthy\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)",
             "count": 41,
             "ago_min": 1
           }
@@ -706,15 +706,15 @@
         "logs": [
           {
             "namespace": "monitoring",
-            "pod": "{pod:monitoring/uptime-kuma}",
-            "text": "2026-10-29T06:58:01Z [MONITOR] INFO: Monitor #3 'ops-desk' is UP\n2026-10-29T06:58:31Z [MONITOR] ERROR: SQLITE_BUSY: database is locked\n2026-10-29T06:58:31Z [MONITOR] ERROR: SQLITE_BUSY: database is locked\n2026-10-29T06:59:01Z [SERVER] WARN: event loop blocked for 30012ms"
+            "pod": "{pod:monitoring/blackbox-exporter}",
+            "text": "ts=2026-10-29T06:58:01Z caller=main.go:225 level=info msg=\"Listening on address\" address=:9115\nts=2026-10-29T06:58:31Z caller=handler.go:119 level=error msg=\"Error for HTTP request\" err=\"context deadline exceeded\"\nts=2026-10-29T06:59:01Z caller=handler.go:119 level=error msg=\"probe goroutines blocked, 512 requests waiting\""
           }
         ]
       },
-      "truth": "Uptime Kuma 的 Pod 没有就绪：进程卡住（数据库被锁、事件循环阻塞），就绪探针一直超时，容器没有崩溃所以不会自己重启。建议删除这个 Pod 让它重建（需要人执行，值班台只能查）。",
+      "truth": "Blackbox Exporter 的 Pod 没有就绪：进程卡住（探测请求超时、大量请求排队），就绪探针一直超时，容器没有崩溃所以不会自己重启。建议删除这个 Pod 让它重建（需要人执行，值班台只能查）。",
       "expect": {
         "tools": ["list_pods|pod_events"],
-        "keywords": ["就绪|探针|卡|阻塞|locked|超时"]
+        "keywords": ["就绪|探针|卡|阻塞|排队|超时"]
       }
     },
     {

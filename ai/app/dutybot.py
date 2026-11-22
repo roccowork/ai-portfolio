@@ -9,7 +9,7 @@ import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
-from . import autoheal, localtime
+from . import autoheal, localtime, probes
 from . import opsagent as ops
 from . import schedules
 from .gateway import PUBLIC_FEATURES, Gateway
@@ -30,7 +30,7 @@ HELP = """<b>我是 OPS 值班台</b>，负责推送和操作：
 吃药、提醒、简报在另一个机器人（私人助理）。"""
 
 
-async def status_text(k8s: ops.Cluster, kuma: Callable[[], Awaitable[str | None]] | None = None) -> str:
+async def status_text(k8s: ops.Cluster) -> str:
     if not k8s.enabled:
         return "这里查不到服务器状态（没有集群权限）"
     st = await ops.run_tool(k8s, "cluster_overview", {})
@@ -42,7 +42,7 @@ async def status_text(k8s: ops.Cluster, kuma: Callable[[], Awaitable[str | None]
         f"⚙️ CPU {st.get('cpu_used_pct')}% · 内存 {st.get('mem_used_pct')}% · 磁盘 {st.get('disk_used_pct')}%\n"  # type: ignore[union-attr]
         + ("不正常的 Pod：" + "、".join(f"{e(k)} {v} 个" for k, v in bad.items()) if bad else "Pod 全部正常"),
         await _argo_line(k8s),
-        await kuma() if kuma else None,
+        await _probe_line(k8s),
         "\n".join(x for x in (await _disk_forecast(k8s), await _prom_line(k8s)) if x),
         "<i>细看每个 Pod：点「📦 Pod 资源」</i>",
     ]
@@ -71,25 +71,16 @@ SYNC_ZH = {"Synced": "已同步", "OutOfSync": "没同步", "Unknown": "状态�
 HEALTH_ZH = {"Healthy": "健康", "Progressing": "更新中", "Degraded": "异常", "Missing": "缺失", "Suspended": "已暂停", "Unknown": "未知"}
 
 
-def kuma_line(metrics: str) -> str | None:
-    """Uptime Kuma /metrics 里每个检测的 monitor_status（1 在线、0 掉线、2 等待、3 维护）和 monitor_response_time（毫秒），
-    每个检测一行。名字以 VPS 开头的不算"""
-    status, ms = {}, {}
-    for metric, labels, value in re.findall(r'^(monitor_status|monitor_response_time)\{([^}]*)\}\s+(\S+)', metrics, re.M):
-        name = dict(re.findall(r'(\w+)="([^"]*)"', labels)).get("monitor_name", "?")
-        if name.upper().startswith("VPS"):  # 翻墙 VPS 归私人助理管，这里只看本站的服务
-            continue
-        if metric == "monitor_status":
-            status[name] = int(float(value))
-        else:
-            ms[name] = float(value)
-    if not status:
+async def _probe_line(k8s: ops.Cluster) -> str | None:
+    """外部拨测（Blackbox，2026-11-22 起唯一的可用性监控）：几个通、哪些不通；细的在「外部服务」"""
+    try:
+        items = await probes.fetch(k8s)
+    except Exception:  # noqa: BLE001 —— Prometheus 查不到就不显示这一行
         return None
-    down = [n for n, v in status.items() if v == 0]
-    head = f"外部拨测（Uptime Kuma，从服务器外面定时访问）：{len(status) - len(down)}/{len(status)} 在线" + (" ✅" if not down else "")
-    icon = {0: "❌", 1: "✅", 2: "⏳", 3: "🔧"}
-    rows = [f"　{icon.get(v, '?')} {e(n)}" + (f" · {ms[n]:.0f} ms" if v == 1 and ms.get(n, -1) >= 0 else "") for n, v in status.items()]
-    return ("⚠️ " if down else "🌐 ") + head + "\n" + "\n".join(rows)
+    if not items:
+        return None
+    bad = [x["name"] for x in items if not x["ok"]]
+    return f"🌐 外部拨测：{len(items) - len(bad)}/{len(items)} 正常" + (" ✅" if not bad else "，不通：" + "、".join(e(n) for n in bad))
 
 
 async def _q(k8s: ops.Cluster, q: str) -> list[dict]:

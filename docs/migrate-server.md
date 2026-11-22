@@ -62,7 +62,6 @@ k -n monitoring scale deploy wecom-relay --replicas=0
 k get cronjob -A --no-headers | while read ns n _; do k -n "$ns" patch cronjob "$n" -p '{"spec":{"suspend":true}}'; done
 # 3. 停掉有数据的应用，保证拷贝时数据不再变化（个人助理也在这里面，停了就不会和新机器抢 Telegram 消息）
 k -n ops-desk scale deploy,sts --all --replicas=0
-k -n monitoring scale deploy uptime-kuma --replicas=0
 ```
 
 导出 Secret（只导出自己建的，跳过 Helm 和证书自动生成的）：
@@ -136,13 +135,12 @@ OLD=<旧IP>; alias k='k3s kubectl'
 # 1. 停 Argo CD 和有数据的应用
 k -n argocd scale sts -l app.kubernetes.io/name=argocd-application-controller --replicas=0
 k -n ops-desk scale deploy,sts --all --replicas=0
-k -n monitoring scale deploy uptime-kuma --replicas=0
 sleep 30
 
 # 2. 逐个数据卷拷贝（local-path 的目录名是 pvc-xxx_命名空间_卷名）
 S=/var/lib/rancher/k3s/storage
 # 私人助理的 assistant-data 也在 ops-desk（吃药记录、提醒），别漏
-for p in ops-desk:ai-data ops-desk:assistant-data monitoring:uptime-kuma-data; do
+for p in ops-desk:ai-data ops-desk:assistant-data; do
   ns=${p%%:*}; name=${p#*:}
   src=$(ssh -i /root/.ssh/migrate root@$OLD "ls -d $S/*_${ns}_${name}" 2>/dev/null)
   dst=$(ls -d $S/*_${ns}_${name} 2>/dev/null)
@@ -177,8 +175,8 @@ vmstat 1 5                                                  # st 接近 0
 
 再检查这些：
 
-- Telegram 点「☀️ 今日简报」：提醒都在，服务器状态正常
-- `https://status.liuxd.dev`（Uptime Kuma）能登录，数据都在；私人助理「⏰ 我的提醒」里的提醒都还在
+- 打开总控台：告警中心没有异常，资源中心服务器状态正常
+- 总控台「推送」页里的提醒都还在，资源中心的拨测都正常
 - Argo CD 是新装的：按 [runbook 第 7 节](runbook.md#7-argo-cd)取初始密码登录后改密码
 - 手动跑一次备份，确认能写进 R2：`k3s kubectl -n ops-desk create job backup-ai-api-manual --from=cronjob/backup-ai-api`
 

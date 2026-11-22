@@ -15,7 +15,6 @@ KNOWN = {
     "ops-desk-status": ("ops", "🩺 网站状态采集"),
     "backup-ai-api": ("ops", "💾 备份网站 AI 服务数据（账本、自愈记录）"),
     "backup-assistant": ("ops", "💾 备份私人助理数据"),
-    "backup-uptime-kuma": ("ops", "💾 备份 Uptime Kuma"),
     "backup-dify": ("ops", "💾 备份 Dify"),
 }
 WEEKDAYS = "日一二三四五六"

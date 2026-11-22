@@ -8,16 +8,11 @@ resources:
   - weekly-report.yaml
   - daily-english.yaml
   - r2-usage.yaml
-  - uptime-kuma.yaml
-  - uptime-kuma-backup.yaml
   - traefik-metrics.yaml
   - ai-metrics.yaml
   - blackbox.yaml
   - prometheus-public.yaml
   - rules/ops-desk.yaml
-# 备份脚本（ConfigMap backup-scripts），由 uptime-kuma-backup.yaml 使用
-components:
-  - ../backup
 configMapGenerator:
   # 脚本内容变化时 ConfigMap 名字的哈希后缀会变，Deployment 随之滚动更新
   - name: wecom-relay

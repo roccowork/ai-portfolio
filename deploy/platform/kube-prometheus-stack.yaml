@@ -100,7 +100,7 @@ spec:
           routes:
             # 同一条告警同时交给运维 Agent 自愈（ai/app/autoheal.py），continue 让它继续往下走，照常发通知
             - receiver: autoheal
-              matchers: ['severity =~ "warning|critical"', 'alertname !~ "Watchdog|InfoInhibitor|AIDailyBudgetReached|AIModelErrors"']
+              matchers: ['severity =~ "warning|critical"', 'alertname !~ "Watchdog|InfoInhibitor|AIDailyBudgetReached|AIModelErrors|VPSDown"']
               continue: true
             # Watchdog 是「监控系统本身活着」的心跳告警，一直处于触发状态，不需要通知
             - receiver: 'null'

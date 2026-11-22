@@ -115,7 +115,7 @@ spec:
       limit: 10
       backoff: { duration: 30s, factor: 2, maxDuration: 10m }
 ---
-# 监控的附加部分：告警转发器、Uptime Kuma、Traefik 指标、告警规则、仪表盘。
+# 监控的附加部分：告警转发器、Blackbox 拨测、Traefik 指标、告警规则、仪表盘。
 # kube-prometheus-stack 本身在 platform 应用里。
 apiVersion: argoproj.io/v1alpha1
 kind: Application

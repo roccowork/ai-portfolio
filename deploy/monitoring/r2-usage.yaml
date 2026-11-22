@@ -1,5 +1,5 @@
 # R2 用量：每月 1 号 09:30（新加坡时间）发月报；每周一 09:30 检查一次，超过免费额度（10 GB）的 80% 才提醒。
-# 列文件用 Uptime Kuma 备份的同一个 R2 密钥（只能访问备份桶），不需要额外的 Cloudflare API 令牌。
+# 列文件用 Secret backup-r2 的 R2 密钥（只能访问备份桶，原来给 Uptime Kuma 备份用，Kuma 停用后保留给这里），不需要额外的 Cloudflare API 令牌。
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -27,7 +27,7 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           initContainers:
-            # 用 Uptime Kuma 备份的 R2 密钥（Secret backup-r2）列出整个桶；从仓库地址里取出 endpoint 和桶名
+            # 用 Secret backup-r2 的 R2 密钥列出整个桶；从仓库地址里取出 endpoint 和桶名
             - name: list
               image: rclone/rclone:1.75.2
               command:
@@ -120,7 +120,7 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           initContainers:
-            # 用 Uptime Kuma 备份的 R2 密钥（Secret backup-r2）列出整个桶；从仓库地址里取出 endpoint 和桶名
+            # 用 Secret backup-r2 的 R2 密钥列出整个桶；从仓库地址里取出 endpoint 和桶名
             - name: list
               image: rclone/rclone:1.75.2
               command:

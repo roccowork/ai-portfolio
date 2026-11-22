@@ -18,7 +18,7 @@
 - 改了 `ai/app/gateway.py`、`ledger.py`、`telegram.py`、`config.py` 的接口时注意：私有仓库的私人助理复用它们（固定在某个镜像版本上，升级前要在那边跑测试）
 - 只改根目录 `*.md`、`docs/archive/` 不会触发 CI；`docs/runbook.md`、`architecture.md`、`migrate-server.md` 打包进 AI 镜像做运维知识库，改了会重新构建上线（见 `.github/workflows/ci.yml`）
 - Markdown 会被 Prettier 检查（`.prettierrc.json`），新增或修改 md 后运行 `pnpm format`
-- **任何单个功能只能从一个地方查看**（用户定，坚决不能违反）：查看类内容统一放总控台 `/console/`（值班台机器人的 Telegram 小程序或浏览器打开，2026-11-22 加了浏览器；认证只认主人的 Telegram 身份，浏览器用 Telegram 登录按钮）；Telegram 机器人只做推送和操作按钮，不加查看类按钮。加功能前先查已有入口，有就并进去
+- **任何单个功能只能从一个地方查看**（用户定，坚决不能违反）：查看类内容统一放总控台 `/console/`（值班台机器人的 Telegram 小程序或浏览器打开，2026-11-22 加了浏览器；小程序只认主人的 Telegram 身份，浏览器用私人密钥（Secret ai-api 的 ME_TOKEN；不用 Telegram 登录按钮，用多了会触发风控））；Telegram 机器人只做推送和操作按钮，不加查看类按钮。加功能前先查已有入口，有就并进去
 - 案例和作品的状态必须如实标注，演示数据要写明是演示
 - 功能尽量做成真正有用的东西，用真实数据和真实文档（比如本仓库的运维手册、网站自己的运行数据），少用虚构的演示数据；确实只能用演示数据的，标清楚
 

@@ -641,11 +641,16 @@ def create_app(
     board_cache = opswall.Cache(20)
 
     class ConsoleIn(BaseModel):
-        init: str = Field(min_length=1, max_length=4096)  # Telegram 小程序的 initData（放请求体，不进访问日志）
+        # Telegram 小程序的 initData，或浏览器的 "key:密钥"（都放请求体，不进访问日志）
+        init: str = Field(min_length=1, max_length=4096)
 
     def console_auth(body: ConsoleIn) -> None:
-        """总控台只认值班台机器人小程序里的主人本人（tgauth.py）；不对就当不存在"""
-        if not tgauth.verify(body.init, s.tg_token, s.tg_chat_id):
+        """总控台两种入口：值班台机器人小程序里的主人本人（tgauth.py），或浏览器带私人密钥（ME_TOKEN）；不对就当不存在"""
+        if body.init.startswith("key:"):
+            ok = bool(s.me_token) and secrets.compare_digest(body.init[4:].encode(), s.me_token.encode())
+        else:
+            ok = tgauth.verify(body.init, s.tg_token, s.tg_chat_id)
+        if not ok:
             raise HTTPException(404, "Not Found")
 
     @app.post("/api/ai/console")

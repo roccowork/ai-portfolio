@@ -93,6 +93,8 @@ class Settings:
     # 网站的 Telegram 机器人（Secret telegram-ops）：自愈审批、访客留言；没配就不启动
     tg_token: str = field(default_factory=lambda: os.environ.get("TELEGRAM_BOT_TOKEN", ""))
     tg_chat_id: str = field(default_factory=lambda: os.environ.get("TELEGRAM_CHAT_ID", ""))
+    # 总控台浏览器入口的密钥（2026-11-22 恢复：Telegram 登录按钮用多了会触发风控）；和需求雷达上报同一个，Secret ai-api 的 ME_TOKEN。没配就只能从小程序打开
+    me_token: str = field(default_factory=lambda: os.environ.get("ME_TOKEN", ""))
     # 请求参数里附加的字段（比如 OpenRouter 的路由要求），默认没有
     payload_extra: dict = field(default_factory=dict)
     data_dir: Path = field(default_factory=lambda: Path(os.environ.get("AI_DATA_DIR", "/data")))

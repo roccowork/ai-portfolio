@@ -168,13 +168,6 @@ def test_telegram_auth():
     assert tgauth.verify(good, "bot-token", "42", now=now)
     assert not tgauth.verify(good, "other-token", "42", now=now)  # 别的机器人签的
     assert not tgauth.verify(good, "bot-token", "43", now=now)  # 不是主人
-    # 浏览器：Telegram 登录按钮，7 天有效；小程序的签名规则和它不通用
-    login = tgauth.sign_login({"id": "42", "first_name": "x", "auth_date": str(now - 3 * 86400)}, "bot-token")
-    assert tgauth.verify(login, "bot-token", "42", now=now)
-    assert not tgauth.verify(login, "bot-token", "43", now=now)
-    assert not tgauth.verify(login, "other-token", "42", now=now)
-    assert not tgauth.verify(login, "bot-token", "42", now=now + 5 * 86400)  # 超过 7 天
-    assert not tgauth.verify("login:" + good, "bot-token", "42", now=now)
     assert not tgauth.verify(good, "bot-token", "42", now=now + 3 * 86400)  # 过期
     assert not tgauth.verify(good.replace("id%22%3A42", "id%22%3A43"), "bot-token", "43", now=now)  # 改了内容签名就不对
     assert not tgauth.verify("", "bot-token", "42") and not tgauth.verify("a=%%%", "bot-token", "42")
@@ -201,12 +194,15 @@ def test_endpoint_needs_telegram(tmp_path):
         async def close(self):
             pass
 
-    s = Settings(api_key="test", data_dir=tmp_path, cases_dir=CASES, samples_dir=tmp_path, tg_token="bot-token", tg_chat_id="42")
+    s = Settings(api_key="test", data_dir=tmp_path, cases_dir=CASES, samples_dir=tmp_path, tg_token="bot-token", tg_chat_id="42", me_token="k" * 32)
     good = tgauth.sign({"auth_date": str(int(time.time())), "user": '{"id":42}'}, "bot-token")
     with TestClient(create_app(s, Gateway(s, Ledger(tmp_path / "ai.db")), telegram=FakeTg())) as c:  # type: ignore[arg-type]
         assert c.post("/api/ai/console", json={"init": "auth_date=1&hash=x"}).status_code == 404
         # 不在集群里（没有 ServiceAccount）时身份对了也查不到
         assert c.post("/api/ai/console", json={"init": good}).status_code == 503
+        # 浏览器入口：私人密钥
+        assert c.post("/api/ai/console", json={"init": "key:" + "k" * 32}).status_code == 503
+        assert c.post("/api/ai/console", json={"init": "key:wrong"}).status_code == 404
         assert c.post("/api/ai/console/detail", json={"init": "x=1", "section": "pods"}).status_code == 404
         assert c.post("/api/ai/console/detail", json={"init": good, "section": "nope"}).status_code == 404
     # 值班台机器人输入框左边的菜单按钮设成总控台小程序

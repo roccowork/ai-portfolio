@@ -6,13 +6,12 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import ConsoleFlow from './ConsoleFlow.vue';
 import TgHtml from './TgHtml.vue';
 import {
-  LOGIN_BOT,
   canFullscreen,
   inBrowser,
   initAuth,
   logout,
   post,
-  saveLogin,
+  saveKey,
   startTab,
   toggleFullscreen,
 } from './api';
@@ -30,7 +29,8 @@ const data = ref<ConsoleData | null>(null);
 const error = ref('');
 const needLogin = ref(false);
 const browser = ref(false);
-const loginBox = ref<HTMLElement | null>(null);
+const keyInput = ref('');
+const keyWrong = ref(false);
 const tab = ref<Tab>('home');
 const panel = ref<{ title: string; html: string; loading: boolean; error: string } | null>(null);
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -102,7 +102,7 @@ async function openDetail(item: ConsoleResource | ConsoleNode) {
   } catch (e) {
     if ((e as Error).message === 'login') {
       panel.value = null;
-      return showLogin();
+      return showLogin(true);
     }
     if (panel.value) panel.value = { ...panel.value, loading: false, error: (e as Error).message };
   }
@@ -114,34 +114,25 @@ async function load() {
     error.value = '';
     if (!TABS.value.some((t) => t.key === tab.value)) tab.value = 'home';
   } catch (e) {
-    if ((e as Error).message === 'login') return showLogin();
+    if ((e as Error).message === 'login') return showLogin(true);
     error.value = (e as Error).message;
   }
 }
 
-// 浏览器打开：显示 Telegram 官方登录按钮（只认主人本人的账号，后端校验签名）
-function showLogin() {
+// 浏览器打开：输私人密钥（和需求雷达上报同一个，后端比对）
+function showLogin(wrong = false) {
   clearInterval(timer);
+  keyWrong.value = wrong; // 后端打回来的：密钥不对或换过了
   data.value = null;
   needLogin.value = true;
-  (
-    window as unknown as { onTelegramAuth: (u: Record<string, string | number>) => void }
-  ).onTelegramAuth = (u) => {
-    saveLogin(u);
-    needLogin.value = false;
-    start();
-  };
-  requestAnimationFrame(() => {
-    if (!loginBox.value || loginBox.value.childElementCount) return;
-    const sc = document.createElement('script');
-    sc.async = true;
-    sc.src = 'https://telegram.org/js/telegram-widget.js?22';
-    sc.setAttribute('data-telegram-login', LOGIN_BOT);
-    sc.setAttribute('data-size', 'large');
-    sc.setAttribute('data-onauth', 'onTelegramAuth(user)');
-    sc.setAttribute('data-request-access', 'write');
-    loginBox.value.appendChild(sc);
-  });
+}
+
+function submitKey() {
+  if (!keyInput.value.trim()) return;
+  saveKey(keyInput.value);
+  keyInput.value = '';
+  needLogin.value = false;
+  start();
 }
 
 function signOut() {
@@ -225,11 +216,25 @@ onBeforeUnmount(() => {
     <p v-if="error" class="mt-6 rounded-xl bg-red-500/10 p-4 text-red-300 ring-1 ring-red-500/30">
       {{ error }}
     </p>
-    <div v-if="needLogin" class="mt-10 flex flex-col items-center gap-4 text-center">
-      <p class="text-slate-300">用 Telegram 登录（只认主人本人的账号，登录一次管 7 天）</p>
-      <div ref="loginBox"></div>
+    <form
+      v-if="needLogin"
+      class="mx-auto mt-10 flex max-w-sm flex-col gap-3 text-center"
+      @submit.prevent="submitKey"
+    >
+      <p class="text-slate-300">输入私人密钥（存在这台电脑的浏览器里，下次不用再输）</p>
+      <input
+        v-model="keyInput"
+        type="password"
+        autocomplete="current-password"
+        class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100"
+        placeholder="密钥"
+      />
+      <p v-if="keyWrong" class="text-xs text-red-300">密钥不对，或者已经换过了</p>
+      <button class="rounded-lg bg-amber-500 px-3 py-2 font-medium text-slate-900">
+        打开总控台
+      </button>
       <p class="text-xs text-slate-500">也可以在值班台机器人里点「总控台」直接打开</p>
-    </div>
+    </form>
     <p v-else-if="!data && !error" class="mt-10 text-slate-400">加载中……</p>
 
     <template v-if="data">

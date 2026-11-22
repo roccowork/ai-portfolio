@@ -1,6 +1,7 @@
 // 总控台请求后端：身份只认主人的 Telegram 账号，后端校验（ai/app/tgauth.py）。两种入口：
 // - 值班台机器人的小程序：请求体带 Telegram 签名的 initData
-// - 浏览器（2026-11-22 加）：Telegram 官方登录按钮，登录结果存在本机，以 "login:" 开头发给后端，7 天有效
+// - 浏览器（2026-11-22 加）：私人密钥（Secret ai-api 的 ME_TOKEN），存在本机，以 "key:" 开头发给后端。
+//   不用 Telegram 登录按钮：用多了会触发 Telegram 风控
 interface WebApp {
   initData: string;
   initDataUnsafe: { start_param?: string };
@@ -25,8 +26,7 @@ export function webApp(): WebApp | undefined {
   return window.Telegram?.WebApp;
 }
 
-export const LOGIN_BOT = 'liuxd_ops_bot'; // 值班台机器人；BotFather 里要 /setdomain 绑定 ops.liuxd.dev，登录按钮才能用
-const LOGIN_KEY = 'console-login';
+const LOGIN_KEY = 'console-key';
 
 function savedLogin(): string {
   try {
@@ -36,15 +36,14 @@ function savedLogin(): string {
   }
 }
 
-/** 登录按钮回调：把 Telegram 给的字段（带 hash）原样存下来 */
-export function saveLogin(user: Record<string, string | number>) {
-  const q = new URLSearchParams(Object.entries(user).map(([k, v]) => [k, String(v)]));
+/** 浏览器里输入的密钥：存在本机，下次不用再输 */
+export function saveKey(key: string) {
+  init = 'key:' + key.trim();
   try {
-    localStorage.setItem(LOGIN_KEY, 'login:' + q.toString());
+    localStorage.setItem(LOGIN_KEY, init);
   } catch {
     /* 存不了就只在这次打开里用 */
   }
-  init = 'login:' + q.toString();
 }
 
 export function logout() {
@@ -61,7 +60,7 @@ export function inBrowser(): boolean {
   return !webApp()?.initData;
 }
 
-/** 返回 'login' 表示要先用 Telegram 登录；空字符串表示可以用 */
+/** 返回 'login' 表示浏览器里要先输密钥；空字符串表示可以用 */
 export function initAuth(): string {
   const app = webApp();
   init = app?.initData || '';
@@ -103,8 +102,8 @@ export async function post<T>(path: string, body: Record<string, unknown> = {}):
   });
   if (!r.ok) {
     const d = await r.json().catch(() => ({}));
-    if (r.status === 404 && init.startsWith('login:') && (!d.detail || d.detail === 'Not Found')) {
-      logout(); // 登录过期（7 天）或不是主人：清掉，重新登录
+    if (r.status === 404 && init.startsWith('key:') && (!d.detail || d.detail === 'Not Found')) {
+      logout(); // 密钥不对（或换过了）：清掉，重新输
       throw new Error('login');
     }
     throw new Error(

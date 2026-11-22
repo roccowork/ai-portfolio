@@ -43,6 +43,7 @@ from .ledger import Ledger, today
 from .odoo import Odoo, OdooError
 from .rag import CaseQA, load_chunks
 
+MENU_VERSION = "2026-11-22 总控台"  # 值班台菜单改了就改这个，启动时给主人发一次说明
 log = logging.getLogger("ai")
 
 # 对话里的联系方式：手机号、邮箱、带「微信 / wx / vx」前缀的微信号
@@ -251,6 +252,11 @@ def create_app(
         """输入框左边的菜单按钮 = 总控台（Telegram 小程序）。查看类内容只在总控台，机器人只推送和操作"""
         try:
             await tg.call("setChatMenuButton", chat_id=tg.chat_id, menu_button={"type": "web_app", "text": "总控台", "web_app": {"url": s.console_url}})  # type: ignore[union-attr]
+            # 查看按钮挪进总控台后发一次说明，顺便收起手机上的旧键盘（只发一次，记在数据目录里）
+            mark = s.data_dir / "ops-menu-version"
+            if not mark.exists() or mark.read_text() != MENU_VERSION:
+                await tg.send(dutybot.HELP, keyboard={"remove_keyboard": True})  # type: ignore[union-attr]
+                mark.write_text(MENU_VERSION)
         except Exception as e:  # noqa: BLE001 —— 设置失败不影响机器人和网站
             log.warning("设置总控台菜单按钮失败：%s", e)
 

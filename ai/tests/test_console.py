@@ -186,7 +186,8 @@ def test_endpoint_needs_telegram(tmp_path):
                 await asyncio.sleep(3600)
             return True
 
-        async def send(self, *a, **k):
+        async def send(self, text, *a, **k):
+            calls.append(("send", {"text": text, **k}))
             return {}
 
         async def close(self):
@@ -201,5 +202,12 @@ def test_endpoint_needs_telegram(tmp_path):
         assert c.post("/api/ai/console/detail", json={"init": "x=1", "section": "pods"}).status_code == 404
         assert c.post("/api/ai/console/detail", json={"init": good, "section": "nope"}).status_code == 404
     # 值班台机器人输入框左边的菜单按钮设成总控台小程序
+    # 菜单改版后发一次说明并收起旧键盘；再启动不重复发
+    notes = [p for m, p in calls if m == "send"]
+    assert len(notes) == 1 and notes[0]["keyboard"] == {"remove_keyboard": True} and "总控台" in notes[0]["text"]
+    calls.clear()
+    with TestClient(create_app(s, Gateway(s, Ledger(tmp_path / "ai.db")), telegram=FakeTg())):  # type: ignore[arg-type]
+        pass
+    assert not [p for m, p in calls if m == "send"]
     menu = next(p for m, p in calls if m == "setChatMenuButton")
     assert menu["menu_button"] == {"type": "web_app", "text": "总控台", "web_app": {"url": "https://ops.liuxd.dev/console/"}}

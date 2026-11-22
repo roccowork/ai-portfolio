@@ -349,6 +349,39 @@ onBeforeUnmount(() => {
             </tbody>
           </table>
         </div>
+        <div class="box">
+          <h2 class="h2">最近 24 小时已恢复（{{ data.recovered?.length || 0 }}）</h2>
+          <p v-if="!data.recovered?.length" class="text-sm text-slate-400">没有</p>
+          <table v-else class="alerts mt-3">
+            <thead>
+              <tr>
+                <th>级别</th>
+                <th>告警</th>
+                <th>开始</th>
+                <th>恢复</th>
+                <th>持续</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(a, i) in data.recovered" :key="i">
+                <td>
+                  <span class="lv" :class="a.level">{{ a.level === 'bad' ? '异常' : '注意' }}</span>
+                </td>
+                <td>
+                  <b>{{ a.title }}</b>
+                  <p v-if="a.detail" class="text-xs text-slate-400">{{ a.detail }}</p>
+                </td>
+                <td class="text-slate-400">{{ a.start }}</td>
+                <td class="text-slate-400">{{ a.end }}</td>
+                <td class="text-slate-300">{{ a.minutes }} 分钟</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="mt-2 text-xs text-slate-500">
+            只含 Prometheus 告警（来自它自己存的历史）；拨测、Argo
+            CD、备份、私人助理的问题恢复后不在这里列
+          </p>
+        </div>
         <p class="text-xs text-slate-500">
           来源：Prometheus 告警、外部拨测、Argo
           CD、备份、私人助理（VPS、余额等）。告警一响，值班台机器人会推到

@@ -133,6 +133,14 @@ class Cluster:
             raise ValueError(body.get("error") or f"HTTP {r.status_code}")
         return body["data"]["result"]
 
+    async def query_range(self, q: str, start: float, end: float, step: int) -> list[dict]:
+        """区间查询：[{metric, values: [[时间戳, "值"], ...]}]"""
+        r = await self.prom.get("/api/v1/query_range", params={"query": q, "start": start, "end": end, "step": step})
+        body = r.json()
+        if body.get("status") != "success":
+            raise ValueError(body.get("error") or f"HTTP {r.status_code}")
+        return body["data"]["result"]
+
     async def close(self) -> None:
         await self.kube.aclose()
         await self.prom.aclose()

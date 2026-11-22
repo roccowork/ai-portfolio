@@ -15,7 +15,9 @@ KNOWN = {
     "ops-desk-status": ("ops", "🩺 网站状态采集"),
     "backup-ai-api": ("ops", "💾 备份网站 AI 服务数据（账本、自愈记录）"),
     "backup-assistant": ("ops", "💾 备份私人助理数据"),
-    "backup-dify": ("ops", "💾 备份 Dify"),
+    "backup-umami": ("ops", "💾 备份访问统计（Umami）"),
+    "backup-github": ("ops", "💾 备份全部 GitHub 仓库"),
+    "backup-secrets": ("ops", "🔑 备份集群密钥（Secret）"),
 }
 WEEKDAYS = "日一二三四五六"
 from .localtime import LABEL, TZ as SG

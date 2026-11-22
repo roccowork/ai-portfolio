@@ -40,6 +40,14 @@ export interface ConsoleData {
   nodes: ConsoleNode[];
   edges: ConsoleEdge[];
   alerts: ConsoleAlert[];
+  recovered?: {
+    title: string;
+    detail: string;
+    level: 'bad' | 'warn';
+    start: string;
+    end: string;
+    minutes: number;
+  }[];
   resource_groups: { key: string; name: string }[];
   resources: ConsoleResource[];
   pages: { key: string; name: string; path: string }[]; // 私人助理的网页，做成标签页（iframe）

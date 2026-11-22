@@ -38,6 +38,12 @@ def fake(req: httpx.Request) -> httpx.Response:
         if "ai_calls_total" in q:
             return httpx.Response(200, json={"status": "success", "data": {"result": [{"metric": {}, "value": [0, "12"]}]}})
         return httpx.Response(200, json={"status": "success", "data": {"result": []}})
+    if p == "/api/v1/query_range":  # 已恢复告警：VPSDown 在 2 小时前响了 5 分钟，TargetDown 一直在响
+        end = NOW.timestamp()
+        ago = lambda m: [end - m * 60, "1"]  # noqa: E731
+        res = [{"metric": {"alertname": "VPSDown", "namespace": "ops-desk", "name": "示例VPS", "severity": "warning"}, "values": [ago(m) for m in range(124, 119, -1)]},
+               {"metric": {"alertname": "TargetDown", "severity": "warning"}, "values": [ago(m) for m in range(30, -1, -1)]}]
+        return httpx.Response(200, json={"status": "success", "data": {"result": res}})
     if p == "/api/v1/alerts":
         return httpx.Response(200, json={"data": {"alerts": []}})
     if "applications" in p:
@@ -146,6 +152,8 @@ def test_alert_center_and_resources(tmp_path):
     assert "it.liuxd.dev 打不开" in titles and "umami 没同步或不健康" in titles and "backup-github 超过 26 小时没成功" in titles
     assert "示例 VPS 掉线" in titles and "非法级别" not in titles
     assert not any("示例VPS" in t for t in titles)
+    rec = d["recovered"]
+    assert [r["title"] for r in rec] == ["VPSDown"] and rec[0]["minutes"] == 5 and rec[0]["detail"] == "ops-desk · 示例VPS"
     assert [a["level"] for a in d["alerts"]] == sorted((a["level"] for a in d["alerts"]), key=lambda x: console.LEVELS[x])
     r = {x["id"]: x for x in d["resources"]}
     assert r["probe-it.liuxd.dev"]["status"] == "bad" and r["probe-it.liuxd.dev"]["group"] == "site" and r["probe-it.liuxd.dev"]["detail"] == "probes"

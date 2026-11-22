@@ -21,6 +21,7 @@ import httpx
 from . import autoheal
 from . import opsagent as ops
 from . import probes
+from .localtime import TZ
 
 log = logging.getLogger("ai")
 
@@ -195,6 +196,39 @@ def _recent(iso: str | None, now: datetime, within: timedelta = DAY) -> bool:
     return bool(iso) and now - datetime.fromisoformat(iso.replace("Z", "+00:00")) <= within  # type: ignore[union-attr]
 
 
+STEP = 60  # 已恢复告警：按分钟取样
+
+
+def recovered_alerts(series: list[dict], now: float, step: int = STEP, limit: int = 20) -> list[dict]:
+    """最近 24 小时响过、现在已经恢复的告警（Prometheus 自己存的 ALERTS 历史，不另建数据库）。
+    同一条告警断开超过 2 个取样点算两次；最后一个点还在响的是没恢复的，不列（在上面的「所有告警」里）"""
+    out = []
+    for x in series:
+        m = x.get("metric") or {}
+        ts = sorted(float(t) for t, _ in x.get("values") or [])
+        if not ts:
+            continue
+        spans, start, prev = [], ts[0], ts[0]
+        for t in ts[1:]:
+            if t - prev > 2 * step:
+                spans.append((start, prev))
+                start = t
+            prev = t
+        spans.append((start, prev))
+        for a, b in spans:
+            if now - b <= 2 * step:
+                continue  # 还在响
+            fmt = lambda t: datetime.fromtimestamp(t, TZ).strftime("%m-%d %H:%M")  # noqa: E731
+            out.append({"title": str(m.get("alertname") or "?"),
+                        "detail": " · ".join(str(v) for v in (m.get("namespace"), m.get("name") or m.get("pod") or m.get("job")) if v),
+                        "level": "bad" if m.get("severity") == "critical" else "warn",
+                        "start": fmt(a), "end": fmt(b + step), "minutes": max(1, round((b + step - a) / 60)), "_end": b})
+    out.sort(key=lambda r: r["_end"], reverse=True)
+    for r in out:
+        r.pop("_end")
+    return out[:limit]
+
+
 async def _try(coro, what: str):
     try:
         return await coro
@@ -224,7 +258,7 @@ class Console:
 
     async def build(self) -> dict:
         now = datetime.now(timezone.utc)
-        probe, st, argo, asst, req, calls_1h, alerts, pods, mem, cpu = await asyncio.gather(
+        probe, st, argo, asst, req, calls_1h, alerts, pods, mem, cpu, history = await asyncio.gather(
             _try(probes.fetch(self.c), "拨测"),
             _try(self.status(), "平台实况"),
             _try(self.argo(), "Argo CD"),
@@ -235,6 +269,8 @@ class Console:
             _try(self.scalar('sum(kube_pod_status_phase{phase="Running"})'), "Pod 数"),
             _try(self.scalar("(1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)) * 100"), "内存"),
             _try(self.scalar('(1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100'), "CPU"),
+            _try(self.c.query_range('ALERTS{alertstate="firing", severity!~"info|none", alertname!~"Watchdog|InfoInhibitor"}',
+                                    now.timestamp() - 86400, now.timestamp(), STEP), "已恢复告警"),
         )
         loc = self.local()
         pr = {p["name"]: p for p in probe or []}
@@ -379,6 +415,7 @@ class Console:
             "nodes": list(nodes.values()),
             "edges": edges,
             "alerts": alert_list,
+            "recovered": recovered_alerts(history or [], now.timestamp()),
             "resource_groups": RESOURCE_GROUPS,
             "resources": resources,
             "pages": private_pages(asst),

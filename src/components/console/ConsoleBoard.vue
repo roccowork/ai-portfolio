@@ -8,14 +8,13 @@ import TgHtml from './TgHtml.vue';
 import { canFullscreen, initAuth, post, startTab, toggleFullscreen } from './api';
 import { STATUS, type ConsoleData, type ConsoleNode, type ConsoleResource } from './types';
 
-const TABS = [
+const BASE_TABS = [
   { key: 'home', name: '概览' },
   { key: 'alerts', name: '告警中心' },
   { key: 'resources', name: '资源中心' },
   { key: 'staff', name: '数字员工' },
-  { key: 'flow', name: '数据流' },
-] as const;
-type Tab = (typeof TABS)[number]['key'];
+];
+type Tab = string;
 
 const data = ref<ConsoleData | null>(null);
 const error = ref('');
@@ -23,6 +22,13 @@ const tab = ref<Tab>('home');
 const panel = ref<{ title: string; html: string; loading: boolean; error: string } | null>(null);
 let timer: ReturnType<typeof setInterval> | undefined;
 
+// 私人助理的网页（吃药打卡等，名字由私人助理给）排在数字员工后面，数据流最后
+const TABS = computed(() => [
+  ...BASE_TABS,
+  ...(data.value?.pages || []).map((p) => ({ key: p.key, name: p.name })),
+  { key: 'flow', name: '数据流' },
+]);
+const page = computed(() => (data.value?.pages || []).find((p) => p.key === tab.value));
 const staff = computed(() => (data.value?.nodes || []).filter((n) => n.kind === 'staff'));
 const groups = computed(() => {
   const d = data.value;
@@ -84,6 +90,7 @@ async function load() {
   try {
     data.value = await post<ConsoleData>('/api/ai/console');
     error.value = '';
+    if (!TABS.value.some((t) => t.key === tab.value)) tab.value = 'home';
   } catch (e) {
     error.value = (e as Error).message;
   }
@@ -96,7 +103,7 @@ function onKey(e: KeyboardEvent) {
 onMounted(() => {
   const err = initAuth();
   const t = startTab();
-  if (TABS.some((x) => x.key === t)) tab.value = t as Tab;
+  if (/^[a-z][a-z-]{0,25}$/.test(t)) tab.value = t; // 私人标签页要等数据回来才知道，先记下
   fullscreen.value = canFullscreen();
   if (err) {
     error.value = err;
@@ -304,7 +311,7 @@ onBeforeUnmount(() => {
               工作记录 ›
             </button>
             <a
-              v-if="n.link && !n.link.includes('{k}')"
+              v-if="n.link"
               :href="n.link"
               target="_blank"
               rel="noopener"
@@ -313,6 +320,11 @@ onBeforeUnmount(() => {
             >
           </div>
         </div>
+      </section>
+
+      <!-- 私人网页（页面在私人助理那边，同一个域名，用总控台的 Telegram 身份） -->
+      <section v-if="page" class="mt-4">
+        <iframe :key="page.key" :src="page.path" :title="page.name" class="frame"></iframe>
       </section>
 
       <!-- 数据流 -->
@@ -555,6 +567,15 @@ onBeforeUnmount(() => {
 }
 .st-idle .avatar {
   background: #475569;
+}
+.frame {
+  display: block;
+  width: 100%;
+  height: calc(100vh - 130px);
+  min-height: 480px;
+  border: 1px solid rgb(30 41 59);
+  border-radius: 14px;
+  background: #fff;
 }
 .mask {
   position: fixed;

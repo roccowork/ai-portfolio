@@ -143,6 +143,14 @@ def test_alert_center_and_resources(tmp_path):
     assert {n["id"]: n.get("detail") for n in d["nodes"]}["xiaoxiao"] == "leads"
 
 
+def test_private_pages(tmp_path):
+    # 私人网页做成标签页：只收 /me/ 下面的路径（虚构的示例）
+    pages = [{"key": "demo", "name": "示例页", "path": "/me/demo/"}, {"key": "evil", "name": "外站", "path": "https://evil.example/"},
+             {"key": "Bad Key", "name": "x", "path": "/me/x/"}, {"key": "up", "name": "上级", "path": "/me/../api/"}]
+    d = asyncio.run(make(tmp_path, {"bot": True, "pages": pages}).build())
+    assert d["pages"] == [{"key": "p-demo", "name": "示例页", "path": "/me/demo/"}]
+
+
 def test_telegram_auth():
     # Telegram 小程序的 initData：签名对、没过期、是主人本人才放行
     now = 1_800_000_000

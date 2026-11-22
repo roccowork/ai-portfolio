@@ -34,7 +34,7 @@ COLUMNS = [
     {"key": "platform", "name": "平台和外部服务"},
 ]
 
-# 节点：kind 是 staff 的有岗位（role）；link 是点进去看详情的地址（{k} 换成私人密钥）
+# 节点：kind 是 staff 的有岗位（role）；link 是它用的工具的地址
 NODES = [
     {"id": "visitors", "col": "entry", "name": "网站访客", "desc": "作品集 ops.liuxd.dev", "link": "https://ops.liuxd.dev/"},
     {"id": "sites", "col": "entry", "name": "其他网站", "desc": "名片、简历、两个路线图、IT 外包官网", "link": "https://liuxd.dev/"},
@@ -42,7 +42,7 @@ NODES = [
     {"id": "media", "col": "entry", "name": "自媒体", "desc": "抖音（手动发布）；B 站、小红书、视频号、YouTube、TikTok、X 待开通"},
     {"id": "xiaoxiao", "col": "staff", "kind": "staff", "name": "小晓", "role": "作品集接待员", "desc": "在网站右下角回答访客的问题，按作品资料作答，留言转给我"},
     {"id": "oncall", "col": "staff", "kind": "staff", "name": "值班员", "role": "运维 Agent", "desc": "告警一响自己查原因，低风险问题自动修复，关键操作推给我确认", "link": "https://ops.liuxd.dev/ops-agent/"},
-    {"id": "editor", "col": "staff", "kind": "staff", "name": "编辑", "role": "AI 前沿流水线", "desc": "每天收集 AI 新闻，挑 3 条写口播稿，推给我把关", "link": "https://ops.liuxd.dev/me/pipeline/#k={k}"},
+    {"id": "editor", "col": "staff", "kind": "staff", "name": "编辑", "role": "AI 前沿流水线", "desc": "每天收集 AI 新闻，挑 3 条写口播稿，推给我把关"},
     {"id": "butler", "col": "staff", "kind": "staff", "name": "管家", "role": "私人助理", "desc": "提醒、早安简报、GitHub 趋势、VPS 状态"},
     {"id": "coach", "col": "staff", "kind": "staff", "name": "求职顾问", "role": "LangGraph 求职助手", "desc": "我转发岗位，它对照简历打分、改简历、写打招呼和面试题，记录投递进度"},
     {"id": "deployer", "col": "staff", "kind": "staff", "name": "发布员", "role": "Argo CD", "desc": "代码推到 GitHub，自动同步上线；有人手动改了集群就改回来", "link": "https://argocd.liuxd.dev/"},
@@ -113,6 +113,17 @@ def private_list(asst: dict | None, field: str, limit: int) -> list[dict]:
     """私人助理报上来的告警或资源（字段见 private_alerts / private_resources），只取对象"""
     raw = (asst or {}).get(field)
     return [x for x in raw[:limit] if isinstance(x, dict)] if isinstance(raw, list) else []
+
+
+def private_pages(asst: dict | None) -> list[dict]:
+    """私人助理的网页做成总控台的标签页（iframe 打开，同一个域名，页面用总控台的 Telegram 身份）：[{key, name, path}]。
+    页面名字和内容只在私有仓库，这里只校验格式：path 只能是 /me/ 下面的"""
+    out = []
+    for x in private_list(asst, "pages", 8):
+        key, path = str(x.get("key") or ""), str(x.get("path") or "")
+        if re.fullmatch(r"[a-z]{1,20}", key) and re.fullmatch(r"/me/[a-z-]{1,30}/", path) and x.get("name"):
+            out.append({"key": "p-" + key, "name": str(x["name"])[:10], "path": path})
+    return out
 
 
 def private_alerts(asst: dict | None) -> list[dict]:
@@ -365,6 +376,7 @@ class Console:
             "alerts": alert_list,
             "resource_groups": RESOURCE_GROUPS,
             "resources": resources,
+            "pages": private_pages(asst),
             "summary": {
                 "staff": len(staff),
                 "staff_ok": sum(1 for n in staff if n["status"] == "ok"),

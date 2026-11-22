@@ -201,37 +201,6 @@ spec:
       limit: 10
       backoff: { duration: 30s, factor: 2, maxDuration: 10m }
 ---
-# 个人笔记同步 CouchDB（deploy/apps/notes/）：https://brain.liuxd.dev，Obsidian 的 LiveSync 插件连它；笔记内容不进仓库
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: notes
-  namespace: argocd
-  # 2026-11-22 要删掉这个应用（个人知识库换成 Notion）：先加这个 finalizer，删应用时 Argo CD 会连同 CouchDB、同步桥、brain MCP、域名、证书一起删掉
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
-  labels:
-    layer: app
-    role: notes-sync
-spec:
-  project: default
-  source:
-    repoURL: https://github.com/roccowork/ai-portfolio.git
-    targetRevision: main
-    path: deploy/apps/notes
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: notes
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-    retry:
-      limit: 10
-      backoff: { duration: 30s, factor: 2, maxDuration: 10m }
----
 # 集群里人工创建的 Secret 每日加密备份到 R2（deploy/apps/secret-backup/）
 apiVersion: argoproj.io/v1alpha1
 kind: Application

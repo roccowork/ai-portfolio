@@ -93,7 +93,7 @@ EDGES = [
 STAFF_DETAIL = {"xiaoxiao": "leads", "oncall": "heal"}
 SITE_PROBES = ["liuxd.dev", "cv.liuxd.dev", "roadmap.liuxd.dev", "ai-roadmap.liuxd.dev", "it.liuxd.dev"]
 # Argo CD 应用 → 它管着的节点
-ARGO_NODES = {"ops-desk": ["xiaoxiao", "oncall", "gateway"], "personal": ["butler", "editor", "coach"], "umami": ["analyst"], "git-backup": ["archivist"], "secret-backup": ["archivist"], "notes": ["archivist"],
+ARGO_NODES = {"ops-desk": ["xiaoxiao", "oncall", "gateway"], "personal": ["butler", "editor", "coach"], "umami": ["analyst"], "git-backup": ["archivist"], "secret-backup": ["archivist"],
               "monitoring-extras": ["watcher"], "platform": ["k3s", "watcher"]}
 
 

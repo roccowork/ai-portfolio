@@ -342,15 +342,15 @@ k3s kubectl -n argocd delete secret argocd-initial-admin-secret
 - 有状态的数据每天用 restic 加密备份到 Cloudflare R2，脚本在 `deploy/backup/`（`backup.sh` 备份和清理旧快照，`snapshot.mjs` 先给正在使用的 SQLite 做一致性快照），各应用共用
 - 现在的备份任务（新加坡时间）：
 
-  | CronJob            | 命名空间        | 时间  | 内容                                                                                  |
-  | ------------------ | --------------- | ----- | ------------------------------------------------------------------------------------- |
-  | `backup-dify`      | `dify`          | 04:10 | Dify 的数据库导出文件和上传的文件（2026-11-06 Dify 停用，这个任务已撤下，见第 11 节） |
-  | `backup-umami`     | `umami`         | 04:20 | 访问统计 Umami 的数据库（`pg_dump` 导出）                                             |
-  | `backup-github`    | `git-backup`    | 04:40 | 所有 GitHub 账号的全部仓库（镜像，含私有仓库），见下文                                |
-  | `backup-notes`     | `notes`         | 04:50 | 个人笔记同步服务 CouchDB 的数据目录，见第 17 节                                       |
-  | `backup-secrets`   | `secret-backup` | 05:00 | 集群里人工创建的全部 Secret（密码、密钥、令牌），见第 17 节                           |
-  | `backup-ai-api`    | `ops-desk`      | 05:10 | `ai.db`：费用账本、自愈记录、评测结果                                                 |
-  | `backup-assistant` | `ops-desk`      | 05:30 | 私人助理的数据库（私有仓库）                                                          |
+  | CronJob            | 命名空间        | 时间  | 内容                                                                                    |
+  | ------------------ | --------------- | ----- | --------------------------------------------------------------------------------------- |
+  | `backup-dify`      | `dify`          | 04:10 | Dify 的数据库导出文件和上传的文件（2026-11-06 Dify 停用，这个任务已撤下，见第 11 节）   |
+  | `backup-umami`     | `umami`         | 04:20 | 访问统计 Umami 的数据库（`pg_dump` 导出）                                               |
+  | `backup-github`    | `git-backup`    | 04:40 | 所有 GitHub 账号的全部仓库（镜像，含私有仓库），见下文                                  |
+  | `backup-notes`     | `notes`         | 04:50 | 个人笔记同步服务 CouchDB 的数据目录（2026-11-22 知识库换成 Notion，已撤下，见第 17 节） |
+  | `backup-secrets`   | `secret-backup` | 05:00 | 集群里人工创建的全部 Secret（密码、密钥、令牌），见第 17 节                             |
+  | `backup-ai-api`    | `ops-desk`      | 05:10 | `ai.db`：费用账本、自愈记录、评测结果                                                   |
+  | `backup-assistant` | `ops-desk`      | 05:30 | 私人助理的数据库（私有仓库）                                                            |
 
 - 保留策略：最近 7 天、4 周、6 个月各一份
 - 告警：备份任务失败（`BackupJobFailed`），或超过 26 小时没有成功（`BackupStale`）。运维 Agent 收到备份失败的告警会自动补跑一次
@@ -602,59 +602,17 @@ k3s kubectl -n monitoring create job tg-test --from=cronjob/daily-english   # �
 
 - 企业微信 2026-11-22 停用，旧 Secret 可以删：`k3s kubectl -n monitoring delete secret wecom-bot`
 
-## 17. 个人笔记同步（CouchDB）和 Secret 备份
+## 17. 个人笔记同步（已删除）和 Secret 备份
 
-### 笔记同步（`deploy/apps/notes/`）
+### 笔记同步（2026-11-22 已删除）
 
-电脑和手机上的 Obsidian 装社区插件 Self-hosted LiveSync，都连 <https://brain.liuxd.dev>，改动几秒内同步到其他设备。2026-11-07 上线。
+2026-11-07 上线的 Obsidian 笔记同步（CouchDB + LiveSync 同步桥 + brain MCP，域名 brain.liuxd.dev）在 2026-11-22 删掉了：个人知识库换成了 Notion（云服务，不用自己部署）。
 
-- 组成：CouchDB 3.5（命名空间 `notes`，PVC `couchdb` 5Gi），配置在 `livesync.ini`（插件文档要求的 CORS、请求大小等）。所有地址都要登录，没有匿名访问
-- 笔记内容只在这台服务器和 R2 的加密备份里，不进任何 Git 仓库
-- 备份：每天 04:50 restic 直接备份数据目录（CouchDB 文件只追加不改写，运行中复制也一致），R2 路径 `/notes`
+- 删掉的：`deploy/apps/notes/`、Argo CD 应用 `notes`（带 finalizer，Pod、PVC、域名、证书一起删）、同步桥镜像的 Dockerfile 和构建流程、`tests/brain-mcp.test.ts`。都在 git 历史里，要恢复从历史里找回来
+- 留着的：R2 里 `/notes` 的最后一次备份（restic，`--host notes`），不再自动清理旧快照
+- 删完手动收尾：`k3s kubectl delete namespace notes`（里面人工建的 Secret 不归 Argo CD 管，不会自动删）
 
-首次安装（Secret 不进仓库）：
-
-```bash
-k3s kubectl create namespace notes --dry-run=client -o yaml | k3s kubectl apply -f -
-read -rs -p 'CouchDB 管理员密码（Obsidian 里也填这个）: ' P; echo
-k3s kubectl -n notes create secret generic couchdb --from-literal=user=admin --from-literal=password="$P"; unset P
-g() { k3s kubectl -n ops-desk get secret backup-r2 -o jsonpath="{.data.$1}" | base64 -d; }
-k3s kubectl -n notes create secret generic backup-r2 \
-  --from-literal=RESTIC_REPOSITORY="$(g RESTIC_REPOSITORY | sed 's#/[^/]*$#/notes#')" \
-  --from-literal=RESTIC_PASSWORD="$(g RESTIC_PASSWORD)" \
-  --from-literal=AWS_ACCESS_KEY_ID="$(g AWS_ACCESS_KEY_ID)" \
-  --from-literal=AWS_SECRET_ACCESS_KEY="$(g AWS_SECRET_ACCESS_KEY)"
-```
-
-验证：`curl -s -u admin:<密码> https://brain.liuxd.dev/` 返回 `"couchdb":"Welcome"`；不带密码返回 401。
-
-恢复：缩容 `couchdb` 到 0 → `restic restore latest --host notes --target /tmp/restore` → 把 `/tmp/restore/data/` 拷回 PVC 的目录（属主 5984）→ 扩回 1。
-
-### 同步桥和 MCP（AI 读写笔记）
-
-```
-Obsidian（电脑、手机）⇄ CouchDB ⇄ LiveSync Bridge ⇄ PVC vault/files ⇄ brain-mcp ⇄ Claude、私人助理
-```
-
-- **LiveSync Bridge**（`bridge.yaml`）：LiveSync 作者的开源同步桥，把 CouchDB 里的笔记双向同步成普通文件。作者没发布镜像，`deploy/docker/livesync-bridge.Dockerfile` 固定在一个看过、本地试跑过的上游提交上，由 `.github/workflows/livesync-bridge.yml` 构建 `ghcr.io/roccowork/livesync-bridge:<上游提交前 7 位>`。升级：改 Dockerfile 里的提交，本地试跑后推送，再改 `bridge.yaml` 的镜像标签
-- **brain-mcp**（`mcp.yaml`、`mcp.mjs`）：MCP 服务，<https://brain.liuxd.dev/mcp>，Bearer 令牌。AI 只读 `原始/`、只写 `wiki/`，`私密/` 和隐藏目录读不到（`tests/brain-mcp.test.ts`）。分工的原因：同一个文件几秒内两边同时改，后保存的会覆盖先保存的
-- vault 里的文件都能从 CouchDB 重新生成，不单独备份；临时文件和隐藏目录不同步（配置里的 `ignore`）
-
-首次安装：
-
-1. 第一次构建后，GitHub → Packages → `livesync-bridge` → Package settings → Change visibility → **Public**（集群拉镜像不用凭据），在此之前 `livesync-bridge` 停在 ImagePullBackOff
-2. 创建 MCP 令牌（记下来，Claude 和私人助理用）：
-
-```bash
-T=$(openssl rand -hex 32); k3s kubectl -n notes create secret generic brain-mcp --from-literal=token="$T"; echo "$T"; unset T
-```
-
-验证：`k3s kubectl -n notes logs deploy/livesync-bridge | tail` 能看到 `Watch starting from`；
-
-```bash
-curl -s https://brain.liuxd.dev/mcp -H "Authorization: Bearer <令牌>" -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_notes","arguments":{}}}'
-```
+取回旧笔记：`restic restore latest --host notes --target /tmp/restore`（R2 路径 `/notes`，密钥同其他备份），得到的是 CouchDB 的数据目录，要起一个 CouchDB 3.5 挂上它再用 Obsidian 的 LiveSync 插件连上去导出。
 
 ### Secret 备份（`deploy/apps/secret-backup/`）
 

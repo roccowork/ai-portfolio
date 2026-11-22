@@ -63,7 +63,7 @@ def test_menu_commands_and_questions():
     bot = OpsBot(Telegram("T", "42", transport=fake_tg(sent)), on_button, [("🖥 服务器状态", "status", "服务器状态", status)], ask, "帮助说明")
     asyncio.run(bot.handle(msg("/start")))
     method, body = sent[-1]
-    assert body["text"] == "帮助说明" and body["reply_markup"]["keyboard"] == [[{"text": "🖥 服务器状态"}, {"text": "❓ 帮助"}]]
+    assert body["text"] == "帮助说明" and body["reply_markup"]["keyboard"] == [[{"text": "🖥 服务器状态"}, {"text": "📖 使用方法"}]]
     asyncio.run(bot.handle(msg("🖥 服务器状态")))
     asyncio.run(bot.handle(msg("/status@opsdesk_duty_bot")))
     assert [b["text"] for _, b in sent[-2:]] == ["<b>🖥 服务器状态</b>  ✅ 正常"] * 2
@@ -260,7 +260,7 @@ def test_probes_text(tmp_path):
 
 
 def test_view_buttons_moved_to_console():
-    # 值班台没有查看类按钮了：旧按钮、旧命令回帮助并收起旧键盘；推送消息的 https 按钮打开总控台小程序
+    # 值班台没有查看类按钮了：旧按钮、旧命令回使用说明，键盘只剩「📖 使用方法」；推送消息的 https 按钮打开总控台小程序
     sent: list = []
 
     async def on_button(data: str) -> str:
@@ -271,7 +271,7 @@ def test_view_buttons_moved_to_console():
     bot.moved = {"🖥 服务器状态", "/status"}
     for old in ("🖥 服务器状态", "/status"):
         asyncio.run(bot.handle(msg(old)))
-        assert sent[-1][1]["text"] == "去总控台看" and sent[-1][1]["reply_markup"] == {"remove_keyboard": True}
+        assert sent[-1][1]["text"] == "去总控台看" and sent[-1][1]["reply_markup"]["keyboard"] == [[{"text": "📖 使用方法"}]]
     asyncio.run(tg.send("🚨 告警", [[("✅ 执行", "heal:ok:1")], [("🧭 在总控台查看", "https://ops.liuxd.dev/console/?t=alerts")]]))
     kb = sent[-1][1]["reply_markup"]["inline_keyboard"]
     assert kb[0][0] == {"text": "✅ 执行", "callback_data": "heal:ok:1"}

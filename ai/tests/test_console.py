@@ -205,7 +205,7 @@ def test_endpoint_needs_telegram(tmp_path):
     # 值班台机器人输入框左边的菜单按钮设成总控台小程序
     # 菜单改版后发一次说明并收起旧键盘；再启动不重复发
     notes = [p for m, p in calls if m == "send"]
-    assert len(notes) == 1 and notes[0]["keyboard"] == {"remove_keyboard": True} and "总控台" in notes[0]["text"]
+    assert len(notes) == 1 and notes[0]["keyboard"]["keyboard"] == [[{"text": "📖 使用方法"}]] and "总控台" in notes[0]["text"]
     calls.clear()
     with TestClient(create_app(s, Gateway(s, Ledger(tmp_path / "ai.db")), telegram=FakeTg())):  # type: ignore[arg-type]
         pass

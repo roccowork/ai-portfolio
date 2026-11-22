@@ -108,15 +108,14 @@ class OpsBot:
         for label, cmd, _, fn in hidden or []:
             self.actions[f"/{cmd}"] = fn
             self.actions.setdefault(label, fn)  # 旧键盘上的按钮还能点
-        rows = [label for label, *_ in self.menu] + ["❓ 帮助"]
+        rows = [label for label, *_ in self.menu] + ["📖 使用方法"]
         self.keyboard: dict = {
             "keyboard": [[{"text": t} for t in rows[i : i + 2]] for i in range(0, len(rows), 2)],
             "resize_keyboard": True,
             "is_persistent": True,
         }
-        if not self.menu:  # 没有菜单（值班台的查看类按钮都挪进了总控台）：把输入框下面的旧键盘收起来
-            self.keyboard = {"remove_keyboard": True}
-        self.moved: set[str] = set()  # 挪走了的旧按钮和命令：点了就回 help_text 并收起旧键盘
+        # 没有菜单时（值班台的查看类按钮都挪进了总控台），键盘上只剩「📖 使用方法」一个按钮
+        self.moved: set[str] = set()  # 挪走了的旧按钮和命令：点了就回 help_text 并换上新键盘
 
     async def reply(self, text: str) -> None:
         for part in split_message(text):
@@ -136,7 +135,7 @@ class OpsBot:
             return  # 只理主人
         text = (msg.get("text") or "").strip()
         key = text.split("@")[0]  # 群里命令会带 @机器人名
-        if key in ("/start", "/help", "❓ 帮助") or not text or key in self.moved:
+        if key in ("/start", "/help", "❓ 帮助", "📖 使用方法") or not text or key in self.moved:
             await self.tg.send(self.help_text or "我是网站的值班台机器人", keyboard=self.keyboard)
             return
         if fn := self.actions.get(key):

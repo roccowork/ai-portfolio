@@ -155,13 +155,23 @@ def _recent(iso: str | None, now: datetime, within: timedelta = DAY) -> bool:
 STEP = 60  # 已恢复告警：按分钟取样
 
 
-def recovered_alerts(series: list[dict], now: float, step: int = STEP, limit: int = 20) -> list[dict]:
-    """最近 24 小时响过、现在已经恢复的告警（Prometheus 自己存的 ALERTS 历史，不另建数据库）。
-    同一条告警断开超过 2 个取样点算两次；最后一个点还在响的是没恢复的，不列（在上面的「所有告警」里）"""
-    out = []
+def recovered_alerts(series: list[dict], now: float, step: int = STEP, limit: int = 30) -> list[dict]:
+    """最近 24 小时出现过、现在已经消失的告警（Prometheus 自己存的 ALERTS 历史，不另建数据库）。
+    含「等待中」（pending）的：问题出现了但没持续到规则的 for 时长就好了，不推送；2026-11-22 用户要看到这些一闪而过的故障。
+    同一条告警（pending 和 firing 合并）断开超过 2 个取样点算两次；最后一个点还在的是没恢复的，不列（在上面的「所有告警」里）"""
+    groups: dict[tuple, dict] = {}
     for x in series:
         m = x.get("metric") or {}
-        ts = sorted(float(t) for t, _ in x.get("values") or [])
+        key = tuple(sorted((k, v) for k, v in m.items() if k != "alertstate"))
+        g = groups.setdefault(key, {"metric": m, "ts": set(), "firing": set()})
+        for t, _ in x.get("values") or []:
+            g["ts"].add(float(t))
+            if m.get("alertstate") == "firing":
+                g["firing"].add(float(t))
+    out = []
+    fmt = lambda t: datetime.fromtimestamp(t, TZ).strftime("%m-%d %H:%M")  # noqa: E731
+    for g in groups.values():
+        m, ts = g["metric"], sorted(g["ts"])
         if not ts:
             continue
         spans, start, prev = [], ts[0], ts[0]
@@ -173,11 +183,12 @@ def recovered_alerts(series: list[dict], now: float, step: int = STEP, limit: in
         spans.append((start, prev))
         for a, b in spans:
             if now - b <= 2 * step:
-                continue  # 还在响
-            fmt = lambda t: datetime.fromtimestamp(t, TZ).strftime("%m-%d %H:%M")  # noqa: E731
+                continue  # 还在
+            fired = any(a <= t <= b for t in g["firing"])
             out.append({"title": str(m.get("alertname") or "?"),
-                        "detail": " · ".join(str(v) for v in (m.get("namespace"), m.get("name") or m.get("pod") or m.get("job")) if v),
-                        "level": "bad" if m.get("severity") == "critical" else "warn",
+                        "detail": " · ".join(str(v) for v in (m.get("namespace"), m.get("name") or m.get("pod") or m.get("deployment") or m.get("job")) if v),
+                        "level": ("bad" if m.get("severity") == "critical" else "warn") if fired else "flash",
+                        "pushed": fired,
                         "start": fmt(a), "end": fmt(b + step), "minutes": max(1, round((b + step - a) / 60)), "_end": b})
     out.sort(key=lambda r: r["_end"], reverse=True)
     for r in out:
@@ -225,7 +236,7 @@ class Console:
             _try(self.scalar('sum(kube_pod_status_phase{phase="Running"})'), "Pod 数"),
             _try(self.scalar("(1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)) * 100"), "内存"),
             _try(self.scalar('(1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100'), "CPU"),
-            _try(self.c.query_range('ALERTS{alertstate="firing", severity!~"info|none", alertname!~"Watchdog|InfoInhibitor"}',
+            _try(self.c.query_range('ALERTS{severity!~"info|none", alertname!~"Watchdog|InfoInhibitor"}',
                                     now.timestamp() - 86400, now.timestamp(), STEP), "已恢复告警"),
         )
         loc = self.local()

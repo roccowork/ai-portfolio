@@ -350,7 +350,7 @@ onBeforeUnmount(() => {
           </table>
         </div>
         <div class="box">
-          <h2 class="h2">最近 24 小时已恢复（{{ data.recovered?.length || 0 }}）</h2>
+          <h2 class="h2">最近 24 小时已消失（{{ data.recovered?.length || 0 }}）</h2>
           <p v-if="!data.recovered?.length" class="text-sm text-slate-400">没有</p>
           <table v-else class="alerts mt-3">
             <thead>
@@ -365,11 +365,15 @@ onBeforeUnmount(() => {
             <tbody>
               <tr v-for="(a, i) in data.recovered" :key="i">
                 <td>
-                  <span class="lv" :class="a.level">{{ a.level === 'bad' ? '异常' : '注意' }}</span>
+                  <span class="lv" :class="a.level">{{
+                    a.level === 'bad' ? '异常' : a.level === 'warn' ? '注意' : '一闪而过'
+                  }}</span>
                 </td>
                 <td>
                   <b>{{ a.title }}</b>
-                  <p v-if="a.detail" class="text-xs text-slate-400">{{ a.detail }}</p>
+                  <p class="text-xs text-slate-400">
+                    {{ a.detail }}{{ a.detail ? ' · ' : '' }}{{ a.pushed ? '已推送' : '没推送' }}
+                  </p>
                 </td>
                 <td class="text-slate-400">{{ a.start }}</td>
                 <td class="text-slate-400">{{ a.end }}</td>
@@ -637,6 +641,10 @@ onBeforeUnmount(() => {
 .lv.bad {
   background: rgb(248 113 113 / 0.15);
   color: #f87171;
+}
+.lv.flash {
+  background: rgb(148 163 184 / 0.15);
+  color: #94a3b8;
 }
 .card {
   display: block;

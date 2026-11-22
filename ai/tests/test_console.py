@@ -41,8 +41,11 @@ def fake(req: httpx.Request) -> httpx.Response:
     if p == "/api/v1/query_range":  # 已恢复告警：VPSDown 在 2 小时前响了 5 分钟，TargetDown 一直在响
         end = NOW.timestamp()
         ago = lambda m: [end - m * 60, "1"]  # noqa: E731
-        res = [{"metric": {"alertname": "VPSDown", "namespace": "ops-desk", "name": "示例VPS", "severity": "warning"}, "values": [ago(m) for m in range(124, 119, -1)]},
-               {"metric": {"alertname": "TargetDown", "severity": "warning"}, "values": [ago(m) for m in range(30, -1, -1)]}]
+        res = [{"metric": {"alertname": "VPSDown", "alertstate": "firing", "namespace": "ops-desk", "name": "示例VPS", "severity": "warning"}, "values": [ago(m) for m in range(124, 119, -1)]},
+               {"metric": {"alertname": "VPSDown", "alertstate": "pending", "namespace": "ops-desk", "name": "示例VPS", "severity": "warning"}, "values": [ago(m) for m in range(127, 124, -1)]},
+               # 发布时 ai-api 重启了 2 分钟：只到了「等待中」，没推送
+               {"metric": {"alertname": "DeploymentReplicasLow", "alertstate": "pending", "namespace": "ops-desk", "deployment": "ai-api", "severity": "warning"}, "values": [ago(m) for m in (40, 39)]},
+               {"metric": {"alertname": "TargetDown", "alertstate": "firing", "severity": "warning"}, "values": [ago(m) for m in range(30, -1, -1)]}]
         return httpx.Response(200, json={"status": "success", "data": {"result": res}})
     if p == "/api/v1/alerts":
         return httpx.Response(200, json={"data": {"alerts": []}})
@@ -146,7 +149,9 @@ def test_alert_center_and_resources(tmp_path):
     assert "示例 VPS 掉线" in titles and "非法级别" not in titles
     assert not any("示例VPS" in t for t in titles)
     rec = d["recovered"]
-    assert [r["title"] for r in rec] == ["VPSDown"] and rec[0]["minutes"] == 5 and rec[0]["detail"] == "ops-desk · 示例VPS"
+    assert [r["title"] for r in rec] == ["DeploymentReplicasLow", "VPSDown"]
+    assert rec[0]["level"] == "flash" and not rec[0]["pushed"] and rec[0]["detail"] == "ops-desk · ai-api" and rec[0]["minutes"] == 2
+    assert rec[1]["pushed"] and rec[1]["minutes"] == 8 and rec[1]["detail"] == "ops-desk · 示例VPS"  # 等待中 3 分钟 + 告警 5 分钟
     assert [a["level"] for a in d["alerts"]] == sorted((a["level"] for a in d["alerts"]), key=lambda x: console.LEVELS[x])
     r = {x["id"]: x for x in d["resources"]}
     assert r["probe-it.liuxd.dev"]["status"] == "bad" and r["probe-it.liuxd.dev"]["group"] == "site" and r["probe-it.liuxd.dev"]["detail"] == "s:it.liuxd.dev"

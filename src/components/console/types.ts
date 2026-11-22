@@ -35,7 +35,8 @@ export interface ConsoleData {
   recovered?: {
     title: string;
     detail: string;
-    level: 'bad' | 'warn';
+    level: 'bad' | 'warn' | 'flash';
+    pushed: boolean;
     start: string;
     end: string;
     minutes: number;

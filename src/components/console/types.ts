@@ -12,12 +12,6 @@ export interface ConsoleNode {
   lines: string[];
   detail?: string; // 点开后看的详情（/api/ai/console/detail 的 section）
 }
-export interface ConsoleEdge {
-  from: string;
-  to: string;
-  label: string;
-  state: 'flow' | 'idle' | 'bad';
-}
 export interface ConsoleAlert {
   level: 'bad' | 'warn';
   source: string;
@@ -36,9 +30,7 @@ export interface ConsoleResource {
 }
 export interface ConsoleData {
   generated: string;
-  columns: { key: string; name: string }[];
   nodes: ConsoleNode[];
-  edges: ConsoleEdge[];
   alerts: ConsoleAlert[];
   recovered?: {
     title: string;
@@ -55,7 +47,6 @@ export interface ConsoleData {
     staff: number;
     staff_ok: number;
     problems: string[];
-    flows: number;
     alerts: number;
     alerts_bad: number;
     resources: number;

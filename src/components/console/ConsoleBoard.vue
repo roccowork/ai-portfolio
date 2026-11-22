@@ -1,9 +1,8 @@
 <script setup lang="ts">
 // 总控台：我所有的项目和资源都在这一个地方看（查看类内容只在这里，Telegram 只推送和操作）。
-// 标签页：概览、告警中心、资源中心、数字员工、数据流。数据来自 /api/ai/console，30 秒刷新一次；
+// 标签页：概览、告警中心、资源中心、数字员工，加私人助理的网页（「数据流」关系图 2026-11-22 删了：信息和数字员工重复，用不上）。数据来自 /api/ai/console，30 秒刷新一次；
 // 点开资源、员工的详情走 /api/ai/console/detail（原来值班台机器人按钮的内容）。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import ConsoleFlow from './ConsoleFlow.vue';
 import TgHtml from './TgHtml.vue';
 import {
   canFullscreen,
@@ -38,11 +37,10 @@ const tab = ref<Tab>('home');
 const panel = ref<{ title: string; html: string; loading: boolean; error: string } | null>(null);
 let timer: ReturnType<typeof setInterval> | undefined;
 
-// 私人助理的网页（吃药打卡等，名字由私人助理给）排在数字员工后面，数据流最后
+// 私人助理的网页（吃药打卡等，名字由私人助理给）排在数字员工后面
 const TABS = computed(() => [
   ...BASE_TABS,
   ...(data.value?.pages || []).map((p) => ({ key: p.key, name: p.name })),
-  { key: 'flow', name: '数据流' },
 ]);
 const page = computed(() => (data.value?.pages || []).find((p) => p.key === tab.value));
 // 暂停的项目排在最后、变灰
@@ -288,7 +286,9 @@ onBeforeUnmount(() => {
             @click="setTab('staff')"
           >
             <span>数字员工在岗</span><b>{{ data.summary.staff_ok }}/{{ data.summary.staff }}</b
-            ><small>{{ data.summary.flows }} 条数据流动中</small>
+            ><small>{{
+              data.summary.staff_ok < data.summary.staff ? '有员工需关注' : '全部正常'
+            }}</small>
           </button>
           <button class="tile ok" @click="setTab('resources')">
             <span>网站 AI 今天花费</span><b>¥{{ data.summary.cost_today.toFixed(2) }}</b
@@ -459,11 +459,6 @@ onBeforeUnmount(() => {
       <!-- 私人网页（页面在私人助理那边，同一个域名，用总控台的 Telegram 身份） -->
       <section v-if="page" class="mt-4">
         <iframe :key="page.key" :src="page.path" :title="page.name" class="frame"></iframe>
-      </section>
-
-      <!-- 数据流 -->
-      <section v-if="tab === 'flow'" class="mt-5">
-        <ConsoleFlow :data="data" />
       </section>
     </template>
 

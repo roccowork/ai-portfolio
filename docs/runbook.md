@@ -557,7 +557,7 @@ Odoo 和依赖它的办公 Agent 2026-10-28 下线，Argo CD 应用和清单已�
 
 网站周报、每日英语、R2 用量共用 `deploy/monitoring/scripts/telegram.mjs` 里的推送函数，只发 Telegram；发之前查总控台「推送」页的开关。
 
-**查看类内容只在总控台**（2026-11-22 起，任何单个功能只能从一个地方查看）：值班台机器人输入框左边的「总控台」按钮打开 `/console/`（Telegram 小程序，手机和电脑版 Telegram 都行，电脑上可以全屏）。只认主人本人的 Telegram 账号（`ai/app/tgauth.py` 校验 Telegram 签名的 initData，用 `telegram-ops` 的 token 和 chat_id），没有密钥，浏览器直接打开只提示去 Telegram。总控台分概览、告警中心（Prometheus、拨测、Argo CD、备份、私人助理报的告警一张表）、资源中心、数字员工、私人助理的页面、数据流几个标签页；资源和员工点开的详情就是原来值班台按钮的内容（`ai/app/dutybot.py`：服务器状态、Pod 资源、外部服务、自愈记录、平台实况和 DORA、定时任务、最近留言、网站 AI 用量；定时任务的说明在 `ai/app/schedules.py` 的 `KNOWN`，新增 CronJob 时顺手补一行），接口 `/api/ai/console/detail`。值班台机器人不再有查看按钮，只推送和操作：告警、自愈消息下面带「在总控台查看」；直接打字提问交给运维 Agent（主人自己用可以查日志，日志先脱敏），每次调用模型；点旧键盘上的按钮会回帮助并收起旧键盘。
+**查看类内容只在总控台**（2026-11-22 起，任何单个功能只能从一个地方查看）：值班台机器人输入框左边的「总控台」按钮打开 `/console/`（Telegram 小程序，手机和电脑版 Telegram 都行，电脑上可以全屏）。只认主人本人的 Telegram 账号（`ai/app/tgauth.py` 校验 Telegram 签名的 initData，用 `telegram-ops` 的 token 和 chat_id），2026-11-22 起浏览器也能打开：输入私人密钥（Secret `ai-api` 的 `ME_TOKEN`，存在浏览器里；不用 Telegram 登录按钮，用多了会触发风控）。总控台分概览、告警中心（Prometheus、拨测、Argo CD、备份、私人助理报的告警一张表，下面是最近 24 小时已恢复的 Prometheus 告警）、资源中心、数字员工、私人助理的页面几个标签页（「数据流」关系图 2026-11-22 删了）；资源和员工点开的详情就是原来值班台按钮的内容（`ai/app/dutybot.py`：服务器状态、Pod 资源、每个网站自己的拨测详情、自愈记录、发布和 DORA、备份、证书、定时任务、最近留言、网站 AI 用量；定时任务的说明在 `ai/app/schedules.py` 的 `KNOWN`，新增 CronJob 时顺手补一行），接口 `/api/ai/console/detail`。值班台机器人不再有查看按钮，只推送和操作：告警、自愈消息下面带「在总控台查看」；直接打字提问交给运维 Agent（主人自己用可以查日志，日志先脱敏），每次调用模型；点旧键盘上的按钮会回帮助并收起旧键盘。
 
 ### 效果评测（RAG）
 

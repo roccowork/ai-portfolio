@@ -1,10 +1,9 @@
 """总控台（/console/）：我所有的项目和资源都在这一个地方看（查看类内容只在这里，Telegram 只推送和操作）。
 
 页面分标签页：概览、告警中心（所有告警集中一张表）、资源中心（服务器、网站、云服务、大模型……按类型分组）、
-数字员工、数据流（下面这张关系图）。
+数字员工。原来的「数据流」关系图 2026-11-22 删了（和数字员工的信息重复，用不上）。
 
-每个自动化项目是一名「数字员工」（有名字、岗位、今天干了多少活），服务器、知识库、外部平台是「资源」；
-连线表示谁把数据交给谁，最近真有数据在这条线上走过（发布、备份、调用模型、告警……），连线就标成「流动中」。
+每个自动化项目是一名「数字员工」（有名字、岗位、今天干了多少活），服务器、知识库、外部平台是「资源」。
 所有状态都来自真实数据：外部拨测、Argo CD、平台实况（/status.json）、账本、自愈记录、私人助理的运行记录。
 私人项目的数字员工由私人助理自己报上来（见 private_staff），名字和说明不写在这个公开仓库里。
 只读，不调用模型。只能从值班台机器人的 Telegram 小程序打开，只认主人本人（tgauth.py）：里面有私人项目的状态。
@@ -26,14 +25,6 @@ from .localtime import TZ
 log = logging.getLogger("ai")
 
 DAY = timedelta(hours=26)  # 每天跑一次的东西，26 小时内成功过就算正常
-
-# 列：入口 → 数字员工 → 数据和知识 → 平台和外部
-COLUMNS = [
-    {"key": "entry", "name": "入口和渠道"},
-    {"key": "staff", "name": "数字员工"},
-    {"key": "data", "name": "数据和知识"},
-    {"key": "platform", "name": "平台和外部服务"},
-]
 
 # 节点：kind 是 staff 的有岗位（role）；link 是它用的工具的地址
 NODES = [
@@ -58,36 +49,6 @@ NODES = [
     {"id": "models", "col": "platform", "name": "大模型", "desc": "阿里云百炼（默认）、OpenRouter（私人助理）"},
     {"id": "cloudflare", "col": "platform", "name": "Cloudflare", "desc": "DNS、静态网站（Pages）、备份存储（R2）", "link": "https://dash.cloudflare.com/"},
     {"id": "news", "col": "platform", "name": "新闻源", "desc": "OpenAI、Google AI、Hugging Face、TechCrunch、The Verge、量子位、Hacker News"},
-]
-
-# 连线：flow 是判断「流动中」用的键，见 build() 里的 flows
-EDGES = [
-    ("visitors", "xiaoxiao", "提问", "asks"),
-    ("visitors", "analyst", "访问记录", "traffic"),
-    ("xiaoxiao", "kb", "检索资料", "asks"),
-    ("xiaoxiao", "gateway", "生成回答", "asks"),
-    ("editor", "gateway", "写口播稿", "frontier"),
-    ("oncall", "gateway", "分析原因", "heal"),
-    ("gateway", "models", "调用 API", "model_calls"),
-    ("news", "editor", "新闻", "frontier"),
-    ("editor", "butler", "选题和稿子", "frontier"),
-    ("butler", "me", "每日推送", "butler"),
-    ("watcher", "oncall", "告警", "alerts"),
-    ("oncall", "k3s", "排查 / 自愈", "heal"),
-    ("watcher", "k3s", "采集指标", "metrics"),
-    ("watcher", "sites", "外部拨测", "metrics"),
-    ("oncall", "me", "汇报、等我确认", "heal"),
-    ("me", "media", "发布视频", None),
-    ("me", "coach", "转发岗位", "career"),
-    ("coach", "gateway", "分析、写材料", "career"),
-    ("coach", "repos", "读简历", "career"),
-    ("repos", "deployer", "代码", "deploy"),
-    ("deployer", "k3s", "上线", "deploy"),
-    ("repos", "cloudflare", "静态网站", None),
-    ("archivist", "dbs", "导出", "backup"),
-    ("archivist", "repos", "镜像", "backup_git"),
-    ("archivist", "cloudflare", "加密备份到 R2", "backup"),
-    ("analyst", "dbs", "写入", "traffic"),
 ]
 
 # 数字员工点开后看的详情（/api/ai/console/detail 的 section）
@@ -152,17 +113,16 @@ def private_resources(asst: dict | None) -> list[dict]:
 
 
 # 私人助理自己报的私人数字员工（私人项目的名字和说明只在私有仓库，公开代码里不写）：
-# 助理的 /internal/summary 返回 staff: [{id, name, role, desc, link, status, lines, edges: [{from, to, label, flow}]}]。
-# 节点 id 统一加 p- 前缀，连线只能连到已有节点或别的私人员工；状态只认下面这几种
+# 助理的 /internal/summary 返回 staff: [{id, name, role, desc, link, status, lines}]（还带的 edges 是原来「数据流」页用的，2026-11-22 删了页面，不再读）。
+# 节点 id 统一加 p- 前缀；状态只认下面这几种
 PRIVATE_STATUS = {"ok", "warn", "bad", "idle", "unknown", "manual", "paused"}
 
 
-def private_staff(asst: dict | None) -> tuple[list[dict], list[tuple[str, str, str, bool]]]:
+def private_staff(asst: dict | None) -> list[dict]:
     nodes: list[dict] = []
-    edges: list[tuple[str, str, str, bool]] = []
     raw = (asst or {}).get("staff")
     if not isinstance(raw, list):
-        return nodes, edges
+        return nodes
     for x in raw[:8]:
         if not isinstance(x, dict) or not str(x.get("id") or "").strip() or not x.get("name"):
             continue
@@ -178,10 +138,7 @@ def private_staff(asst: dict | None) -> tuple[list[dict], list[tuple[str, str, s
             # 点开的详情在私人助理那边（/internal/detail/<名字>），总控台按 p: 前缀转过去
             **({"detail": "p:" + str(x["detail"])} if re.fullmatch(r"[a-z]{1,18}", str(x.get("detail") or "")) else {}),
         })
-        for e in (x.get("edges") or [])[:6]:
-            if isinstance(e, dict) and e.get("from") and e.get("to"):
-                edges.append((str(e["from"]), str(e["to"]), str(e.get("label") or "")[:20], bool(e.get("flow"))))
-    return nodes, edges
+    return nodes
 
 
 def _ago(iso: str | None, now: datetime) -> str:
@@ -358,7 +315,6 @@ class Console:
         db = loc.get("db") or {}
         if db:
             set_("dbs", "ok", f"AI 账本 {db['mb']:.1f} MB", f"自愈记录 {db['incidents']} 条，评测 {db['evals']} 次")
-        gh = next((b for b in backups if b["name"] == "backup-github"), None)
         s, line = probe_line("GitHub")
         set_("repos", s if s != "unknown" else "ok", line)
 
@@ -372,47 +328,21 @@ class Console:
         if fr:
             set_("news", "ok" if fr["sources_ok"] == fr["sources"] else "warn", f"{fr['sources_ok']}/{fr['sources']} 个能读", f"上次 {fr['candidates']} 条候选")
 
-        # 私人助理报上来的私人数字员工：自己带状态和连线；助理所在的 Argo CD 应用不健康时一起标出来
-        extra_nodes, extra_edges = private_staff(asst)
+        # 私人助理报上来的私人数字员工：自己带状态；助理所在的 Argo CD 应用不健康时一起标出来
+        extra_nodes = private_staff(asst)
         personal = next((a for a in argo or [] if a["name"] == "personal"), None)
         for n in extra_nodes:
             if personal and not (personal["sync"] == "Synced" and personal["health"] == "Healthy") and n["status"] == "ok":
                 n["status"] = "warn"
             nodes[n["id"]] = n
 
-        # 最近真有数据走过的连线
-        flows = {
-            "asks": ask > 0,
-            "traffic": bool(req and req > 0),
-            "frontier": bool(fr and fr["status"] == "ok" and _recent(fr["ts"], now)),
-            "heal": bool(heal),
-            "model_calls": bool(calls_1h and calls_1h > 0),
-            "butler": bool(asst and asst.get("bot")),
-            "career": bool(cr and cr["week"] > 0),
-            "alerts": bool(firing or heal),
-            "metrics": probe is not None,
-            "deploy": _recent(last_deploy, now),
-            "backup": bool(backups) and not stale,
-            "backup_git": bool(gh and _recent(gh.get("lastSuccess"), now)),
-        }
-        edges = []
-        for a, b, label, key in EDGES:
-            broken = nodes[a]["status"] == "bad" or nodes[b]["status"] == "bad"
-            edges.append({"from": a, "to": b, "label": label, "state": "bad" if broken else ("flow" if key and flows.get(key) else "idle")})
-        for a, b, label, flow in extra_edges:
-            # 私人员工的连线：两头都得是已有节点（普通节点写原 id，私人员工写 p-xxx）
-            if a in nodes and b in nodes and (a.startswith("p-") or b.startswith("p-")):
-                broken = nodes[a]["status"] == "bad" or nodes[b]["status"] == "bad"
-                edges.append({"from": a, "to": b, "label": label, "state": "bad" if broken else ("flow" if flow else "idle")})
         staff = [n for n in nodes.values() if n.get("kind") == "staff" and n["status"] != "paused"]  # 暂停的项目不算在岗人数
         alert_list = collect_alerts(alerts, probe, argo, st, heal, now) + private_alerts(asst)
         alert_list.sort(key=lambda a: LEVELS[a["level"]])
         resources = collect_resources(probe, argo, st, loc, pods, mem, cpu, now) + private_resources(asst)
         return {
             "generated": now.isoformat(),
-            "columns": COLUMNS,
             "nodes": list(nodes.values()),
-            "edges": edges,
             "alerts": alert_list,
             "recovered": recovered_alerts(history or [], now.timestamp()),
             "resource_groups": RESOURCE_GROUPS,
@@ -422,7 +352,6 @@ class Console:
                 "staff": len(staff),
                 "staff_ok": sum(1 for n in staff if n["status"] == "ok"),
                 "problems": [n["name"] for n in nodes.values() if n["status"] in ("bad", "warn")],
-                "flows": sum(1 for e in edges if e["state"] == "flow"),
                 "alerts": len(alert_list),
                 "alerts_bad": sum(1 for a in alert_list if a["level"] == "bad"),
                 "resources": len(resources),

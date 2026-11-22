@@ -270,6 +270,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://prometheus.liuxd.dev/api/v1/que
   | `personal`          | 私人助理（私有仓库 `roccowork/ops-desk` 的 `personal/`）              | 私有仓库                   |
 
 - 都开了自动同步、`prune`、`selfHeal` 和失败重试。
+- 推送后多快上线：Argo CD 部署用到的 3 个仓库（ai-portfolio、ops-desk、labpager-ios）都加了 GitHub Webhook（`https://argocd.liuxd.dev/api/webhook`，2026-11-22），推送后马上同步；Webhook 没送到时，每 30 秒检查一次 Git 兜底（`deploy/platform/argocd.yaml` 的 `timeout.reconciliation`）。改这个值后要重启 `argocd-application-controller` 才生效。新加一个由 Argo CD 部署的仓库时，也给它加 Webhook（Settings → Webhooks，Content type 选 `application/json`）
 - `platform` 里的 HelmChart 由 k3s 的 helm-controller 实际执行 `helm install / upgrade`：改 `deploy/platform/` 下的文件并提交到 main，约 1 分钟后 Argo CD 同步，helm-controller 随即升级（`k3s kubectl -n kube-system get jobs` 能看到 `helm-install-*` 任务）。
 - HelmChart 带了 `Prune=false,Delete=false`：删除 HelmChart 等于卸载整个组件，所以即使从 Git 里删掉，Argo CD 也不会删集群里的。真要卸载时手动 `kubectl delete helmchart`。
 - 不要再往服务器的 `/var/lib/rancher/k3s/server/manifests/` 放这几个文件：k3s 每次启动都会重新应用那个目录里的文件，会和 Git 里的版本互相覆盖。

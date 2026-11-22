@@ -154,7 +154,7 @@ def private_resources(asst: dict | None) -> list[dict]:
 # 私人助理自己报的私人数字员工（私人项目的名字和说明只在私有仓库，公开代码里不写）：
 # 助理的 /internal/summary 返回 staff: [{id, name, role, desc, link, status, lines, edges: [{from, to, label, flow}]}]。
 # 节点 id 统一加 p- 前缀，连线只能连到已有节点或别的私人员工；状态只认下面这几种
-PRIVATE_STATUS = {"ok", "warn", "bad", "idle", "unknown", "manual"}
+PRIVATE_STATUS = {"ok", "warn", "bad", "idle", "unknown", "manual", "paused"}
 
 
 def private_staff(asst: dict | None) -> tuple[list[dict], list[tuple[str, str, str, bool]]]:
@@ -278,7 +278,10 @@ class Console:
             set_("editor", "unknown", "")
         else:
             set_("butler", "ok" if asst.get("bot") else "warn", "机器人在线" if asst.get("bot") else "没配 Telegram")
-            if fr:
+            if fr and fr.get("paused"):
+                # 栏目暂停（私人助理报的）：照常推新闻标题，不算异常，也不算在岗人数里
+                set_("editor", "paused", "栏目暂停中，每天只推新闻标题" + (f"（上次 {_ago(fr.get('ts'), now)}）" if fr.get("ts") else ""))
+            elif fr:
                 ok_run = fr["status"] == "ok"
                 set_("editor", "ok" if ok_run and _recent(fr["ts"], now) else ("bad" if fr["status"] == "error" else "warn"),
                      f"上次 {_ago(fr['ts'], now)}：{fr['picks']} 条选题", f"新闻源 {fr['sources_ok']}/{fr['sources']} 连通")
@@ -364,7 +367,7 @@ class Console:
             if a in nodes and b in nodes and (a.startswith("p-") or b.startswith("p-")):
                 broken = nodes[a]["status"] == "bad" or nodes[b]["status"] == "bad"
                 edges.append({"from": a, "to": b, "label": label, "state": "bad" if broken else ("flow" if flow else "idle")})
-        staff = [n for n in nodes.values() if n.get("kind") == "staff"]
+        staff = [n for n in nodes.values() if n.get("kind") == "staff" and n["status"] != "paused"]  # 暂停的项目不算在岗人数
         alert_list = collect_alerts(alerts, probe, argo, st, heal, now) + private_alerts(asst)
         alert_list.sort(key=lambda a: LEVELS[a["level"]])
         resources = collect_resources(probe, argo, st, loc, pods, mem, cpu, now) + private_resources(asst)

@@ -63,5 +63,6 @@ export const STATUS: Record<string, [string, string]> = {
   bad: ['异常', 'bad'],
   idle: ['空闲', 'idle'],
   manual: ['手动', 'manual'],
+  paused: ['暂停', 'idle'],
   unknown: ['查不到', 'idle'],
 };

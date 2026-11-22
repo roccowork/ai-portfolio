@@ -96,6 +96,15 @@ def test_build_from_real_signals(tmp_path):
     assert e[("oncall", "me")] == "flow" and e[("butler", "me")] == "flow"
 
 
+def test_paused_project(tmp_path):
+    # 私人助理报「栏目暂停」：编辑标成暂停，不算问题，也不算在岗人数
+    fr = {"ts": iso(3), "status": "ok", "candidates": 30, "picks": 0, "sources": 7, "sources_ok": 7, "paused": True}
+    d = asyncio.run(make(tmp_path, {"bot": True, "frontier": fr}).build())
+    n = {x["id"]: x for x in d["nodes"]}
+    assert n["editor"]["status"] == "paused" and "暂停" in n["editor"]["lines"][0]
+    assert "编辑" not in d["summary"]["problems"] and d["summary"]["staff"] == 8
+
+
 def test_assistant_down_does_not_break(tmp_path):
     d = asyncio.run(make(tmp_path, None).build())
     n = {x["id"]: x for x in d["nodes"]}

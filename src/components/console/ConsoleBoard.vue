@@ -29,7 +29,12 @@ const TABS = computed(() => [
   { key: 'flow', name: '数据流' },
 ]);
 const page = computed(() => (data.value?.pages || []).find((p) => p.key === tab.value));
-const staff = computed(() => (data.value?.nodes || []).filter((n) => n.kind === 'staff'));
+// 暂停的项目排在最后、变灰
+const staff = computed(() =>
+  (data.value?.nodes || [])
+    .filter((n) => n.kind === 'staff')
+    .sort((a, b) => Number(a.status === 'paused') - Number(b.status === 'paused')),
+);
 const groups = computed(() => {
   const d = data.value;
   if (!d) return [];
@@ -290,7 +295,10 @@ onBeforeUnmount(() => {
           v-for="n in staff"
           :key="n.id"
           class="card"
-          :class="`st-${STATUS[n.status]?.[1] || 'idle'}`"
+          :class="[
+            `st-${STATUS[n.status]?.[1] || 'idle'}`,
+            { 'opacity-50': n.status === 'paused' },
+          ]"
         >
           <div class="flex items-start gap-3">
             <span class="avatar">{{ n.name.slice(0, 1) }}</span>

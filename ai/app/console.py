@@ -421,6 +421,8 @@ def collect_alerts(alerts: list[dict] | None, probe: list[dict] | None, argo: li
             **({"heal": _heal_line(h)} if h else {}),
         })
     for p in probe or []:
+        if p["group"] == "vps":
+            continue  # VPS 端口连不上由 Prometheus 的 VPSDown 报，这里再报一遍就重复了
         if not p["ok"]:
             out.append({"level": "bad", "source": "外部拨测", "title": f"{p['name']} 打不开", "detail": "自己的网站" if p["group"] == "own" else "外部依赖", "since": ""})
         elif p["group"] == "own" and p.get("cert_days") is not None and p["cert_days"] < 14:
@@ -458,6 +460,8 @@ def collect_resources(probe, argo, st, loc, pods, mem, cpu, now: datetime) -> li
     add("pods", "server", "Pod 和数据盘", "ok" if pods is not None else "unknown", ["内存、CPU 占用前 5，重启过的，数据盘用量"], "pods")
     add("jobs", "server", "后台定时任务", "ok", ["备份、状态采集：下次几点、上次成没成功（会发消息的在「推送」页）"], "jobs")
     for p in probe or []:
+        if p["group"] == "vps":
+            continue  # VPS 在私人助理报上来的资源里（每台一项，含延迟），不重复列
         line = f"{p['ms']} ms" if p["ms"] is not None else ""
         if p["group"] == "own" and p.get("cert_days") is not None:
             line += f" · 证书 {p['cert_days']} 天"

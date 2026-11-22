@@ -28,6 +28,7 @@ def fake(req: httpx.Request) -> httpx.Response:
         if q.startswith("probe_success"):
             res = [{"metric": {"group": "own", "name": n}, "value": [0, "1"]} for n in ["ops.liuxd.dev", "liuxd.dev", "cv.liuxd.dev", "stats.liuxd.dev"]]
             res += [{"metric": {"group": "own", "name": "it.liuxd.dev"}, "value": [0, "0"]}]
+            res += [{"metric": {"group": "vps", "name": "示例VPS"}, "value": [0, "0"]}]  # VPS 由 VPSDown 和私人助理报，不重复
             res += [{"metric": {"group": "dependency", "name": n}, "value": [0, "1"]} for n in ["阿里云百炼", "GitHub", "Cloudflare", "Telegram"]]
             return httpx.Response(200, json={"status": "success", "data": {"result": res}})
         if "traefik" in q:
@@ -144,11 +145,12 @@ def test_alert_center_and_resources(tmp_path):
     titles = [a["title"] for a in d["alerts"]]
     assert "it.liuxd.dev 打不开" in titles and "umami 没同步或不健康" in titles and "backup-github 超过 26 小时没成功" in titles
     assert "示例 VPS 掉线" in titles and "非法级别" not in titles
+    assert not any("示例VPS" in t for t in titles)
     assert [a["level"] for a in d["alerts"]] == sorted((a["level"] for a in d["alerts"]), key=lambda x: console.LEVELS[x])
     r = {x["id"]: x for x in d["resources"]}
     assert r["probe-it.liuxd.dev"]["status"] == "bad" and r["probe-it.liuxd.dev"]["group"] == "site" and r["probe-it.liuxd.dev"]["detail"] == "probes"
     assert r["probe-阿里云百炼"]["group"] == "dependency" and r["k3s"]["detail"] == "status" and r["argo"]["status"] == "warn"
-    assert r["p-vps1"]["detail"] == "p:vps" and "p-x" not in r and "detail" not in r["p-y"]
+    assert r["p-vps1"]["detail"] == "p:vps" and "p-x" not in r and "probe-示例VPS" not in r and "detail" not in r["p-y"]
     assert d["summary"]["alerts"] == len(d["alerts"]) and d["summary"]["cost_today"] == 0.12
     assert {n["id"]: n.get("detail") for n in d["nodes"]}["xiaoxiao"] == "leads"
 

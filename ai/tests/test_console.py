@@ -114,7 +114,7 @@ def test_assistant_down_does_not_break(tmp_path):
 def test_private_staff_from_assistant(tmp_path):
     # 私人数字员工由私人助理报上来（这里是虚构的示例）；非法的节点、连线、状态都丢掉或纠正
     staff = [
-        {"id": "demo", "name": "示例员工", "role": "示例岗位", "desc": "说明", "link": "https://ops.liuxd.dev/me/x/#k={k}", "status": "ok",
+        {"id": "demo", "name": "示例员工", "role": "示例岗位", "desc": "说明", "link": "https://ops.liuxd.dev/me/x/#k={k}", "status": "ok", "detail": "demo",
          "lines": ["今天干了 3 件事"], "edges": [{"from": "me", "to": "p-demo", "label": "交给它", "flow": True},
                                            {"from": "p-demo", "to": "butler", "label": "汇报"},
                                            {"from": "p-demo", "to": "nowhere", "label": "无效"},
@@ -129,6 +129,7 @@ def test_private_staff_from_assistant(tmp_path):
     e = {(x["from"], x["to"]): x["state"] for x in d["edges"]}
     assert n["p-demo"]["col"] == "staff" and n["p-demo"]["status"] == "ok" and n["p-demo"]["lines"] == ["今天干了 3 件事"]
     assert n["p-demo"]["name"] == "示例员工" and n["p-odd"]["status"] == "unknown" and "link" not in n["p-odd"]
+    assert n["p-demo"]["detail"] == "p:demo" and "detail" not in n["p-odd"]
     assert e[("me", "p-demo")] == "flow" and e[("p-demo", "butler")] == "idle"
     assert ("p-demo", "nowhere") not in e and ("me", "butler") not in e
     assert d["summary"]["staff"] == 11

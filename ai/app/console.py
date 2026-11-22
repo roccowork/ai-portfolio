@@ -175,6 +175,8 @@ def private_staff(asst: dict | None) -> tuple[list[dict], list[tuple[str, str, s
             "desc": str(x.get("desc") or "")[:120], **({"link": link} if link.startswith("https://") else {}),
             "status": x.get("status") if x.get("status") in PRIVATE_STATUS else "unknown",
             "lines": [str(line)[:80] for line in (x.get("lines") or [])[:3] if line],
+            # 点开的详情在私人助理那边（/internal/detail/<名字>），总控台按 p: 前缀转过去
+            **({"detail": "p:" + str(x["detail"])} if re.fullmatch(r"[a-z]{1,18}", str(x.get("detail") or "")) else {}),
         })
         for e in (x.get("edges") or [])[:6]:
             if isinstance(e, dict) and e.get("from") and e.get("to"):

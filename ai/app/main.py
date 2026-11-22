@@ -43,7 +43,7 @@ from .ledger import Ledger, today
 from .odoo import Odoo, OdooError
 from .rag import CaseQA, load_chunks
 
-MENU_VERSION = "2026-11-22 总控台"  # 值班台菜单改了就改这个，启动时给主人发一次说明
+MENU_VERSION = "2026-11-22 使用说明"  # 值班台菜单改了就改这个，启动时给主人发一次说明
 log = logging.getLogger("ai")
 
 # 对话里的联系方式：手机号、邮箱、带「微信 / wx / vx」前缀的微信号

@@ -64,7 +64,7 @@ ABOUT = {
     "stats.liuxd.dev": "网站访问统计（Umami）",
     "prometheus.liuxd.dev": "监控数据接口，给 LabPager App 用（要密码）",
     "阿里云百炼": "大模型接口：网站 AI 问答、运维 Agent",
-    "GitHub": "代码仓库和 CI",
+    "GitHub": "全部项目的代码、文档和 CI，每天镜像备份到 R2",
     "GHCR 镜像仓库": "容器镜像仓库：上线时从这里拉镜像",
     "Cloudflare": "DNS、Pages 网站托管、R2 备份",
     "Telegram": "值班台和私人助理机器人：告警推送",

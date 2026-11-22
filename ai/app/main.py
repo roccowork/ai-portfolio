@@ -128,11 +128,8 @@ def create_app(
     # 网站的 Telegram 机器人（Secret telegram-ops）：自愈审批按钮、访客留言、演示预约。私人助理用另一个机器人
     tg = telegram or (Telegram(s.tg_token, s.tg_chat_id) if s.tg_token and s.tg_chat_id else None)
     async def platform() -> str:
-        """平台实况的数据和网页值班大屏是同一份：站点 nginx 提供的 /status.json（集群内地址）"""
-        async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get(s.status_url)
-            r.raise_for_status()
-            text = dutybot.platform_text(r.json())
+        """发布：可用率、最近发布、7 天告警、DORA。数据和网页值班大屏是同一份：站点 nginx 提供的 /status.json（集群内地址）"""
+        text = dutybot.platform_text(await status_json())
         try:
             text += "\n\n" + dutybot.dora_text(await dora_cache.get(build_dora))
         except Exception as e:  # noqa: BLE001 —— GitHub 查不到不影响平台实况
@@ -191,6 +188,9 @@ def create_app(
         live = "真实集群的快照，30 天重拍一次" if k8s.enabled else "没有集群权限，用内置的离线快照"
         verb, note = EVAL_START[state]
         return f"🧪 {verb}运维 Agent 评测：{len(cases)} 道故障演练题（{live}），大约 3～5 分钟，花几毛钱。只读，不会动集群{note}"
+
+    async def _part(part: str) -> str:
+        return dutybot.platform_text(await status_json(), part=part)
 
     async def _probes_text() -> str:
         if not k8s.enabled:
@@ -668,6 +668,8 @@ def create_app(
         "probes": _probes_text,
         "heal": lambda: asyncio.to_thread(dutybot.heal_text, healer.store, 10),
         "live": platform,
+        "backups": lambda: _part("backups"),
+        "certs": lambda: _part("certs"),
         "jobs": lambda: dutybot.jobs_text(k8s),
         "leads": lambda: asyncio.to_thread(dutybot.leads_text, ledger, 10),
         "usage": usage_card,

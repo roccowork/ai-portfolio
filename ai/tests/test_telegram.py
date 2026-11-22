@@ -138,8 +138,11 @@ def test_platform_text_matches_live_page():
     # Telegram 的 HTML 模式里裸的 < 会被当成标签，整条消息发送失败
     assert not re.search(r"<(?![/a-z])", text)
     assert "<code>8bf110c</code> 8 分钟前 · 当前版本" in text
-    assert "✅ backup-ai-api：最近成功 8 小时前" in text and "⚠️ backup-old" in text
-    assert "⚠️ ops-desk-tls：剩余 12 天" in text and "7 天告警</b>：查询失败" in text
+    assert "7 天告警</b>：查询失败" in text and "备份" not in text and "证书" not in text  # 2026-11-22 拆成三张卡片
+    bk = dutybot.platform_text(st, now, part="backups")
+    assert "✅ 💾 备份网站 AI 服务数据（账本、自愈记录）：最近成功 8 小时前" in bk and "⚠️ backup-old" in bk and "最近发布" not in bk
+    ct = dutybot.platform_text(st, now, part="certs")
+    assert "⚠️ ops.liuxd.dev（作品集、总控台）：剩余 12 天" in ct and not re.search(r"<(?![/a-z])", bk + ct)
 
 
 def test_jobs_text_groups_cronjobs(tmp_path):

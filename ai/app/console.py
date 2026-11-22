@@ -105,7 +105,6 @@ RESOURCE_GROUPS = [
     {"key": "dependency", "name": "外部依赖"},
     {"key": "model", "name": "大模型和用量"},
     {"key": "release", "name": "发布、备份和证书"},
-    {"key": "cloud", "name": "云服务和代码"},
 ]
 LEVELS = {"bad": 0, "warn": 1}  # 告警排序：异常在前
 
@@ -514,11 +513,10 @@ def collect_resources(probe, argo, st, loc, pods, mem, cpu, now: datetime) -> li
     backups = (st or {}).get("backups") or []
     stale = [b["name"] for b in backups if not _recent(b.get("lastSuccess"), now)]
     add("backups", "release", "备份", "unknown" if not backups else ("warn" if stale else "ok"),
-        [f"{len(backups) - len(stale)}/{len(backups)} 个 26 小时内成功" if backups else "", "过期：" + "、".join(stale) if stale else ""], "live")
+        [f"{len(backups) - len(stale)}/{len(backups)} 个 26 小时内成功" if backups else "", "过期：" + "、".join(stale) if stale else ""], "backups")
     certs = (st or {}).get("certs") or []
     low = [c["name"] for c in certs if c.get("daysLeft") is not None and c["daysLeft"] < 21]
     if certs:
-        add("certs", "release", "证书", "warn" if low else "ok", [f"{len(certs)} 张", "快过期：" + "、".join(low) if low else ""], "live")
-    add("cloudflare", "cloud", "Cloudflare", "ok", ["DNS、静态网站（Pages）、备份存储（R2）"])
-    add("github", "cloud", "GitHub", "ok", ["全部项目的代码和文档，每天镜像备份到 R2"])
+        add("certs", "release", "证书", "warn" if low else "ok", [f"{len(certs)} 张", "快过期：" + "、".join(low) if low else ""], "certs")
+    # Cloudflare、GitHub 不再单独列（2026-11-22：和「外部依赖」的拨测卡片重复，那边有真实状态和详情）
     return out

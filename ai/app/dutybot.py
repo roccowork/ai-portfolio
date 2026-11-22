@@ -319,10 +319,32 @@ def ago(iso: str | None, now: datetime | None = None) -> str:
     return f"{minutes // 60} 小时前" if minutes < 48 * 60 else f"{minutes // 1440} 天前"
 
 
-def platform_text(st: dict, now: datetime | None = None) -> str:
-    """平台实况：/status.json（集群里的 CronJob 每 10 分钟生成）。任何一项都可能是 null（那一项查询失败）"""
+def platform_text(st: dict, now: datetime | None = None, part: str = "release") -> str:
+    """平台实况：/status.json（集群里的 CronJob 每 10 分钟生成）。任何一项都可能是 null（那一项查询失败）。
+    总控台资源中心分三张卡片点开（2026-11-22 用户要求拆开）：release 发布（可用率、最近发布、7 天告警）、backups 备份、certs 证书"""
     now = now or datetime.now(timezone.utc)
-    lines = [f"<b>📊 平台实况</b>（数据更新于 {ago(st.get('generatedAt'), now)}）"]
+    head = f"（数据更新于 {ago(st.get('generatedAt'), now)}）"
+    if part == "backups":
+        backups = st.get("backups")
+        lines = ["<b>💾 备份</b>" + head, "<i>每天凌晨加密备份到 Cloudflare R2，超过 26 小时没成功会告警</i>", ""]
+        if backups is None:
+            return "\n".join(lines + ["查询失败"])
+        for b in backups or []:
+            t = b.get("lastSuccess")
+            stale = not t or (now - datetime.fromisoformat(t.replace("Z", "+00:00"))).total_seconds() > 26 * 3600
+            title = schedules.KNOWN.get(b["name"], ("", ""))[1] or b["name"]
+            lines.append(f"{'⚠️' if stale else '✅'} {e(title)}：最近成功 {ago(t, now)}")
+        return "\n".join(lines if backups else lines + ["没有备份任务"])
+    if part == "certs":
+        certs = st.get("certs")
+        lines = ["<b>🔐 证书</b>" + head, "<i>这台服务器上网站的 HTTPS 证书（Let's Encrypt），cert-manager 到期前 30 天自动续期，剩不到 21 天会告警</i>", ""]
+        if certs is None:
+            return "\n".join(lines + ["查询失败"])
+        for c in certs or []:
+            low = c.get("daysLeft") is not None and c["daysLeft"] < 21
+            lines.append(f"{'⚠️' if low else '✅'} {e(CERT_SITE.get(c['name'], c['name']))}：剩余 {c.get('daysLeft', '?')} 天")
+        return "\n".join(lines if certs else lines + ["没有证书"])
+    lines = ["<b>🚀 发布</b>" + head]
     nums = []
     if st.get("availability7d") is not None:
         nums.append(f"7 天可用率 {st['availability7d']}%")
@@ -334,25 +356,25 @@ def platform_text(st: dict, now: datetime | None = None) -> str:
         lines.append("\n" + " · ".join(nums))
     state_zh = {"current": "当前版本", "not-ready": "⚠️ 未就绪（旧版本仍在服务）", "replaced": "已替换"}
     deploys = st.get("deploys")
-    lines.append("\n🚀 <b>最近发布</b>" + ("：查询失败" if deploys is None else ("：暂无记录" if not deploys else "")))
+    lines.append("\n<b>最近发布</b>" + ("：查询失败" if deploys is None else ("：暂无记录" if not deploys else "")))
     for d in (deploys or [])[:3]:
         lines.append(f"　<code>{e(d['sha'])}</code> {ago(d.get('time'), now)} · {state_zh.get(d['state'], d['state'])}")
-    backups = st.get("backups")
-    lines.append("\n💾 <b>备份</b>" + ("：查询失败" if backups is None else ("：没有备份任务" if not backups else "")))
-    for b in backups or []:
-        t = b.get("lastSuccess")
-        stale = not t or (now - datetime.fromisoformat(t.replace("Z", "+00:00"))).total_seconds() > 26 * 3600
-        lines.append(f"　{'⚠️' if stale else '✅'} {e(b['name'])}：最近成功 {ago(t, now)}")
-    certs = st.get("certs")
-    lines.append("\n🔐 <b>证书</b>" + ("：查询失败" if certs is None else ("：没有证书" if not certs else "")))
-    for c in certs or []:
-        low = c.get("daysLeft") is not None and c["daysLeft"] < 21
-        lines.append(f"　{'⚠️' if low else '✅'} {e(c['name'])}：剩余 {c.get('daysLeft', '?')} 天")
     alerts = st.get("alerts7d")
-    lines.append("\n🚨 <b>7 天告警</b>" + ("：查询失败" if alerts is None else ("：没有 ✅" if not alerts else "")))
+    lines.append("\n<b>7 天告警</b>" + ("：查询失败" if alerts is None else ("：没有 ✅" if not alerts else "")))
     for a in alerts or []:
         lines.append(f"　{'🔴' if a.get('severity') == 'critical' else '🟡'} {e(a['name'])}：累计约 {a['minutes']} 分钟")
     return "\n".join(lines)
+
+
+# 证书（Secret 名）→ 哪个网站
+CERT_SITE = {
+    "ops-desk-tls": "ops.liuxd.dev（作品集、总控台）",
+    "grafana-tls": "grafana.liuxd.dev",
+    "argocd-server-tls": "argocd.liuxd.dev",
+    "relay-tls": "push.liuxd.dev（LabPager 推送）",
+    "umami-tls": "stats.liuxd.dev（访问统计）",
+    "prometheus-public-tls": "prometheus.liuxd.dev（LabPager 接口）",
+}
 
 
 async def jobs_text(k8s: ops.Cluster, tz: str = localtime.TZ_KEY) -> str:

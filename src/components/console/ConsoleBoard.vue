@@ -1,71 +1,62 @@
 <script setup lang="ts">
-// 总控台：所有项目和资源一张图。每个自动化项目是一名「数字员工」，资源是普通卡片；
-// 连线表示数据从哪儿到哪儿，最近真有数据走过的线有流动的光点。数据来自 /api/ai/console（要私人密钥），30 秒刷新一次。
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+// 总控台：我所有的项目和资源都在这一个地方看（查看类内容只在这里，Telegram 只推送和操作）。
+// 标签页：概览、告警中心、资源中心、数字员工、数据流。数据来自 /api/ai/console，30 秒刷新一次；
+// 点开资源、员工的详情走 /api/ai/console/detail（原来值班台机器人按钮的内容）。
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import ConsoleFlow from './ConsoleFlow.vue';
+import TgHtml from './TgHtml.vue';
+import { initAuth, post } from './api';
+import { STATUS, type ConsoleData, type ConsoleNode, type ConsoleResource } from './types';
 
-interface Node {
-  id: string;
-  col: string;
-  kind?: string;
-  name: string;
-  role?: string;
-  desc: string;
-  link?: string;
-  status: string;
-  lines: string[];
-}
-interface Edge {
-  from: string;
-  to: string;
-  label: string;
-  state: 'flow' | 'idle' | 'bad';
-}
-interface Data {
-  generated: string;
-  columns: { key: string; name: string }[];
-  nodes: Node[];
-  edges: Edge[];
-  summary: { staff: number; staff_ok: number; problems: string[]; flows: number; alerts: number };
-}
+const TABS = [
+  { key: 'home', name: '概览' },
+  { key: 'alerts', name: '告警中心' },
+  { key: 'resources', name: '资源中心' },
+  { key: 'staff', name: '数字员工' },
+  { key: 'flow', name: '数据流' },
+] as const;
+type Tab = (typeof TABS)[number]['key'];
 
-const STATUS: Record<string, [string, string]> = {
-  ok: ['在岗', 'ok'],
-  warn: ['需关注', 'warn'],
-  bad: ['异常', 'bad'],
-  idle: ['空闲', 'idle'],
-  manual: ['手动', 'manual'],
-  unknown: ['查不到', 'idle'],
-};
-
-const data = ref<Data | null>(null);
+const data = ref<ConsoleData | null>(null);
 const error = ref('');
-const hover = ref<string | null>(null);
-const board = ref<HTMLElement | null>(null);
-const paths = ref<{ d: string; e: Edge; mid: [number, number] }[]>([]);
-const size = ref({ w: 0, h: 0 });
-const wide = ref(true);
-let key = '';
+const tab = ref<Tab>('home');
+const panel = ref<{ title: string; html: string; loading: boolean; error: string } | null>(null);
 let timer: ReturnType<typeof setInterval> | undefined;
-let ro: ResizeObserver | undefined;
 
-const byCol = computed(() => {
+const staff = computed(() => (data.value?.nodes || []).filter((n) => n.kind === 'staff'));
+const groups = computed(() => {
   const d = data.value;
   if (!d) return [];
-  return d.columns.map((c) => ({ ...c, nodes: d.nodes.filter((n) => n.col === c.key) }));
+  return d.resource_groups
+    .map((g) => ({ ...g, items: d.resources.filter((r) => r.group === g.key) }))
+    .filter((g) => g.items.length);
 });
-const names = computed(() =>
-  Object.fromEntries((data.value?.nodes || []).map((n) => [n.id, n.name])),
-);
+// 概览「需要看一眼」：告警在前，再是状态不对的员工
+const attention = computed(() => {
+  const d = data.value;
+  if (!d) return [];
+  const out = d.alerts.slice(0, 6).map((a) => ({
+    level: a.level,
+    text: `${a.title}${a.detail ? '：' + a.detail : ''}`,
+    tab: 'alerts' as Tab,
+  }));
+  for (const n of staff.value)
+    if (n.status === 'bad' || n.status === 'warn')
+      out.push({
+        level: n.status,
+        text: `数字员工「${n.name}」${STATUS[n.status][0]}`,
+        tab: 'staff',
+      });
+  return out;
+});
 
-function linkOf(n: Node) {
-  return n.link ? n.link.replace('{k}', encodeURIComponent(key)) : '';
+function setTab(t: Tab) {
+  tab.value = t;
+  const h = new URLSearchParams(location.hash.slice(1));
+  h.set('t', t);
+  history.replaceState(null, '', '#' + h.toString());
 }
-function related(id: string) {
-  return (data.value?.edges || []).filter((e) => e.from === id || e.to === id);
-}
-function active(e: Edge) {
-  return !hover.value || e.from === hover.value || e.to === hover.value;
-}
+
 function fmt(iso: string) {
   return new Date(iso).toLocaleString('zh-CN', {
     timeZone: 'Asia/Singapore',
@@ -76,155 +67,220 @@ function fmt(iso: string) {
   });
 }
 
-// 根据卡片的实际位置画连线：左边列连到右边列用横向曲线，同一列用竖向曲线
-function layout() {
-  const el = board.value;
-  wide.value = window.innerWidth >= 1024;
-  if (!el || !data.value || !wide.value) return;
-  const box = el.getBoundingClientRect();
-  size.value = { w: box.width, h: box.height };
-  const rect = (id: string) => {
-    const c = el.querySelector(`[data-node="${id}"]`);
-    return c ? c.getBoundingClientRect() : null;
-  };
-  const out: typeof paths.value = [];
-  for (const e of data.value.edges) {
-    const a = rect(e.from);
-    const b = rect(e.to);
-    if (!a || !b) continue;
-    let x1: number, y1: number, x2: number, y2: number, d: string;
-    if (Math.abs(a.left - b.left) < 10) {
-      // 同一列：从下面连到上面（或反过来），向右鼓出去一点
-      const down = a.top < b.top;
-      x1 = a.right - box.left;
-      y1 = (down ? a.bottom - 18 : a.top + 18) - box.top;
-      x2 = b.right - box.left;
-      y2 = (down ? b.top + 18 : b.bottom - 18) - box.top;
-      d = `M${x1},${y1} C${x1 + 40},${y1} ${x2 + 40},${y2} ${x2},${y2}`;
-    } else {
-      const ltr = a.left < b.left;
-      x1 = (ltr ? a.right : a.left) - box.left;
-      y1 = a.top + a.height / 2 - box.top;
-      x2 = (ltr ? b.left : b.right) - box.left;
-      y2 = b.top + b.height / 2 - box.top;
-      const dx = Math.max(40, Math.abs(x2 - x1) / 2) * (ltr ? 1 : -1);
-      d = `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
-    }
-    out.push({ d, e, mid: [(x1 + x2) / 2, (y1 + y2) / 2] });
+async function openDetail(item: ConsoleResource | ConsoleNode) {
+  if ('html' in item && item.html) {
+    panel.value = { title: item.name, html: item.html, loading: false, error: '' };
+    return;
   }
-  paths.value = out;
+  if (!item.detail) return;
+  panel.value = { title: item.name, html: '', loading: true, error: '' };
+  try {
+    const r = await post<{ html: string }>('/api/ai/console/detail', { section: item.detail });
+    if (panel.value) panel.value = { ...panel.value, html: r.html, loading: false };
+  } catch (e) {
+    if (panel.value) panel.value = { ...panel.value, loading: false, error: (e as Error).message };
+  }
 }
 
 async function load() {
   try {
-    const r = await fetch('/api/ai/console', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ k: key }),
-    });
-    if (!r.ok) throw new Error(r.status === 404 ? '密钥不对' : `服务暂时不可用（${r.status}）`);
-    data.value = (await r.json()) as Data;
+    data.value = await post<ConsoleData>('/api/ai/console');
     error.value = '';
-    await nextTick();
-    layout();
   } catch (e) {
     error.value = (e as Error).message;
   }
 }
 
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') panel.value = null;
+}
+
 onMounted(() => {
-  key = decodeURIComponent((location.hash.match(/k=([^&]+)/) || [])[1] || '');
-  if (!key) {
-    error.value = '链接里缺少私人密钥（#k=…）';
+  const t = new URLSearchParams(location.hash.slice(1)).get('t');
+  if (TABS.some((x) => x.key === t)) tab.value = t as Tab;
+  const err = initAuth();
+  if (err) {
+    error.value = err;
     return;
   }
   load();
   timer = setInterval(load, 30000);
-  ro = new ResizeObserver(() => layout());
-  if (board.value) ro.observe(board.value);
-  window.addEventListener('resize', layout);
+  window.addEventListener('keydown', onKey);
 });
 onBeforeUnmount(() => {
   clearInterval(timer);
-  ro?.disconnect();
-  window.removeEventListener('resize', layout);
+  window.removeEventListener('keydown', onKey);
 });
 </script>
 
 <template>
-  <div class="mx-auto max-w-[1400px] px-4 pt-6 pb-16 sm:px-6">
-    <header class="flex flex-wrap items-center gap-4">
-      <img src="/favicon.svg?v=4" alt="" width="40" height="40" class="size-10" />
-      <div>
-        <h1 class="text-xl font-semibold tracking-wide">向晓 AI · 总控台</h1>
-        <p class="text-sm text-slate-400">
-          我所有的项目和资源：数字员工在不在岗、数据往哪儿流（新加坡时间）
-        </p>
+  <div class="mx-auto max-w-[1400px] px-4 pt-5 pb-16 sm:px-6">
+    <header class="flex flex-wrap items-center gap-3">
+      <img src="/favicon.svg?v=4" alt="" width="36" height="36" class="size-9" />
+      <div class="min-w-0">
+        <h1 class="text-lg font-semibold tracking-wide">向晓 AI · 总控台</h1>
+        <p class="text-xs text-slate-400">所有告警、资源、数字员工都在这里看（新加坡时间）</p>
       </div>
-      <div v-if="data" class="ml-auto flex flex-wrap gap-2 text-sm">
-        <span class="chip"
-          >👥 数字员工 {{ data.summary.staff_ok }}/{{ data.summary.staff }} 在岗</span
-        >
-        <span class="chip">⚡ {{ data.summary.flows }} 条数据流动中</span>
-        <span class="chip" :class="data.summary.alerts ? 'text-amber-300' : ''"
-          >🚨 {{ data.summary.alerts }} 条告警</span
-        >
-        <span class="chip text-slate-400">更新于 {{ fmt(data.generated) }}</span>
-      </div>
+      <span v-if="data" class="ml-auto text-xs text-slate-500"
+        >更新于 {{ fmt(data.generated) }}</span
+      >
     </header>
 
-    <p v-if="error" class="mt-8 rounded-xl bg-red-500/10 p-4 text-red-300 ring-1 ring-red-500/30">
+    <nav class="tabs mt-4" role="tablist">
+      <button
+        v-for="t in TABS"
+        :key="t.key"
+        role="tab"
+        :aria-selected="tab === t.key"
+        :class="{ on: tab === t.key }"
+        @click="setTab(t.key)"
+      >
+        {{ t.name }}
+        <span v-if="t.key === 'alerts' && data?.summary.alerts" class="count">{{
+          data.summary.alerts
+        }}</span>
+      </button>
+    </nav>
+
+    <p v-if="error" class="mt-6 rounded-xl bg-red-500/10 p-4 text-red-300 ring-1 ring-red-500/30">
       {{ error }}
-    </p>
-    <p
-      v-if="data && data.summary.problems.length"
-      class="mt-5 rounded-xl bg-amber-400/10 px-4 py-3 text-sm text-amber-200 ring-1 ring-amber-400/30"
-    >
-      需要看一眼：{{ data.summary.problems.join('、') }}
     </p>
     <p v-if="!data && !error" class="mt-10 text-slate-400">加载中……</p>
 
-    <div v-if="data" ref="board" class="relative mt-6 grid gap-6 lg:grid-cols-4 lg:gap-14">
-      <svg
-        v-if="wide"
-        class="pointer-events-none absolute inset-0 z-0"
-        :width="size.w"
-        :height="size.h"
-      >
-        <g v-for="(p, i) in paths" :key="i" :class="{ dim: !active(p.e) }">
-          <path :d="p.d" class="edge" :class="p.e.state" />
-          <text
-            v-if="hover && active(p.e)"
-            :x="p.mid[0]"
-            :y="p.mid[1] - 6"
-            class="label"
-            text-anchor="middle"
+    <template v-if="data">
+      <!-- 概览 -->
+      <section v-if="tab === 'home'" class="mt-5 space-y-5">
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <button
+            class="tile"
+            :class="data.summary.alerts_bad ? 'bad' : data.summary.alerts ? 'warn' : 'ok'"
+            @click="setTab('alerts')"
           >
-            {{ p.e.label }}
-          </text>
-        </g>
-      </svg>
+            <span>告警</span><b>{{ data.summary.alerts }}</b
+            ><small>{{
+              data.summary.alerts_bad ? `${data.summary.alerts_bad} 条异常` : '没有异常'
+            }}</small>
+          </button>
+          <button
+            class="tile"
+            :class="data.summary.resources_bad ? 'warn' : 'ok'"
+            @click="setTab('resources')"
+          >
+            <span>资源</span><b>{{ data.summary.resources }}</b
+            ><small>{{
+              data.summary.resources_bad ? `${data.summary.resources_bad} 个要看` : '全部正常'
+            }}</small>
+          </button>
+          <button
+            class="tile"
+            :class="data.summary.staff_ok < data.summary.staff ? 'warn' : 'ok'"
+            @click="setTab('staff')"
+          >
+            <span>数字员工在岗</span><b>{{ data.summary.staff_ok }}/{{ data.summary.staff }}</b
+            ><small>{{ data.summary.flows }} 条数据流动中</small>
+          </button>
+          <button class="tile ok" @click="setTab('resources')">
+            <span>网站 AI 今天花费</span><b>¥{{ data.summary.cost_today.toFixed(2) }}</b
+            ><small>模型网关账本</small>
+          </button>
+        </div>
+        <div class="box">
+          <h2 class="h2">需要看一眼</h2>
+          <p v-if="!attention.length" class="text-sm text-emerald-300">一切正常 ✅</p>
+          <ul v-else class="divide-y divide-slate-800">
+            <li v-for="(a, i) in attention" :key="i">
+              <button class="row" @click="setTab(a.tab)">
+                <i class="dot" :class="a.level"></i>
+                <span class="flex-1 text-left">{{ a.text }}</span>
+                <span class="text-slate-500">›</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </section>
 
-      <section v-for="col in byCol" :key="col.key" class="relative z-10 flex flex-col gap-4">
-        <h2 class="text-xs font-semibold tracking-[0.25em] text-amber-400">{{ col.name }}</h2>
-        <component
-          :is="linkOf(n) ? 'a' : 'div'"
-          v-for="n in col.nodes"
+      <!-- 告警中心 -->
+      <section v-if="tab === 'alerts'" class="mt-5 space-y-4">
+        <div class="box">
+          <div class="flex items-center gap-3">
+            <h2 class="h2 mb-0">所有告警（{{ data.alerts.length }}）</h2>
+            <button
+              class="ml-auto text-xs text-amber-300 hover:underline"
+              @click="openDetail({ name: '值班员自愈记录', detail: 'heal' } as ConsoleNode)"
+            >
+              值班员自愈记录 ›
+            </button>
+          </div>
+          <p v-if="!data.alerts.length" class="mt-3 text-sm text-emerald-300">没有告警 ✅</p>
+          <table v-else class="alerts mt-3">
+            <thead>
+              <tr>
+                <th>级别</th>
+                <th>告警</th>
+                <th>来源</th>
+                <th>开始</th>
+                <th>值班员处理</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(a, i) in data.alerts" :key="i">
+                <td>
+                  <span class="lv" :class="a.level">{{ a.level === 'bad' ? '异常' : '注意' }}</span>
+                </td>
+                <td>
+                  <b>{{ a.title }}</b>
+                  <p v-if="a.detail" class="text-xs text-slate-400">{{ a.detail }}</p>
+                </td>
+                <td class="text-slate-300">{{ a.source }}</td>
+                <td class="text-slate-400">{{ a.since }}</td>
+                <td class="text-slate-300">{{ a.heal }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-xs text-slate-500">
+          来源：Prometheus 告警、外部拨测、Argo
+          CD、备份、私人助理（VPS、余额等）。告警一响，值班台机器人会推到
+          Telegram，需要确认的操作在推送消息里点按钮。
+        </p>
+      </section>
+
+      <!-- 资源中心 -->
+      <section v-if="tab === 'resources'" class="mt-5 space-y-6">
+        <div v-for="g in groups" :key="g.key">
+          <h2 class="h2">{{ g.name }}</h2>
+          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <component
+              :is="r.detail || r.html ? 'button' : 'div'"
+              v-for="r in g.items"
+              :key="r.id"
+              class="card"
+              :class="[`st-${STATUS[r.status]?.[1] || 'idle'}`, { click: r.detail || r.html }]"
+              @click="openDetail(r)"
+            >
+              <div class="flex items-center gap-2">
+                <b class="truncate">{{ r.name }}</b>
+                <span class="badge">{{ STATUS[r.status]?.[0] || r.status }}</span>
+                <span v-if="r.detail || r.html" class="ml-auto text-slate-500">详情 ›</span>
+              </div>
+              <ul v-if="r.lines.length" class="mt-1.5 space-y-0.5 text-xs text-slate-300">
+                <li v-for="(l, i) in r.lines" :key="i">{{ l }}</li>
+              </ul>
+            </component>
+          </div>
+        </div>
+      </section>
+
+      <!-- 数字员工 -->
+      <section v-if="tab === 'staff'" class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div
+          v-for="n in staff"
           :key="n.id"
-          :href="linkOf(n) || undefined"
-          :target="linkOf(n) ? '_blank' : undefined"
-          rel="noopener"
-          :data-node="n.id"
           class="card"
-          :class="[
-            `st-${STATUS[n.status]?.[1] || 'idle'}`,
-            { staff: n.kind === 'staff', hot: hover === n.id },
-          ]"
-          @mouseenter="hover = n.id"
-          @mouseleave="hover = null"
+          :class="`st-${STATUS[n.status]?.[1] || 'idle'}`"
         >
           <div class="flex items-start gap-3">
-            <span v-if="n.kind === 'staff'" class="avatar">{{ n.name.slice(0, 1) }}</span>
+            <span class="avatar">{{ n.name.slice(0, 1) }}</span>
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
                 <b class="truncate">{{ n.name }}</b>
@@ -232,58 +288,220 @@ onBeforeUnmount(() => {
               </div>
               <p v-if="n.role" class="text-xs text-amber-200/80">{{ n.role }}</p>
             </div>
-            <span v-if="linkOf(n)" class="text-slate-500">↗</span>
           </div>
           <p class="mt-2 text-xs leading-relaxed text-slate-400">{{ n.desc }}</p>
           <ul v-if="n.lines.length" class="mt-2 space-y-0.5 text-xs text-slate-200">
             <li v-for="(l, i) in n.lines" :key="i">· {{ l }}</li>
           </ul>
-          <!-- 窄屏不画连线，直接写出它连着谁 -->
-          <ul v-if="!wide" class="mt-2 space-y-0.5 text-[11px] text-slate-500">
-            <li v-for="(e, i) in related(n.id)" :key="i">
-              {{ e.from === n.id ? `→ ${names[e.to]}` : `← ${names[e.from]}` }}（{{ e.label }}）{{
-                e.state === 'flow' ? ' ⚡' : e.state === 'bad' ? ' ⚠️' : ''
-              }}
-            </li>
-          </ul>
-        </component>
+          <div v-if="n.detail || n.link" class="mt-2 flex gap-4 text-xs">
+            <button v-if="n.detail" class="text-amber-300 hover:underline" @click="openDetail(n)">
+              工作记录 ›
+            </button>
+            <a
+              v-if="n.link && !n.link.includes('{k}')"
+              :href="n.link"
+              target="_blank"
+              rel="noopener"
+              class="text-slate-400 hover:underline"
+              >打开工具 ↗</a
+            >
+          </div>
+        </div>
       </section>
-    </div>
 
-    <footer v-if="data" class="mt-10 flex flex-wrap gap-5 text-xs text-slate-400">
-      <span><i class="lg ok"></i>在岗 / 正常</span>
-      <span><i class="lg warn"></i>需关注</span>
-      <span><i class="lg bad"></i>异常</span>
-      <span><i class="lg manual"></i>手动</span>
-      <span>金色流动的线：最近真有数据走过（发布、备份、调用模型、告警……）</span>
-      <span>鼠标移到卡片上：只看它的连线；点卡片：看详情</span>
-    </footer>
+      <!-- 数据流 -->
+      <section v-if="tab === 'flow'" class="mt-5">
+        <ConsoleFlow :data="data" />
+      </section>
+    </template>
+
+    <!-- 详情：手机上全屏，电脑上右侧抽屉 -->
+    <div v-if="panel" class="mask" @click.self="panel = null">
+      <aside class="drawer" role="dialog" :aria-label="panel.title">
+        <div class="flex items-center gap-3 border-b border-slate-800 pb-3">
+          <b>{{ panel.title }}</b>
+          <button
+            class="ml-auto px-2 text-xl text-slate-400"
+            aria-label="关闭"
+            @click="panel = null"
+          >
+            ×
+          </button>
+        </div>
+        <p v-if="panel.loading" class="mt-4 text-slate-400">加载中……</p>
+        <p v-if="panel.error" class="mt-4 text-red-300">{{ panel.error }}</p>
+        <TgHtml v-if="panel.html" :html="panel.html" class="mt-4" />
+      </aside>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.chip {
-  border-radius: 999px;
-  border: 1px solid rgb(51 65 85);
-  background: rgb(15 23 42 / 0.7);
-  padding: 4px 12px;
+.tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgb(30 41 59);
 }
-.card {
-  display: block;
+.tabs button {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  font-size: 14px;
+  color: rgb(148 163 184);
+  border-bottom: 2px solid transparent;
+}
+.tabs button.on {
+  color: #fde68a;
+  border-color: #fbbf24;
+}
+.count {
+  margin-left: 4px;
+  border-radius: 999px;
+  background: rgb(251 191 36 / 0.2);
+  padding: 0 6px;
+  font-size: 11px;
+  color: #fbbf24;
+}
+.h2 {
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: #fbbf24;
+}
+.box {
+  border-radius: 14px;
+  border: 1px solid rgb(30 41 59);
+  background: rgb(14 21 36 / 0.92);
+  padding: 14px 16px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   border-radius: 14px;
   border: 1px solid rgb(30 41 59);
   background: rgb(14 21 36 / 0.92);
   padding: 12px 14px;
-  transition:
-    border-color 0.2s,
-    transform 0.2s;
+  text-align: left;
 }
-.card.hot {
-  transform: translateY(-2px);
-  border-color: rgb(251 191 36 / 0.7);
+.tile span {
+  font-size: 12px;
+  color: rgb(148 163 184);
 }
-.card.staff {
-  background: linear-gradient(180deg, rgb(20 28 46 / 0.95), rgb(14 21 36 / 0.95));
+.tile b {
+  font-size: 26px;
+  line-height: 1.2;
+}
+.tile small {
+  font-size: 12px;
+  color: rgb(148 163 184);
+}
+.tile.ok b {
+  color: #34d399;
+}
+.tile.warn b {
+  color: #fbbf24;
+}
+.tile.bad b {
+  color: #f87171;
+}
+.row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  font-size: 14px;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #fbbf24;
+}
+.dot.bad {
+  background: #f87171;
+}
+.alerts {
+  width: 100%;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+.alerts th {
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 500;
+  font-size: 12px;
+  color: rgb(100 116 139);
+  border-bottom: 1px solid rgb(30 41 59);
+}
+.alerts td {
+  padding: 8px;
+  vertical-align: top;
+  border-bottom: 1px solid rgb(30 41 59 / 0.6);
+}
+.alerts td:empty::after {
+  content: '—';
+  color: rgb(71 85 105);
+}
+/* 手机上表格改成一条一张卡片，空的栏不显示 */
+@media (max-width: 767px) {
+  .alerts thead {
+    display: none;
+  }
+  .alerts tr {
+    display: block;
+    padding: 8px 0;
+    border-bottom: 1px solid rgb(30 41 59);
+  }
+  .alerts td {
+    display: block;
+    padding: 2px 0;
+    border: 0;
+  }
+  .alerts td:empty {
+    display: none;
+  }
+  .alerts td:nth-child(n + 3):not(:empty)::before {
+    color: rgb(100 116 139);
+    margin-right: 6px;
+  }
+  .alerts td:nth-child(3)::before {
+    content: '来源';
+  }
+  .alerts td:nth-child(4)::before {
+    content: '开始';
+  }
+  .alerts td:nth-child(5)::before {
+    content: '处理';
+  }
+}
+.lv {
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+  background: rgb(251 191 36 / 0.15);
+  color: #fbbf24;
+}
+.lv.bad {
+  background: rgb(248 113 113 / 0.15);
+  color: #f87171;
+}
+.card {
+  display: block;
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgb(30 41 59);
+  background: rgb(14 21 36 / 0.92);
+  padding: 12px 14px;
+  text-align: left;
+  transition: border-color 0.2s;
+}
+.card.click:hover {
+  border-color: rgb(251 191 36 / 0.6);
 }
 .avatar {
   display: grid;
@@ -326,69 +544,27 @@ onBeforeUnmount(() => {
   background: rgb(71 85 105 / 0.3);
   color: #94a3b8;
 }
-.st-ok .avatar {
-  box-shadow: 0 0 0 3px rgb(52 211 153 / 0.35);
-}
 .st-bad .avatar {
   background: #f87171;
-}
-.st-warn .avatar {
-  box-shadow: 0 0 0 3px rgb(251 191 36 / 0.45);
 }
 .st-idle .avatar {
   background: #475569;
 }
-.edge {
-  fill: none;
-  stroke-width: 1.6;
-  transition: opacity 0.2s;
+.mask {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+  background: rgb(2 6 23 / 0.6);
 }
-.edge.idle {
-  stroke: rgb(71 85 105 / 0.55);
-}
-.edge.bad {
-  stroke: rgb(248 113 113 / 0.75);
-  stroke-dasharray: 5 5;
-}
-.edge.flow {
-  stroke: #fbbf24;
-  stroke-width: 2;
-  stroke-dasharray: 6 10;
-  animation: flow 1.2s linear infinite;
-  filter: drop-shadow(0 0 3px rgb(251 191 36 / 0.6));
-}
-@keyframes flow {
-  to {
-    stroke-dashoffset: -32;
-  }
-}
-.dim {
-  opacity: 0.08;
-}
-.label {
-  fill: #fde68a;
-  font-size: 11px;
-  paint-order: stroke;
-  stroke: #070b14;
-  stroke-width: 4px;
-}
-.lg {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 6px;
-}
-.lg.ok {
-  background: #34d399;
-}
-.lg.warn {
-  background: #fbbf24;
-}
-.lg.bad {
-  background: #f87171;
-}
-.lg.manual {
-  background: #60a5fa;
+.drawer {
+  width: 100%;
+  max-width: 720px;
+  height: 100%;
+  overflow-y: auto;
+  background: #0b1220;
+  border-left: 1px solid rgb(30 41 59);
+  padding: 16px 18px 40px;
 }
 </style>

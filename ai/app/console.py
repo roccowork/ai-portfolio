@@ -1,4 +1,7 @@
-"""总控台（/console/）：我所有的项目和资源一张图看全。
+"""总控台（/console/）：我所有的项目和资源都在这一个地方看（查看类内容只在这里，Telegram 只推送和操作）。
+
+页面分标签页：概览、告警中心（所有告警集中一张表）、资源中心（服务器、网站、云服务、大模型……按类型分组）、
+数字员工、数据流（下面这张关系图）。
 
 每个自动化项目是一名「数字员工」（有名字、岗位、今天干了多少活），服务器、知识库、外部平台是「资源」；
 连线表示谁把数据交给谁，最近真有数据在这条线上走过（发布、备份、调用模型、告警……），连线就标成「流动中」。
@@ -14,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+from . import autoheal
 from . import opsagent as ops
 from . import probes
 
@@ -84,10 +88,54 @@ EDGES = [
     ("analyst", "dbs", "写入", "traffic"),
 ]
 
+# 数字员工点开后看的详情（/api/ai/console/detail 的 section）
+STAFF_DETAIL = {"xiaoxiao": "leads", "oncall": "heal"}
 SITE_PROBES = ["liuxd.dev", "cv.liuxd.dev", "roadmap.liuxd.dev", "ai-roadmap.liuxd.dev", "it.liuxd.dev"]
 # Argo CD 应用 → 它管着的节点
 ARGO_NODES = {"ops-desk": ["xiaoxiao", "oncall", "gateway"], "personal": ["butler", "editor", "coach"], "umami": ["analyst"], "git-backup": ["archivist"], "secret-backup": ["archivist"], "notes": ["archivist"],
               "monitoring-extras": ["watcher"], "platform": ["k3s", "watcher"]}
+
+
+# 资源中心的分组（顺序就是页面上的顺序）。私人助理报上来的资源（VPS、余额等）用同样的 group 键
+RESOURCE_GROUPS = [
+    {"key": "server", "name": "服务器"},
+    {"key": "site", "name": "网站"},
+    {"key": "dependency", "name": "外部依赖"},
+    {"key": "model", "name": "大模型和用量"},
+    {"key": "release", "name": "发布、备份和证书"},
+    {"key": "cloud", "name": "云服务和代码"},
+]
+LEVELS = {"bad": 0, "warn": 1}  # 告警排序：异常在前
+
+
+def private_list(asst: dict | None, field: str, limit: int) -> list[dict]:
+    """私人助理报上来的告警或资源（字段见 private_alerts / private_resources），只取对象"""
+    raw = (asst or {}).get(field)
+    return [x for x in raw[:limit] if isinstance(x, dict)] if isinstance(raw, list) else []
+
+
+def private_alerts(asst: dict | None) -> list[dict]:
+    """私人助理的告警：[{level: bad|warn, title, detail, since}]，比如 VPS 掉线、余额快用完"""
+    out = []
+    for x in private_list(asst, "alerts", 20):
+        if x.get("level") in LEVELS and x.get("title"):
+            out.append({"level": x["level"], "source": "私人助理", "title": str(x["title"])[:60], "detail": str(x.get("detail") or "")[:200],
+                        "since": str(x.get("since") or "")[:40]})
+    return out
+
+
+def private_resources(asst: dict | None) -> list[dict]:
+    """私人助理的资源：[{id, group, name, status, lines, detail}]，detail 是 Telegram 格式的详情（HTML 子集），前端会过滤标签"""
+    keys = {g["key"] for g in RESOURCE_GROUPS}
+    out = []
+    for x in private_list(asst, "resources", 20):
+        if not str(x.get("id") or "").strip() or not x.get("name") or x.get("group") not in keys:
+            continue
+        out.append({"id": "p-" + str(x["id"]).strip()[:30], "group": x["group"], "name": str(x["name"])[:30],
+                    "status": x.get("status") if x.get("status") in PRIVATE_STATUS else "unknown",
+                    "lines": [str(line)[:100] for line in (x.get("lines") or [])[:4] if line],
+                    **({"html": str(x["detail"])[:6000]} if x.get("detail") else {})})
+    return out
 
 
 # 私人助理自己报的私人数字员工（私人项目的名字和说明只在私有仓库，公开代码里不写）：
@@ -176,7 +224,7 @@ class Console:
         loc = self.local()
         pr = {p["name"]: p for p in probe or []}
         firing = [a for a in alerts or [] if a.get("state") == "firing" and a.get("severity") not in ("info", "none")]
-        nodes = {n["id"]: {**n, "status": "unknown", "lines": []} for n in NODES}
+        nodes = {n["id"]: {**n, "status": "unknown", "lines": [], **({"detail": STAFF_DETAIL[n["id"]]} if n["id"] in STAFF_DETAIL else {})} for n in NODES}
 
         def set_(nid: str, status: str, *lines: str) -> None:
             nodes[nid]["status"] = status
@@ -304,16 +352,113 @@ class Console:
                 broken = nodes[a]["status"] == "bad" or nodes[b]["status"] == "bad"
                 edges.append({"from": a, "to": b, "label": label, "state": "bad" if broken else ("flow" if flow else "idle")})
         staff = [n for n in nodes.values() if n.get("kind") == "staff"]
+        alert_list = collect_alerts(alerts, probe, argo, st, heal, now) + private_alerts(asst)
+        alert_list.sort(key=lambda a: LEVELS[a["level"]])
+        resources = collect_resources(probe, argo, st, loc, pods, mem, cpu, now) + private_resources(asst)
         return {
             "generated": now.isoformat(),
             "columns": COLUMNS,
             "nodes": list(nodes.values()),
             "edges": edges,
+            "alerts": alert_list,
+            "resource_groups": RESOURCE_GROUPS,
+            "resources": resources,
             "summary": {
                 "staff": len(staff),
                 "staff_ok": sum(1 for n in staff if n["status"] == "ok"),
                 "problems": [n["name"] for n in nodes.values() if n["status"] in ("bad", "warn")],
                 "flows": sum(1 for e in edges if e["state"] == "flow"),
-                "alerts": len(firing),
+                "alerts": len(alert_list),
+                "alerts_bad": sum(1 for a in alert_list if a["level"] == "bad"),
+                "resources": len(resources),
+                "resources_bad": sum(1 for r in resources if r["status"] in ("bad", "warn")),
+                "cost_today": round(float(today["cost"]), 2),
             },
         }
+
+
+def collect_alerts(alerts: list[dict] | None, probe: list[dict] | None, argo: list[dict] | None, st: dict | None, heal: list[dict], now: datetime) -> list[dict]:
+    """告警中心：所有来源的告警排成一张表 [{level, source, title, detail, since, heal}]。
+    heal 是值班员对这条告警的处理（最近 24 小时同名告警的最后一条自愈记录）"""
+    out: list[dict] = []
+    if alerts is None:
+        out.append({"level": "warn", "source": "Prometheus", "title": "告警查不到", "detail": "Prometheus 暂时连不上，下面的列表可能不全", "since": ""})
+    handled = {}
+    for h in heal or []:
+        if h.get("alert"):
+            handled[h["alert"]] = h
+    for a in alerts or []:
+        if a.get("severity") in ("info", "none"):
+            continue
+        where = " / ".join(x for x in (a.get("namespace"), a.get("pod")) if x)
+        firing = a.get("state") == "firing"
+        h = handled.get(a.get("name"))
+        out.append({
+            "level": "bad" if firing and a.get("severity") == "critical" else "warn",
+            "source": "Prometheus" + ("" if firing else "（等待中）"),
+            "title": str(a.get("name") or "?"),
+            "detail": " · ".join(x for x in (where, str(a.get("summary") or "")[:160]) if x),
+            "since": str(a.get("since") or ""),
+            **({"heal": _heal_line(h)} if h else {}),
+        })
+    for p in probe or []:
+        if not p["ok"]:
+            out.append({"level": "bad", "source": "外部拨测", "title": f"{p['name']} 打不开", "detail": "自己的网站" if p["group"] == "own" else "外部依赖", "since": ""})
+        elif p["group"] == "own" and p.get("cert_days") is not None and p["cert_days"] < 14:
+            out.append({"level": "warn", "source": "外部拨测", "title": f"{p['name']} 证书快过期", "detail": f"还剩 {p['cert_days']} 天", "since": ""})
+    for a in argo or []:
+        if not (a["sync"] == "Synced" and a["health"] == "Healthy"):
+            out.append({"level": "bad" if a["health"] in ("Degraded", "Missing") else "warn", "source": "Argo CD", "title": f"{a['name']} 没同步或不健康",
+                        "detail": f"同步：{a['sync'] or '?'}，健康：{a['health'] or '?'}", "since": ""})
+    for b in (st or {}).get("backups") or []:
+        if not _recent(b.get("lastSuccess"), now):
+            out.append({"level": "warn", "source": "备份", "title": f"{b['name']} 超过 26 小时没成功", "detail": f"最近成功：{_ago(b.get('lastSuccess'), now)}", "since": ""})
+    # 自愈记录里还没修好、Prometheus 那边已经不报的（比如等我确认的操作）
+    for name, h in handled.items():
+        if h.get("status") in ("waiting", "failed") and not any(a.get("name") == name for a in alerts or []):
+            out.append({"level": "warn", "source": "值班员", "title": name, "detail": "告警已经消失，但处理还没完成", "since": "", "heal": _heal_line(h)})
+    return out
+
+
+def _heal_line(h: dict) -> str:
+    a = h.get("action") or {}
+    act = f"{autoheal.ACTION_ZH.get(a.get('action'), a.get('action'))} {a.get('target')}" if a.get("action") else ""
+    return " · ".join(x for x in (autoheal.STATUS_ZH.get(h.get("status") or "", h.get("status") or ""), act, (h.get("result") or "")[:80]) if x)
+
+
+def collect_resources(probe, argo, st, loc, pods, mem, cpu, now: datetime) -> list[dict]:
+    """资源中心：每个资源 {id, group, name, status, lines, detail}；detail 是点开后看的详情（/api/ai/console/detail 的 section）"""
+    out: list[dict] = []
+
+    def add(rid: str, group: str, name: str, status: str, lines: list[str], detail: str = "") -> None:
+        out.append({"id": rid, "group": group, "name": name, "status": status, "lines": [x for x in lines if x], **({"detail": detail} if detail else {})})
+
+    nums = " · ".join(x for x in (f"内存 {mem:.0f}%" if mem is not None else "", f"CPU {cpu:.0f}%" if cpu is not None else "") if x)
+    add("k3s", "server", "香港服务器（K3s）", "unknown" if pods is None and mem is None else ("warn" if (mem or 0) > 85 or (cpu or 0) > 85 else "ok"),
+        [f"{pods:.0f} 个 Pod 运行中" if pods is not None else "", nums], "status")
+    add("pods", "server", "Pod 和数据盘", "ok" if pods is not None else "unknown", ["内存、CPU 占用前 5，重启过的，数据盘用量"], "pods")
+    add("jobs", "server", "定时任务", "ok", ["备份、周报等任务：下次几点、上次成没成功"], "jobs")
+    for p in probe or []:
+        line = f"{p['ms']} ms" if p["ms"] is not None else ""
+        if p["group"] == "own" and p.get("cert_days") is not None:
+            line += f" · 证书 {p['cert_days']} 天"
+        add("probe-" + p["name"], "site" if p["group"] == "own" else "dependency", p["name"],
+            "bad" if not p["ok"] else ("warn" if p["group"] == "own" and p.get("cert_days") is not None and p["cert_days"] < 14 else "ok"), [line if p["ok"] else "打不开"], "probes")
+    today = loc["usage_today"]
+    add("ai-usage", "model", "网站 AI 用量", "ok" if loc["enabled"] else "warn", [f"今天 {today['calls']} 次调用，约 ¥{today['cost']:.2f}"], "usage")
+    deploys = (st or {}).get("deploys") or []
+    apps = argo or []
+    bad_apps = [a["name"] for a in apps if not (a["sync"] == "Synced" and a["health"] == "Healthy")]
+    add("argo", "release", "发布（Argo CD）", "unknown" if argo is None else ("warn" if bad_apps else "ok"),
+        [f"{len(apps) - len(bad_apps)}/{len(apps)} 个应用已同步、健康" if argo is not None else "", f"上次发布 {_ago(deploys[0].get('time'), now)}" if deploys else ""], "live")
+    backups = (st or {}).get("backups") or []
+    stale = [b["name"] for b in backups if not _recent(b.get("lastSuccess"), now)]
+    add("backups", "release", "备份", "unknown" if not backups else ("warn" if stale else "ok"),
+        [f"{len(backups) - len(stale)}/{len(backups)} 个 26 小时内成功" if backups else "", "过期：" + "、".join(stale) if stale else ""], "live")
+    certs = (st or {}).get("certs") or []
+    low = [c["name"] for c in certs if c.get("daysLeft") is not None and c["daysLeft"] < 21]
+    if certs:
+        add("certs", "release", "证书", "warn" if low else "ok", [f"{len(certs)} 张", "快过期：" + "、".join(low) if low else ""], "live")
+    add("cloudflare", "cloud", "Cloudflare", "ok", ["DNS、静态网站（Pages）、备份存储（R2）"])
+    add("github", "cloud", "GitHub", "ok", ["全部项目的代码和文档，每天镜像备份到 R2"])
+    return out

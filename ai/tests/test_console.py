@@ -125,9 +125,29 @@ def test_private_staff_from_assistant(tmp_path):
     assert d["summary"]["staff"] == 11
 
 
+def test_alert_center_and_resources(tmp_path):
+    # 告警中心：拨测打不开、Argo CD 不健康、备份过期都排成一张表，异常在前；资源中心按分组列出，带详情入口
+    asst = {"bot": True, "alerts": [{"level": "warn", "title": "示例 VPS 掉线", "detail": "演示数据"}, {"level": "oops", "title": "非法级别"}],
+            "resources": [{"id": "vps1", "group": "server", "name": "示例 VPS", "status": "ok", "lines": ["在线"], "detail": "<b>演示</b>"},
+                          {"id": "x", "group": "nowhere", "name": "非法分组"}]}
+    d = asyncio.run(make(tmp_path, asst).build())
+    titles = [a["title"] for a in d["alerts"]]
+    assert "it.liuxd.dev 打不开" in titles and "umami 没同步或不健康" in titles and "backup-github 超过 26 小时没成功" in titles
+    assert "示例 VPS 掉线" in titles and "非法级别" not in titles
+    assert [a["level"] for a in d["alerts"]] == sorted((a["level"] for a in d["alerts"]), key=lambda x: console.LEVELS[x])
+    r = {x["id"]: x for x in d["resources"]}
+    assert r["probe-it.liuxd.dev"]["status"] == "bad" and r["probe-it.liuxd.dev"]["group"] == "site" and r["probe-it.liuxd.dev"]["detail"] == "probes"
+    assert r["probe-阿里云百炼"]["group"] == "dependency" and r["k3s"]["detail"] == "status" and r["argo"]["status"] == "warn"
+    assert r["p-vps1"]["html"] == "<b>演示</b>" and "p-x" not in r
+    assert d["summary"]["alerts"] == len(d["alerts"]) and d["summary"]["cost_today"] == 0.12
+    assert {n["id"]: n.get("detail") for n in d["nodes"]}["xiaoxiao"] == "leads"
+
+
 def test_endpoint_needs_key(tmp_path):
     s = Settings(api_key="test", data_dir=tmp_path, cases_dir=CASES, samples_dir=tmp_path, me_token="secret-k")
     with TestClient(create_app(s, Gateway(s, Ledger(tmp_path / "ai.db")))) as c:
         assert c.post("/api/ai/console", json={"k": "wrong"}).status_code == 404
         # 不在集群里（没有 ServiceAccount）时密钥对了也查不到
         assert c.post("/api/ai/console", json={"k": "secret-k"}).status_code == 503
+        assert c.post("/api/ai/console/detail", json={"k": "wrong", "section": "pods"}).status_code == 404
+        assert c.post("/api/ai/console/detail", json={"k": "secret-k", "section": "nope"}).status_code == 404

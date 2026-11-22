@@ -627,6 +627,32 @@ def create_app(
             raise HTTPException(503, "总控台只能在集群里运行")
         return await board_cache.get(board.build)
 
+    # 总控台点开某个资源、员工后看的详情：就是原来值班台按钮的内容（Telegram 的 HTML 格式，前端只放行 b、i、code、a 标签）
+    details = {
+        "status": lambda: dutybot.status_text(k8s, kuma_status if s.kuma_api_key else None),
+        "pods": lambda: dutybot.pods_text(k8s),
+        "probes": _probes_text,
+        "heal": lambda: asyncio.to_thread(dutybot.heal_text, healer.store, 10),
+        "live": platform,
+        "jobs": lambda: dutybot.jobs_text(k8s),
+        "leads": lambda: asyncio.to_thread(dutybot.leads_text, ledger, 10),
+        "usage": usage_card,
+    }
+    detail_cache: dict[str, opswall.Cache] = {k: opswall.Cache(20) for k in details}
+
+    class DetailIn(KeyIn):
+        section: str = Field(min_length=1, max_length=20)
+
+    @app.post("/api/ai/console/detail")
+    async def console_detail(body: DetailIn):
+        if not s.me_token or not secrets.compare_digest(body.k.encode(), s.me_token.encode()):
+            raise HTTPException(404, "Not Found")
+        if body.section not in details:
+            raise HTTPException(404, "没有这一项")
+        if not k8s.enabled:
+            raise HTTPException(503, "总控台只能在集群里运行")
+        return {"html": await detail_cache[body.section].get(details[body.section])}
+
     @app.get("/api/ai/ops/overview")
     async def ops_overview():
         return await wall.overview()

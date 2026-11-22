@@ -5,7 +5,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import ConsoleFlow from './ConsoleFlow.vue';
 import TgHtml from './TgHtml.vue';
-import { initAuth, post } from './api';
+import { canFullscreen, initAuth, post, startTab, toggleFullscreen } from './api';
 import { STATUS, type ConsoleData, type ConsoleNode, type ConsoleResource } from './types';
 
 const TABS = [
@@ -50,11 +50,13 @@ const attention = computed(() => {
   return out;
 });
 
+const fullscreen = ref(false);
+
 function setTab(t: Tab) {
   tab.value = t;
-  const h = new URLSearchParams(location.hash.slice(1));
-  h.set('t', t);
-  history.replaceState(null, '', '#' + h.toString());
+  const q = new URLSearchParams(location.search);
+  q.set('t', t);
+  history.replaceState(null, '', `${location.pathname}?${q.toString()}${location.hash}`);
 }
 
 function fmt(iso: string) {
@@ -92,9 +94,10 @@ function onKey(e: KeyboardEvent) {
 }
 
 onMounted(() => {
-  const t = new URLSearchParams(location.hash.slice(1)).get('t');
-  if (TABS.some((x) => x.key === t)) tab.value = t as Tab;
   const err = initAuth();
+  const t = startTab();
+  if (TABS.some((x) => x.key === t)) tab.value = t as Tab;
+  fullscreen.value = canFullscreen();
   if (err) {
     error.value = err;
     return;
@@ -120,6 +123,13 @@ onBeforeUnmount(() => {
       <span v-if="data" class="ml-auto text-xs text-slate-500"
         >更新于 {{ fmt(data.generated) }}</span
       >
+      <button
+        v-if="fullscreen"
+        class="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-300"
+        @click="toggleFullscreen"
+      >
+        ⛶ 全屏
+      </button>
     </header>
 
     <nav class="tabs mt-4" role="tablist">

@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 from fastapi.testclient import TestClient
 
-from app import console
+from app import console, tgauth
 from app import opsagent as ops
 from app.config import Settings
 from app.gateway import Gateway
@@ -143,11 +143,46 @@ def test_alert_center_and_resources(tmp_path):
     assert {n["id"]: n.get("detail") for n in d["nodes"]}["xiaoxiao"] == "leads"
 
 
-def test_endpoint_needs_key(tmp_path):
-    s = Settings(api_key="test", data_dir=tmp_path, cases_dir=CASES, samples_dir=tmp_path, me_token="secret-k")
-    with TestClient(create_app(s, Gateway(s, Ledger(tmp_path / "ai.db")))) as c:
-        assert c.post("/api/ai/console", json={"k": "wrong"}).status_code == 404
-        # 不在集群里（没有 ServiceAccount）时密钥对了也查不到
-        assert c.post("/api/ai/console", json={"k": "secret-k"}).status_code == 503
-        assert c.post("/api/ai/console/detail", json={"k": "wrong", "section": "pods"}).status_code == 404
-        assert c.post("/api/ai/console/detail", json={"k": "secret-k", "section": "nope"}).status_code == 404
+def test_telegram_auth():
+    # Telegram 小程序的 initData：签名对、没过期、是主人本人才放行
+    now = 1_800_000_000
+    good = tgauth.sign({"auth_date": str(now - 60), "user": '{"id":42,"first_name":"x"}', "query_id": "q"}, "bot-token")
+    assert tgauth.verify(good, "bot-token", "42", now=now)
+    assert not tgauth.verify(good, "other-token", "42", now=now)  # 别的机器人签的
+    assert not tgauth.verify(good, "bot-token", "43", now=now)  # 不是主人
+    assert not tgauth.verify(good, "bot-token", "42", now=now + 3 * 86400)  # 过期
+    assert not tgauth.verify(good.replace("id%22%3A42", "id%22%3A43"), "bot-token", "43", now=now)  # 改了内容签名就不对
+    assert not tgauth.verify("", "bot-token", "42") and not tgauth.verify("a=%%%", "bot-token", "42")
+
+
+def test_endpoint_needs_telegram(tmp_path):
+    import time
+
+    calls: list = []
+
+    class FakeTg:
+        chat_id = "42"
+
+        async def call(self, method, **params):
+            calls.append((method, params))
+            if method == "getUpdates":
+                await asyncio.sleep(3600)
+            return True
+
+        async def send(self, *a, **k):
+            return {}
+
+        async def close(self):
+            pass
+
+    s = Settings(api_key="test", data_dir=tmp_path, cases_dir=CASES, samples_dir=tmp_path, tg_token="bot-token", tg_chat_id="42")
+    good = tgauth.sign({"auth_date": str(int(time.time())), "user": '{"id":42}'}, "bot-token")
+    with TestClient(create_app(s, Gateway(s, Ledger(tmp_path / "ai.db")), telegram=FakeTg())) as c:  # type: ignore[arg-type]
+        assert c.post("/api/ai/console", json={"init": "auth_date=1&hash=x"}).status_code == 404
+        # 不在集群里（没有 ServiceAccount）时身份对了也查不到
+        assert c.post("/api/ai/console", json={"init": good}).status_code == 503
+        assert c.post("/api/ai/console/detail", json={"init": "x=1", "section": "pods"}).status_code == 404
+        assert c.post("/api/ai/console/detail", json={"init": good, "section": "nope"}).status_code == 404
+    # 值班台机器人输入框左边的菜单按钮设成总控台小程序
+    menu = next(p for m, p in calls if m == "setChatMenuButton")
+    assert menu["menu_button"] == {"type": "web_app", "text": "总控台", "web_app": {"url": "https://ops.liuxd.dev/console/"}}

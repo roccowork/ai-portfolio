@@ -90,8 +90,8 @@ class Settings:
     # 平台实况的数据（站点 nginx 提供的 /status.json，集群内地址），值班台的「📊 平台实况」读它
     # 总控台读私人助理的运行情况（集群内地址，Ingress 不转发 /internal，外网访问不到）
     assistant_url: str = field(default_factory=lambda: os.environ.get("ASSISTANT_URL", "http://assistant.ops-desk.svc/internal/summary"))
-    # 总控台（/console/）的私人密钥，和私人助理的打卡网页同一个（Secret ai-api 的 ME_TOKEN）；没配就关闭总控台
-    me_token: str = field(default_factory=lambda: os.environ.get("ME_TOKEN", ""))
+    # 总控台的地址：值班台机器人输入框左边的菜单按钮打开它（Telegram 小程序），推送消息里的「在总控台查看」也指向它
+    console_url: str = field(default_factory=lambda: os.environ.get("CONSOLE_URL", "https://ops.liuxd.dev/console/"))
     status_url: str = field(default_factory=lambda: os.environ.get("STATUS_URL", "http://ops-desk.ops-desk.svc/status.json"))
     # 网站的 Telegram 机器人（Secret telegram-ops）：自愈审批、访客留言；没配就不启动
     tg_token: str = field(default_factory=lambda: os.environ.get("TELEGRAM_BOT_TOKEN", ""))

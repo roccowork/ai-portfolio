@@ -1,5 +1,5 @@
 ---
-// 总控台：我所有的项目和资源一张图看全（私人页面，要密钥，不让搜索引擎收录）。不用 Base 布局：全屏深色、没有网站导航
+// 总控台：所有告警、资源、数字员工都在这里看（私人页面：只能从值班台机器人的 Telegram 小程序打开，不让搜索引擎收录）。不用 Base 布局：全屏深色、没有网站导航
 import '../../styles/global.css';
 import ConsoleBoard from '../../components/console/ConsoleBoard.vue';
 ---
@@ -12,6 +12,8 @@ import ConsoleBoard from '../../components/console/ConsoleBoard.vue';
     <meta name="robots" content="noindex, nofollow" />
     <title>总控台 · 向晓 AI</title>
     <link rel="icon" href="/favicon.svg?v=4" type="image/svg+xml" />
+    <!-- Telegram 小程序的官方脚本：给页面 initData（身份）和全屏等能力 -->
+    <script is:inline src="https://telegram.org/js/telegram-web-app.js?59"></script>
   </head>
   <body class="min-h-screen bg-[#070b14] bg-[radial-gradient(ellipse_80%_40%_at_50%_0%,rgba(245,158,11,0.10),transparent_70%)] font-sans text-slate-100 antialiased">
     <ConsoleBoard client:only="vue" />

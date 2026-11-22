@@ -25,7 +25,7 @@ from . import content as ct
 from . import demo_shop
 from . import dora
 from . import dutybot
-from . import probes
+from . import probes, tgauth
 from . import opsdocs as od
 from .evals import agent as agent_eval
 from .evals import rag as rag_eval
@@ -250,14 +250,24 @@ def create_app(
                 log.warning("运维手册建索引失败，10 分钟后重试：%s", e)
                 await asyncio.sleep(600)
 
+    async def set_console_menu() -> None:
+        """输入框左边的菜单按钮 = 总控台（Telegram 小程序）。查看类内容只在总控台，机器人只推送和操作"""
+        try:
+            await tg.call("setChatMenuButton", chat_id=tg.chat_id, menu_button={"type": "web_app", "text": "总控台", "web_app": {"url": s.console_url}})  # type: ignore[union-attr]
+        except Exception as e:  # noqa: BLE001 —— 设置失败不影响机器人和网站
+            log.warning("设置总控台菜单按钮失败：%s", e)
+
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI):
         task = asyncio.create_task(build_index())
         poll = asyncio.create_task(bot.run()) if bot else None
+        menu_task = asyncio.create_task(set_console_menu()) if tg else None
         yield
         task.cancel()
         if poll:
             poll.cancel()
+        if menu_task:
+            menu_task.cancel()
         if tg:
             await tg.close()
         await gw.close()
@@ -615,14 +625,18 @@ def create_app(
     board = console.Console(k8s, status_json, console_local, s.assistant_url)
     board_cache = opswall.Cache(20)
 
-    class KeyIn(BaseModel):
-        k: str = Field(min_length=1, max_length=200)
+    class ConsoleIn(BaseModel):
+        init: str = Field(min_length=1, max_length=4096)  # Telegram 小程序的 initData（放请求体，不进访问日志）
+
+    def console_auth(body: ConsoleIn) -> None:
+        """总控台只认值班台机器人小程序里的主人本人（tgauth.py）；不对就当不存在"""
+        if not tgauth.verify(body.init, s.tg_token, s.tg_chat_id):
+            raise HTTPException(404, "Not Found")
 
     @app.post("/api/ai/console")
-    async def console_data(body: KeyIn):
-        """总控台：所有项目和资源的状态和关系。要私人密钥（密钥放请求体，不进访问日志）；不对就当不存在"""
-        if not s.me_token or not secrets.compare_digest(body.k.encode(), s.me_token.encode()):
-            raise HTTPException(404, "Not Found")
+    async def console_data(body: ConsoleIn):
+        """总控台：所有项目和资源的状态和关系"""
+        console_auth(body)
         if not k8s.enabled:
             raise HTTPException(503, "总控台只能在集群里运行")
         return await board_cache.get(board.build)
@@ -640,13 +654,12 @@ def create_app(
     }
     detail_cache: dict[str, opswall.Cache] = {k: opswall.Cache(20) for k in details}
 
-    class DetailIn(KeyIn):
+    class DetailIn(ConsoleIn):
         section: str = Field(min_length=1, max_length=20)
 
     @app.post("/api/ai/console/detail")
     async def console_detail(body: DetailIn):
-        if not s.me_token or not secrets.compare_digest(body.k.encode(), s.me_token.encode()):
-            raise HTTPException(404, "Not Found")
+        console_auth(body)
         if body.section.startswith("p:") and re.fullmatch(r"p:[a-z]{1,18}", body.section):
             # 私人资源（VPS、私人助理的用量余额）的详情在私人助理那边，集群内转一下
             base = s.assistant_url.rsplit("/internal/", 1)[0]

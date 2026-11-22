@@ -157,6 +157,7 @@ def test_alert_center_and_resources(tmp_path):
     assert [a["level"] for a in d["alerts"]] == sorted((a["level"] for a in d["alerts"]), key=lambda x: console.LEVELS[x])
     r = {x["id"]: x for x in d["resources"]}
     assert r["probe-it.liuxd.dev"]["status"] == "bad" and r["probe-it.liuxd.dev"]["group"] == "site" and r["probe-it.liuxd.dev"]["detail"] == "s:it.liuxd.dev"
+    assert r["probe-ops.liuxd.dev"]["lines"][0].startswith("作品集网站")  # 每个网站一句话简介
     assert r["probe-阿里云百炼"]["group"] == "dependency" and r["k3s"]["detail"] == "status" and r["argo"]["status"] == "warn"
     assert r["p-vps1"]["detail"] == "p:vps" and "p-x" not in r and "probe-示例VPS" not in r and "detail" not in r["p-y"]
     assert d["summary"]["alerts"] == len(d["alerts"]) and d["summary"]["cost_today"] == 0.12

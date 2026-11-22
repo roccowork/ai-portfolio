@@ -503,7 +503,7 @@ def collect_resources(probe, argo, st, loc, pods, mem, cpu, now: datetime) -> li
         if p["group"] == "own" and p.get("cert_days") is not None:
             line += f" · 证书 {p['cert_days']} 天"
         add("probe-" + p["name"], "site" if p["group"] == "own" else "dependency", p["name"],
-            "bad" if not p["ok"] else ("warn" if p["group"] == "own" and p.get("cert_days") is not None and p["cert_days"] < 14 else "ok"), [line if p["ok"] else "打不开"], "s:" + p["name"])
+            "bad" if not p["ok"] else ("warn" if p["group"] == "own" and p.get("cert_days") is not None and p["cert_days"] < 14 else "ok"), [probes.ABOUT.get(p["name"], ""), line if p["ok"] else "打不开"], "s:" + p["name"])
     today = loc["usage_today"]
     add("ai-usage", "model", "网站 AI 用量", "ok" if loc["enabled"] else "warn", [f"今天 {today['calls']} 次调用，约 ¥{today['cost']:.2f}"], "usage")
     deploys = (st or {}).get("deploys") or []

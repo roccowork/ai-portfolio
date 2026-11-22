@@ -50,6 +50,26 @@ def text(items: list[dict]) -> str:
     return "\n".join(lines)
 
 
+# 每个拨测目标是干什么的（总控台卡片和详情里显示一句）
+ABOUT = {
+    "ops.liuxd.dev": "作品集网站：项目案例、值班大屏、AI 问答，总控台也在这里",
+    "liuxd.dev": "个人名片页",
+    "cv.liuxd.dev": "简历网站",
+    "roadmap.liuxd.dev": "运维自动化职业路线图",
+    "ai-roadmap.liuxd.dev": "AI 应用开发学习路线图",
+    "it.liuxd.dev": "IT 外包服务官网",
+    "grafana.liuxd.dev": "监控仪表盘（Grafana）",
+    "argocd.liuxd.dev": "发布系统（Argo CD）：仓库推送后自动同步上线",
+    "push.liuxd.dev": "LabPager App 的推送中转",
+    "stats.liuxd.dev": "网站访问统计（Umami）",
+    "prometheus.liuxd.dev": "监控数据接口，给 LabPager App 用（要密码）",
+    "阿里云百炼": "大模型接口：网站 AI 问答、运维 Agent",
+    "GitHub": "代码仓库和 CI",
+    "GHCR 镜像仓库": "容器镜像仓库：上线时从这里拉镜像",
+    "Cloudflare": "DNS、Pages 网站托管、R2 备份",
+    "Telegram": "值班台和私人助理机器人：告警推送",
+}
+
 # 托管在 Cloudflare Pages 的（挂了集群内部看不出来，证书由 Cloudflare 续期）；其余自己的网站在这台服务器上，证书由 cert-manager 续期
 CF_PAGES = {"liuxd.dev", "cv.liuxd.dev", "roadmap.liuxd.dev", "ai-roadmap.liuxd.dev", "it.liuxd.dev"}
 
@@ -71,7 +91,10 @@ async def site_text(c: ops.Cluster, name: str) -> str:
     worst = await one(f"max_over_time(probe_duration_seconds{sel}[24h]) * 1000")
     cert = await one(f"probe_ssl_earliest_cert_expiry{sel}")
     group = (await c.query(f"probe_success{sel}"))[0]["metric"].get("group", "")
-    lines = [f"<b>{html.escape(name)}</b>  " + ("🟢 正常" if ok == 1 else "🔴 打不开"), ""]
+    lines = [f"<b>{html.escape(name)}</b>  " + ("🟢 正常" if ok == 1 else "🔴 打不开")]
+    if name in ABOUT:
+        lines.append(html.escape(ABOUT[name]))
+    lines.append("")
     if ms is not None:
         lines.append(f"现在 {ms * 1000:.0f} ms")
     if up is not None:

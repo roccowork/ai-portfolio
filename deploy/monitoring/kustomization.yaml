@@ -33,6 +33,11 @@ configMapGenerator:
     files:
       - scripts/r2-usage.mjs
       - scripts/telegram.mjs
+  # Blackbox Exporter 的模块配置（改了自动重启加载，见 blackbox.yaml 开头）
+  - name: blackbox-exporter
+    namespace: monitoring
+    files:
+      - blackbox/blackbox.yml
   # 仪表盘：Grafana 的 sidecar 会自动加载带 grafana_dashboard=1 标签的 ConfigMap
   - name: grafana-dashboards-ops-desk
     namespace: monitoring

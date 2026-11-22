@@ -3,37 +3,9 @@
 # - own：自己的网站。ops、grafana、argocd 在这台服务器上（dify 2026-11 停用，不再拨测）；liuxd.dev、cv、roadmap、ai-roadmap、it 托管在 Cloudflare Pages，挂了集群内部看不出来
 # - dependency：本站依赖的外部服务。AI 变慢、发不出告警时，用来分清是自己的问题还是对方的问题
 # - vps：私人的 VPS 节点端口（TCP），Probe 和告警写在私有仓库（地址不进公开仓库），用下面的 tcp_connect 模块
+# 模块配置在 blackbox/blackbox.yml（kustomization.yaml 的 configMapGenerator 生成 ConfigMap：内容变了名字的哈希后缀跟着变，Deployment 自动重启加载。
+# 2026-11-22 踩坑：原来是普通 ConfigMap，加了 tcp_connect 模块但 Pod 没重启、读不到，VPS 检测全部失败报 TargetDown，VPSDown 反而发不出来）
 # 探测目标写在下面两个 Probe 里，Prometheus 每分钟探测一次。运维 Agent 用 promql 工具就能查到这些指标
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: blackbox-exporter
-  namespace: monitoring
-data:
-  blackbox.yml: |
-    modules:
-      # 自己的网站：必须返回 2xx（跟随跳转）
-      http_2xx:
-        prober: http
-        timeout: 10s
-        http:
-          preferred_ip_protocol: ip4
-          follow_redirects: true
-      # 外部依赖：不带密钥访问，返回 401 / 403 / 404 也说明服务在线、网络通；连不上或 5xx 才算失败
-      http_reachable:
-        prober: http
-        timeout: 10s
-        http:
-          preferred_ip_protocol: ip4
-          follow_redirects: true
-          valid_status_codes: [200, 204, 301, 302, 400, 401, 403, 404, 405]
-      # 只看 TCP 端口连不连得上（VPS 节点端口），耗时就是从这台服务器连过去的延迟
-      tcp_connect:
-        prober: tcp
-        timeout: 10s
-        tcp:
-          preferred_ip_protocol: ip4
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:

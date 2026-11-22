@@ -1,0 +1,22 @@
+modules:
+  # 自己的网站：必须返回 2xx（跟随跳转）
+  http_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      follow_redirects: true
+  # 外部依赖：不带密钥访问，返回 401 / 403 / 404 也说明服务在线、网络通；连不上或 5xx 才算失败
+  http_reachable:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      follow_redirects: true
+      valid_status_codes: [200, 204, 301, 302, 400, 401, 403, 404, 405]
+  # 只看 TCP 端口连不连得上（VPS 节点端口），耗时就是从这台服务器连过去的延迟
+  tcp_connect:
+    prober: tcp
+    timeout: 10s
+    tcp:
+      preferred_ip_protocol: ip4

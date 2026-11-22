@@ -15,6 +15,7 @@ import {
   startTab,
   toggleFullscreen,
 } from './api';
+import { beep, setSound, soundOn } from './sound';
 import { STATUS, type ConsoleData, type ConsoleNode, type ConsoleResource } from './types';
 
 const BASE_TABS = [
@@ -28,6 +29,8 @@ type Tab = string;
 const data = ref<ConsoleData | null>(null);
 const error = ref('');
 const needLogin = ref(false);
+const sound = ref(soundOn());
+let seenAlerts: Set<string> | null = null; // 第一次加载不响，之后新出现的告警才响
 const browser = ref(false);
 const keyInput = ref('');
 const keyWrong = ref(false);
@@ -113,6 +116,10 @@ async function load() {
   try {
     data.value = await post<ConsoleData>('/api/ai/console');
     error.value = '';
+    const now = data.value.alerts.map((a) => `${a.source}|${a.title}`);
+    const fresh = seenAlerts ? data.value.alerts.filter((_, i) => !seenAlerts!.has(now[i])) : [];
+    seenAlerts = new Set(now);
+    if (sound.value && fresh.length) beep(fresh.some((a) => a.level === 'bad'));
     if (!TABS.value.some((t) => t.key === tab.value)) tab.value = 'home';
   } catch (e) {
     if ((e as Error).message === 'login') return showLogin(true);
@@ -134,6 +141,11 @@ function submitKey() {
   keyInput.value = '';
   needLogin.value = false;
   start();
+}
+
+function toggleSound() {
+  sound.value = !sound.value;
+  setSound(sound.value);
 }
 
 function signOut() {
@@ -188,6 +200,14 @@ onBeforeUnmount(() => {
         @click="toggleFullscreen"
       >
         ⛶ 全屏
+      </button>
+      <button
+        v-if="data"
+        class="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-300"
+        :title="sound ? '出现新告警时响铃（点一下关掉）' : '点一下打开：出现新告警时响铃'"
+        @click="toggleSound"
+      >
+        {{ sound ? '🔔 声音开' : '🔕 声音关' }}
       </button>
       <button
         v-if="browser && data"

@@ -102,6 +102,25 @@ spec:
           annotations:
             summary: 证书 21 天内到期
             description: '{{ $labels.namespace }}/{{ $labels.name }} 还有 {{ $value | printf "%.0f" }} 天到期。cert-manager 正常会在到期前 30 天自动续期，说明续期已经失败了一段时间，用 kubectl describe certificate 查看原因。'
+    # Argo CD：推送后没同步上线、或者同步后不健康。发布时正常会有一两分钟「没同步 / 更新中」，所以等 15 分钟
+    - name: ops-desk.argocd
+      rules:
+        - alert: ArgoAppOutOfSync
+          expr: argocd_app_info{sync_status!="Synced"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Argo CD 应用 {{ $labels.name }} 超过 15 分钟没同步'
+            description: '同步状态 {{ $labels.sync_status }}，健康状态 {{ $labels.health_status }}。可能是集群里的资源和仓库对不上（比如加了不自动删的保护），或者同步失败；在 Argo CD 界面看差异。'
+        - alert: ArgoAppUnhealthy
+          expr: argocd_app_info{health_status!~"Healthy|Progressing"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Argo CD 应用 {{ $labels.name }} 不健康'
+            description: '健康状态 {{ $labels.health_status }}（Degraded 是有资源出错，Missing 是资源缺失）。'
     # 异地备份（SPEC 里程碑 5）。备份任务的 CronJob 统一以 backup- 开头
     - name: ops-desk.backup
       rules:

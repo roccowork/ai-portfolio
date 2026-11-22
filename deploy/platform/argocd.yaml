@@ -51,6 +51,11 @@ spec:
         limits: { cpu: 500m, memory: 256Mi }
 
     controller:
+      # 应用同步 / 健康状态的指标（argocd_app_info），给告警 ArgoAppOutOfSync / ArgoAppUnhealthy 用（2026-11-22 补：原来「没同步」只在总控台显示，不推送）
+      metrics:
+        enabled: true
+        serviceMonitor:
+          enabled: true
       # 512Mi 时一周 OOMKilled 3 次（2026-10-26 周报），放宽到 768Mi
       resources:
         requests: { cpu: 100m, memory: 320Mi }

@@ -92,9 +92,7 @@ spec:
         - https://roadmap.liuxd.dev/
         - https://ai-roadmap.liuxd.dev/
         - https://it.liuxd.dev/
-        # 运维后台：Grafana、Argo CD（登录页能打开就算正常）
-        - https://grafana.liuxd.dev/
-        - https://argocd.liuxd.dev/
+        # Grafana、Argo CD 的界面 2026-11-25 起不对外网开放（只走 SSH 隧道），不再拨测
         # LabPager App 的推送中转
         - https://push.liuxd.dev/healthz
         # 访问统计 Umami（登录页能打开就算正常）

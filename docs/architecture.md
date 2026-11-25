@@ -90,7 +90,7 @@ flowchart LR
     cm[cert-manager 指标] --> prom
     prom -- 告警规则 --> am[Alertmanager<br/>分组 · 去重 · 抑制]
     am -- webhook --> heal[ai-api<br/>诊断得了的推诊断<br/>诊断不了的直接推]
-    prom --> graf[Grafana<br/>grafana.liuxd.dev]
+    prom --> graf[Grafana<br/>只走 SSH 隧道]
     bb[Blackbox Exporter<br/>拨测网站、依赖、VPS 端口] --> prom
   end
   prom -- 每周一汇总 --> weekly[weekly-report<br/>运维周报]

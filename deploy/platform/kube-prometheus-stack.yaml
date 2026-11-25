@@ -142,7 +142,8 @@ spec:
       defaultDashboardsTimezone: browser
       grafana.ini:
         server:
-          root_url: https://grafana.liuxd.dev
+          # 不对外网开放（2026-11-25 加固），用 SSH 隧道把本机 3000 端口转到 Grafana，见 docs/runbook.md「入口」
+          root_url: http://localhost:3000/
         users:
           allow_sign_up: false
         auth.anonymous:
@@ -157,16 +158,9 @@ spec:
           enabled: false
         plugins:
           preinstall_disabled: true
+      # 2026-11-25 去掉外网入口（grafana.liuxd.dev）：只用 SSH 隧道打开
       ingress:
-        enabled: true
-        ingressClassName: traefik
-        annotations:
-          cert-manager.io/cluster-issuer: letsencrypt-prod
-          traefik.ingress.kubernetes.io/router.middlewares: monitoring-redirect-https@kubernetescrd
-        hosts: [grafana.liuxd.dev]
-        tls:
-          - secretName: grafana-tls
-            hosts: [grafana.liuxd.dev]
+        enabled: false
       # 384Mi 时一周 OOMKilled 15 次（2026-10-26 周报），节点内存平均只用了 53%，放宽到 640Mi
       resources:
         requests: { cpu: 50m, memory: 192Mi }

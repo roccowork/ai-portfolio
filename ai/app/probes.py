@@ -58,8 +58,6 @@ ABOUT = {
     "roadmap.liuxd.dev": "运维自动化职业路线图",
     "ai-roadmap.liuxd.dev": "AI 应用开发学习路线图",
     "it.liuxd.dev": "IT 外包服务官网",
-    "grafana.liuxd.dev": "监控仪表盘（Grafana）",
-    "argocd.liuxd.dev": "发布系统（Argo CD）：仓库推送后自动同步上线",
     "push.liuxd.dev": "LabPager App 的推送中转",
     "stats.liuxd.dev": "网站访问统计（Umami）",
     "prometheus.liuxd.dev": "监控数据接口，给 LabPager App 用（要密码）",

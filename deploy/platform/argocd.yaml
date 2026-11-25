@@ -1,6 +1,7 @@
 # Argo CD：从 Git 拉取清单并同步到集群（拉取式 GitOps），由 k3s 的 helm-controller 安装。
 # 这个 HelmChart 本身也由 Argo CD 从 Git 同步（Argo CD 管理自己）；首次安装由 install-argocd.sh 用 kubectl apply 创建。
-# 界面：https://argocd.liuxd.dev（admin 账号，初始密码见 docs/runbook.md）
+# 界面不对外网开放（2026-11-25 加固：Argo CD 有集群最高权限）：外网只留 GitHub Webhook 的 /api/webhook，
+# 界面用 SSH 隧道打开（docs/runbook.md「7. Argo CD」），admin 账号，初始密码见 docs/runbook.md
 apiVersion: helm.cattle.io/v1
 kind: HelmChart
 metadata:
@@ -48,6 +49,9 @@ spec:
           traefik.ingress.kubernetes.io/router.middlewares: argocd-redirect-https@kubernetescrd
         # 证书存在 argocd-server-tls，由 cert-manager 签发
         tls: true
+        # 只放行 GitHub Webhook（推送后马上同步）；其余路径（登录页、API）外网 404，界面走 SSH 隧道
+        path: /api/webhook
+        pathType: Exact
       resources:
         requests: { cpu: 20m, memory: 64Mi }
         limits: { cpu: 500m, memory: 256Mi }

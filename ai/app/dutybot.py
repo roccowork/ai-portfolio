@@ -369,8 +369,7 @@ def platform_text(st: dict, now: datetime | None = None, part: str = "release") 
 # 证书（Secret 名）→ 哪个网站
 CERT_SITE = {
     "ops-desk-tls": "ops.liuxd.dev（作品集、总控台）",
-    "grafana-tls": "grafana.liuxd.dev",
-    "argocd-server-tls": "argocd.liuxd.dev",
+    "argocd-server-tls": "argocd.liuxd.dev（只开 GitHub Webhook）",
     "relay-tls": "push.liuxd.dev（LabPager 推送）",
     "umami-tls": "stats.liuxd.dev（访问统计）",
     "prometheus-public-tls": "prometheus.liuxd.dev（LabPager 接口）",

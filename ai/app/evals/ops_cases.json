@@ -87,9 +87,9 @@
     },
     {
       "id": "r15",
-      "question": "Argo CD 的界面地址和用户名是什么？",
+      "question": "Argo CD 的界面怎么打开，用户名是什么？",
       "sections": ["7. Argo CD"],
-      "keywords": ["argocd.liuxd.dev", "admin"]
+      "keywords": ["SSH 隧道", "admin"]
     },
     {
       "id": "r16",

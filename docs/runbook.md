@@ -17,7 +17,7 @@ curl https://ops.liuxd.dev/version.txt       # 正在接收流量的版本
 grep newTag deploy/k8s/overlays/prod/kustomization.yaml   # Git 里期望的版本
 ```
 
-也可以在 <https://argocd.liuxd.dev> 查看同步和健康状态。
+也可以在 Argo CD 界面查看同步和健康状态（界面只走 SSH 隧道，见第 7 节）。
 
 ### 改哪些配置、怎么生效
 
@@ -130,7 +130,7 @@ kubectl logs -n cert-manager deploy/cert-manager --tail=50
 
 | 地址                           | 用途                                                                          | 登录                                              |
 | ------------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------- |
-| <https://grafana.liuxd.dev>    | 仪表盘「ops-desk 总览」：站点请求量、响应时间、状态码，节点 CPU / 内存 / 磁盘 | `admin`，密码在 Secret `monitoring/grafana-admin` |
+| Grafana（SSH 隧道，见下）      | 仪表盘「ops-desk 总览」：站点请求量、响应时间、状态码，节点 CPU / 内存 / 磁盘 | `admin`，密码在 Secret `monitoring/grafana-admin` |
 | UptimeRobot（uptimerobot.com） | 外部兜底：服务器整体宕机时，服务器上的监控都发不出告警，由它发邮件            | 个人账号                                          |
 | Prometheus、Alertmanager       | 不对公网开放                                                                  | 见下方「查看告警和静默」                          |
 
@@ -258,7 +258,20 @@ curl -s -o /dev/null -w '%{http_code}\n' https://prometheus.liuxd.dev/api/v1/que
 
 ## 7. Argo CD
 
-- 界面：<https://argocd.liuxd.dev>，用户名 `admin`。
+- 界面：**不对外网开放**（2026-11-25 加固：Argo CD 有集群最高权限，以前 `argocd.liuxd.dev` 用账号密码就能登录）。外网只留 GitHub Webhook 的 `/api/webhook`，其余路径返回 404。用户名 `admin`。
+- 用 SSH 隧道打开 Argo CD 和 Grafana：先在服务器上查两个 Service 的内部地址（Service 不重建就不会变）：
+
+  ```bash
+  k3s kubectl -n argocd get svc argocd-server -o jsonpath='{.spec.clusterIP}{"\n"}'
+  k3s kubectl -n monitoring get svc -l app.kubernetes.io/name=grafana -o jsonpath='{.items[0].spec.clusterIP}{"\n"}'
+  ```
+
+  再在电脑上开隧道（窗口开着别关），浏览器打开 `http://localhost:8080`（Argo CD）、`http://localhost:3000`（Grafana）：
+
+  ```bash
+  ssh -N -p <SSH端口> -L 8080:<Argo CD 的地址>:80 -L 3000:<Grafana 的地址>:80 root@<服务器IP>
+  ```
+
 - 集群里的所有组件都由 Argo CD 从 Git 同步，服务器上不手动放任何清单。应用定义在 `deploy/argocd/applications.yaml`：
 
   | 应用                | 内容                                                                  | 路径                       |
